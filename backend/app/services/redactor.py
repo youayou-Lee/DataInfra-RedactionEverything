@@ -8,6 +8,9 @@
 import logging
 import os
 import uuid
+
+import fitz
+from docx import Document
 from typing import Any
 
 from app.core.config import settings
@@ -168,12 +171,55 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             except Exception:
                 logger.warning("watermark failed for %s", output_path, exc_info=True)
 
+        # 导出后自检：成品全文中不应再出现任何被替换实体的原文
+        residual_entities: list[str] = []
+        if file_type in [FileType.PDF, FileType.DOCX, FileType.TXT] and os.path.exists(output_path):
+            residual_entities = self._verify_export_residuals(
+                output_path, context.entity_map, file_type
+            )
+            if residual_entities:
+                logger.warning(
+                    "[export-verify] %d entities still present in output %s: %s",
+                    len(residual_entities), output_path, residual_entities[:10],
+                )
+
         return {
             "output_file_id": output_file_id,
             "output_path": output_path,
             "redacted_count": redacted_count,
             "entity_map": context.entity_map,
+            "residual_entities": residual_entities,
         }
+
+    def _verify_export_residuals(
+        self, output_path: str, entity_map: dict[str, str], file_type: FileType
+    ) -> list[str]:
+        """导出后自检：提取成品全文，返回仍残留原文的实体列表。
+
+        只做文本层校验（PDF 图像遮挡不在本契约内）；残留仅告警不阻断交付。
+        """
+        try:
+            text = self._extract_output_text(output_path, file_type)
+        except Exception:
+            logger.warning("[export-verify] output text extraction failed: %s", output_path, exc_info=True)
+            return []
+        if not text:
+            return []
+        return [orig for orig in entity_map if orig and orig in text]
+
+    def _extract_output_text(self, output_path: str, file_type: FileType) -> str:
+        if file_type == FileType.PDF:
+            doc = fitz.open(output_path)
+            try:
+                return "\n".join(page.get_text() for page in doc)
+            finally:
+                doc.close()
+        if file_type == FileType.DOCX:
+            doc = Document(output_path)
+            return "\n".join(p.text for p in self._iter_all_paragraphs(doc))
+        # TXT / MD / HTML / RTF
+        with open(output_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
 
     async def _convert_doc_to_docx(self, file_path: str) -> str | None:
         """将 .doc 转换为 .docx（复用 FileParser 逻辑）"""

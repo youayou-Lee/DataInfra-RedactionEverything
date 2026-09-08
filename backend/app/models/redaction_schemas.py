@@ -106,6 +106,10 @@ class RedactionResult(BaseModel):
     output_file_id: str
     redacted_count: int
     entity_map: dict[str, str] = Field(default_factory=dict, description="Entity replacement map")
+    residual_entities: list[str] = Field(
+        default_factory=list,
+        description="导出自检：成品中仍残留原文的实体（应为空；非空说明回写有遗漏）",
+    )
     download_url: str
     output_path: str | None = Field(default=None, exclude=True)
 

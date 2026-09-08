@@ -70,6 +70,10 @@ class TextRedactorMixin:
                 trace_enabled=trace_enabled,
                 trace_path=trace_path,
             )
+            # 追踪修订「已删除」文本不进 python-docx 的 runs，单独处理
+            redacted_count += self._replace_in_docx_xml_paragraph(
+                para._p, replacements, node_query=".//w:delText"
+            )
 
         redacted_count += self._replace_in_docx_xml_parts(doc, replacements)
         doc.save(output_path)
@@ -79,10 +83,11 @@ class TextRedactorMixin:
         """Replace text in DOCX XML parts not exposed by python-docx objects."""
         if not replacements:
             return 0
+        # 正文/页眉/页脚已由 _iter_all_paragraphs 替换过；这里只处理
+        # python-docx 对象模型覆盖不到的部件（批注/脚注/尾注）。
+        # 不能重复处理正文：若某实体的替换词恰为另一实体原文（词池回灌），
+        # 第二趟会把刚写入的替换词再替换掉。
         target_content_types = {
-            CT.WML_DOCUMENT_MAIN,
-            CT.WML_HEADER,
-            CT.WML_FOOTER,
             CT.WML_COMMENTS,
             CT.WML_FOOTNOTES,
             CT.WML_ENDNOTES,
@@ -107,8 +112,11 @@ class TextRedactorMixin:
             replaced_count += part_replaced_count
         return replaced_count
 
-    def _replace_in_docx_xml_paragraph(self, paragraph, replacements: dict[str, str]) -> int:
-        text_nodes = list(self._docx_xpath(paragraph, ".//w:t"))
+    def _replace_in_docx_xml_paragraph(
+        self, paragraph, replacements: dict[str, str], node_query: str = ".//w:t | .//w:delText"
+    ) -> int:
+        # w:delText 是追踪修订「已删除」的内容，仍留在文档修订历史里，同样是敏感源
+        text_nodes = list(self._docx_xpath(paragraph, node_query))
         if not text_nodes:
             return 0
         full_text = "".join(node.text or "" for node in text_nodes)

@@ -67,6 +67,43 @@
 | P2 | vLLM 模式开 `VISUAL_DETECT_BATCH_CATEGORIES`；收紧 LA max_new_tokens | 单页 LA 延迟下降 |
 | P2 | JOB_CONCURRENCY 与页并发/闸门联动调参（给出容量公式与文档） | 批量吞吐可预期 |
 
+## 实测数据（2026-09-08，DCU K100_AI 单卡 64G，DTK 26.04）
+
+测试方法：合成 10 页扫描型 PDF（虚构 PII，120dpi，无文本层），逐页 `/redaction/{id}/vision?force=true`，
+取 duration_ms 埋点分解。基线 9 页、调优后 4 页。
+
+### 基线（默认参数：双流水线串行、NER 单实例、闸门=1）
+
+| 指标 | 数值 |
+|---|---|
+| 单页端到端 | **68.9s** |
+| ocr_has 阶段（串行） | 54.9s = OCR 14.2s + **HaS NER 31.4s（单个大请求）** + 匹配开销 |
+| visual_features（LocateAnything） | 13.9s |
+
+### 调优（`VISION_DUAL_PIPELINE_PARALLEL=true`，OCR 走 CPU 与 GPU 通道重叠）
+
+| 指标 | 数值 | 变化 |
+|---|---|---|
+| 单页端到端 | **51.8s** | **-25%**（total 由「两通道之和」变「max」） |
+
+### 进一步发现
+
+1. **DCU 上 NER 每页是一个 ~31s 的单请求**（整页 ~1000 字符、9 个识别类型一次性进出），
+   页内无并行可挖；多实例 NER 只提升跨页吞吐（批量路径）。
+2. **uvicorn `--workers` 多进程在 DTK 上不稳定**：子进程反复静默崩溃（仅 2/4 就绪），
+   请求会卡死。改用「N 个独立单进程实例 + 轮询 LB」（`cloud-deploy/ner_lb.py`，工作区部署脚本），
+   2 实例 × ~2G 显存，64G 卡余量充足。
+3. NER 31s 的根因是 0.6B 模型在 DTK 上只能跑 eager 注意力（flash/mem-efficient 后端缺
+   CUDA 专属库），生成 ~200+ token 单次 ~30s——单页延迟的下界，需模型侧优化（量化/蒸馏/分类型
+   拆请求）才能突破。
+4. OCR 在 CPU（255 核）上 14s/页，与 GPU 通道天然可重叠——这正是双流水线并行收益明确的
+   原因（DCU 拓扑下安全，无同卡显存争抢）。
+
+### 待补：批量路径 A/B（页并发 4 + NER 双实例的吞吐叠加）
+
+已准备 `perf_batch.py`（smart_batch ×2 份 ×10 页），因实例被其他会话占用（处理真实案卷）暂停，
+需独占窗口补测。
+
 ## 验收标准
 
 - 提供一份端到端 profile 文档：单文件（10 页扫描件）与 100 文件批量在各阶段的耗时分解（利用现有 `duration_ms` / `pipeline_status` 埋点）。

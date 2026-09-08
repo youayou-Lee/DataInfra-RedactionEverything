@@ -69,3 +69,41 @@ def test_fragmented_text_layer_detected() -> None:
     assert FileParser._has_fragmented_text_layer(broken)
     normal = "这是一段正常排版的文本行，长度足够长，不会被判为碎片化文本层。" * 3
     assert not FileParser._has_fragmented_text_layer(normal)
+
+
+@pytest.mark.asyncio
+async def test_prime_probe_marks_scanned_page_and_skips_layer(tmp_path: Path) -> None:
+    """视觉链路的文本层预热探测应把扫描页记为强信号，整份文件后续跳过文本层。"""
+    from app.services.vision.pdf_text_layer_probe import (
+        _PDF_TEXT_LAYER_SPARSE_COUNTS,
+        _should_skip_sparse_pdf_text_layer,
+    )
+    from app.services.vision_service import prime_pdf_text_layer_sparse_probe
+
+    p = tmp_path / "scanned.pdf"
+    _make_scanned_pdf_with_ocr_layer(p)
+
+    stats = await prime_pdf_text_layer_sparse_probe(str(p), FileType.PDF_SCANNED)
+    assert stats["ran"] is True
+    assert stats.get("scan_page") is True
+    assert _should_skip_sparse_pdf_text_layer(str(p), FileType.PDF_SCANNED)
+
+    _PDF_TEXT_LAYER_SPARSE_COUNTS.clear()
+
+
+@pytest.mark.asyncio
+async def test_detect_with_pdf_text_layer_rejects_scan_page(tmp_path: Path) -> None:
+    """文本层检测遇到扫描页（整页图 + OCR 文本层）应抛 ValueError 回退图像 OCR。"""
+    from app.services import vision_service as vs
+
+    p = tmp_path / "scanned.pdf"
+    _make_scanned_pdf_with_ocr_layer(p)
+
+    service = vs.VisionService.__new__(vs.VisionService)
+    service.file_parser = FileParser()
+    service.last_pdf_text_layer_duration_ms = 0
+    service.last_pdf_text_layer_stats = {}
+
+    with pytest.raises(ValueError, match="scanned page"):
+        await service._detect_with_pdf_text_layer(str(p), 1, None)
+    assert service.last_pdf_text_layer_stats.get("scan_page") is True

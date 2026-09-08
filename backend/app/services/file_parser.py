@@ -77,6 +77,8 @@ class FileParser:
         tuple[list["OCRTextBlock"], int, int],
     ] = OrderedDict()
     _pdf_page_text_blocks_cache_lock = Lock()
+    _pdf_page_scan_cache: OrderedDict[tuple[str, int, int, int, int], bool] = OrderedDict()
+    _pdf_page_scan_cache_lock = Lock()
 
     def __init__(self) -> None:
         self.last_pdf_page_image_cache_hit: bool | None = None
@@ -451,6 +453,38 @@ class FileParser:
             avg_line_len < FileParser.SCAN_TEXT_LAYER_MIN_MEDIAN_LINE_LEN
             and short_line_ratio > FileParser.SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO
         )
+
+    async def is_pdf_page_scanned(self, file_path: str, page: int) -> bool:
+        """单页是否为扫描页（整页图片覆盖），带缓存。
+
+        供视觉链路在尝试内嵌文本层前调用：扫描页的文本层是叠在整页图上的
+        低质量 OCR 产物，即使字符数充足也不应使用。
+        """
+        _validate_path(file_path)
+        cache_key = self._pdf_page_cache_key(file_path, page, 0)
+        cache_limit = int(settings.PDF_PAGE_IMAGE_CACHE_PAGES)
+        if cache_limit > 0:
+            with self._pdf_page_scan_cache_lock:
+                cached = self._pdf_page_scan_cache.get(cache_key)
+                if cached is not None:
+                    self._pdf_page_scan_cache.move_to_end(cache_key)
+                    return cached
+
+        doc = fitz.open(cache_key[0])
+        try:
+            if page < 1 or page > len(doc):
+                raise ValueError(f"页码超出范围: {page}")
+            result = self._is_scanned_page(doc.load_page(page - 1))
+        finally:
+            doc.close()
+
+        if cache_limit > 0:
+            with self._pdf_page_scan_cache_lock:
+                self._pdf_page_scan_cache[cache_key] = result
+                self._pdf_page_scan_cache.move_to_end(cache_key)
+                while len(self._pdf_page_scan_cache) > cache_limit:
+                    self._pdf_page_scan_cache.popitem(last=False)
+        return result
 
     async def _parse_image(self, file_path: str) -> ParseResult:
         """解析图片文件"""

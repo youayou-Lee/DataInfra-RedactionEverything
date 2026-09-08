@@ -76,6 +76,9 @@ def _get_pdf_text_layer_probe_lock(file_path: str, file_type: FileType | str) ->
 def _sparse_pdf_text_layer_probe_weight(stats: dict | None = None) -> int:
     if not isinstance(stats, dict):
         return 1
+    # 扫描页（整页图片 + 低质量 OCR 文本层）是强信号：整份文件直接跳过文本层探测
+    if stats.get("scan_page"):
+        return _PDF_TEXT_LAYER_SPARSE_SKIP_AFTER
     min_chars = max(0, int(settings.PDF_TEXT_LAYER_MIN_CHARS))
     if min_chars <= 0:
         return 1

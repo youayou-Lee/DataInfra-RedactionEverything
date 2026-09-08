@@ -63,8 +63,9 @@ class RedactionContext:
         self.custom_replacements: dict[str, str] = {}
         # 化名词池：{pool_type: {words, strategy, custom_map}}；None 时懒加载默认词池
         self.word_pools: dict | None = word_pools
-        # 词池分配计数（pool_type → 已分配次数），保证同类型不同实体分到不同词
-        self._pool_allocations: dict[str, int] = {}
+        # 词池已分配词（pool_type → 有序列表）：同类型不同实体分到不同词，
+        # 且跳过与实体原文相同的词（避免“张三→张三”的原样替换）
+        self._pool_assigned: dict[str, list[str]] = {}
         self._generated_seq = 0
 
     def set_word_pools(self, pools: dict | None) -> None:
@@ -284,15 +285,22 @@ class RedactionContext:
             # 无词池的非格式类型：回退智能标签，保证可用
             return self._generate_smart_replacement(entity)
 
-        allocated = self._pool_allocations.get(pool_key, 0)
-        self._pool_allocations[pool_key] = allocated + 1
-        if allocated < len(words):
-            return words[allocated]
+        assigned = self._pool_assigned.setdefault(pool_key, [])
+        taken = set(assigned) | {text}
+        for word in words:
+            if word not in taken:
+                assigned.append(word)
+                return word
         if strategy == "cycle":
-            return words[allocated % len(words)]
+            for word in words:
+                if word != text:
+                    assigned.append(word)
+                    return word
         # 默认 numbered：张三1、张三2……
-        extra = allocated - len(words)
-        return f"{words[extra % len(words)]}{extra // len(words) + 1}"
+        extra = len(assigned) - len(words)
+        word = f"{words[extra % len(words)]}{extra // len(words) + 1}"
+        assigned.append(word)
+        return word
 
     def _generate_format_fictional(self, type_key: str) -> str:
         """生成格式合法的虚构号：身份证带校验位、手机合法号段、银行卡过 Luhn。"""

@@ -497,12 +497,12 @@ class TextRedactorMixin:
                 if replacement_inserts:
                     page.apply_redactions()
                     for rect, new_text in replacement_inserts:
-                        page.insert_textbox(
-                            rect,
-                            new_text,
-                            fontsize=self._fit_pdf_replacement_font_size(rect, new_text),
-                            color=(0, 0, 0),
-                            align=fitz.TEXT_ALIGN_LEFT,
+                        # 默认 Helvetica 无 CJK 字形（中文会写成 ???），中文替换词用内置 china-s
+                        has_cjk = any(ord(ch) > 127 for ch in new_text)
+                        fontname = "china-s" if has_cjk else "helv"
+                        self._insert_pdf_replacement(
+                            page, rect, new_text, fontname,
+                            self._fit_pdf_replacement_font_size(rect, new_text, fontname),
                         )
 
             doc.save(output_path, garbage=PDF_SAVE_GARBAGE_LEVEL, deflate=True, clean=True)
@@ -512,7 +512,26 @@ class TextRedactorMixin:
         return redacted_count
 
     @staticmethod
-    def _fit_pdf_replacement_font_size(rect: fitz.Rect, text: str) -> float:
+    def _insert_pdf_replacement(
+        page: "fitz.Page",
+        rect: "fitz.Rect",
+        text: str,
+        fontname: str,
+        fontsize: float,
+    ) -> None:
+        """insert_textbox 放不下时（rc<0）整体不写入，逐级降字号重试到 4pt。"""
+        size = fontsize
+        while True:
+            rc = page.insert_textbox(
+                rect, text, fontname=fontname, fontsize=size,
+                color=(0, 0, 0), align=fitz.TEXT_ALIGN_LEFT,
+            )
+            if rc >= 0 or size <= 4.0:
+                return
+            size = max(4.0, size - 1.0)
+
+    @staticmethod
+    def _fit_pdf_replacement_font_size(rect: fitz.Rect, text: str, fontname: str = "helv") -> float:
         """Choose a conservative font size for inline PDF replacement labels."""
         if not text:
             return PDF_LABEL_FONT_SIZE_MAX
@@ -520,7 +539,7 @@ class TextRedactorMixin:
             PDF_LABEL_FONT_SIZE_MIN,
             min(PDF_LABEL_FONT_SIZE_MAX, rect.height * PDF_LABEL_HEIGHT_FONT_RATIO),
         )
-        estimated_width = fitz.get_text_length(text, fontsize=base_size)
+        estimated_width = fitz.get_text_length(text, fontname=fontname, fontsize=base_size)
         if estimated_width <= max(1.0, rect.width):
             return base_size
         return max(

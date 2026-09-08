@@ -105,7 +105,7 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             file_type = FileType.PDF_SCANNED
 
         # 创建匿名化上下文
-        context = RedactionContext(config.replacement_mode)
+        context = RedactionContext(config.replacement_mode, word_pools=config.word_pools)
         context.set_custom_replacements(config.custom_replacements)
 
         # 生成输出文件路径

@@ -170,3 +170,14 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     # 删除覆盖回退默认
     assert svc.delete_word_pool("PERSON", owner_id="u1") is True
     assert "张三" in svc.load_word_pools(owner_id="u1")["PERSON"]["words"]
+
+
+def test_pool_word_equal_to_entity_text_not_identity_replaced():
+    """实体原文恰好在词池里时不能原样替换（张三→李四 而非 张三→张三）。"""
+    pools = {"PERSON": {"words": ["张三", "李四"], "strategy": "numbered", "custom_map": {}}}
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("张三", coref="c1"))
+    b = ctx.get_replacement(_entity("李四", coref="c2"))
+    c = ctx.get_replacement(_entity("王五", coref="c3"))
+    assert a != "张三" and b != "李四"
+    assert len({a, b, c}) == 3

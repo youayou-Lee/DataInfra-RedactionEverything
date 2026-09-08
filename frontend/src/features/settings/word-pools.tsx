@@ -193,17 +193,38 @@ export function WordPoolsSettings() {
   const handleImportFile = async (file: File) => {
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as Record<string, unknown>;
-      const overridesPayload =
-        parsed && typeof parsed === 'object' && 'overrides' in parsed
-          ? (parsed.overrides as Record<string, WordPool>)
-          : (parsed as Record<string, WordPool>);
-      if (!overridesPayload || typeof overridesPayload !== 'object') {
+      const parsed = JSON.parse(text) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        showToast(t('wordPools.importInvalid'), 'error');
+        return;
+      }
+      const container = parsed as Record<string, unknown>;
+      const overridesPayload = (
+        'overrides' in container &&
+        container.overrides &&
+        typeof container.overrides === 'object' &&
+        !Array.isArray(container.overrides)
+          ? container.overrides
+          : parsed
+      ) as Record<string, WordPool>;
+      const entries = Object.entries(overridesPayload);
+      const valid = entries.every(
+        ([, pool]) =>
+          pool &&
+          typeof pool === 'object' &&
+          !Array.isArray(pool) &&
+          Array.isArray((pool as WordPool).words),
+      );
+      if (!entries.length || !valid) {
         showToast(t('wordPools.importInvalid'), 'error');
         return;
       }
       const result = await importWordPools(overridesPayload, !importReplace);
-      showToast(t('wordPools.importDone').replace('{count}', String(result.count ?? 0)), 'success');
+      const count = result.count ?? 0;
+      showToast(
+        t('wordPools.importDone').replace('{count}', String(count)),
+        count > 0 ? 'success' : 'error',
+      );
       await load();
     } catch (error) {
       showToast(localizeErrorMessage(error, 'wordPools.importFailed'), 'error');

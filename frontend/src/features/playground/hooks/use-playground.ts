@@ -301,7 +301,9 @@ export function usePlayground() {
   }, [pseudonymMap, selectedEntityTexts]);
 
   // 共指组（同一对象的不同写法，coref_id 相同）内替换词不一致 → 视为未确认：
-  // 后端 coref 复用以组内首个显式值为准，不一致的其余值会被静默覆盖
+  // 后端 coref 复用以组内首个显式值为准，不一致的其余值会被静默覆盖。
+  // 按裸 coref_id 分组是后端分组的保守超集（后端对 <tag> 型 coref 跨不兼容
+  // type 时会拆组不复用，此处仍要求统一——只偏严不漏判）
   const pseudonymCorefConflicts = useMemo(() => {
     const groups = new Map<string, Set<string>>();
     for (const entity of entityCtx.entities) {

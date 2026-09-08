@@ -117,11 +117,11 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
         ? recognitionIssue
         : totalCount === 0
           ? t('playground.redactDisabledNoResults')
-          : shownSelectedCount === 0
-            ? t('playground.redactDisabledNoSelection')
-            : replaceUnready && !isImageMode
-              ? t('playground.pseudonymConfirmRequiredShort')
-              : '';
+            : shownSelectedCount === 0
+              ? t('playground.redactDisabledNoSelection')
+              : replaceUnready
+                ? t('playground.pseudonymConfirmRequiredShort')
+                : '';
 
     return (
       <div

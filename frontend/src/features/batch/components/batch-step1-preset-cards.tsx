@@ -198,54 +198,52 @@ function BatchStep1PresetCardsInner({
                 <Select
                   disabled={disabled}
                   value={textRedactionMode}
-                  onValueChange={(
-                    value: 'structured' | 'smart' | 'mask' | 'pseudonym',
-                  ) =>
+                  onValueChange={(value: 'structured' | 'smart' | 'mask' | 'pseudonym') =>
                     setCfg((current) => ({ ...current, replacementMode: value }))
                   }
-              >
-                <SelectTrigger className="text-xs" data-testid="text-redaction-mode-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="structured">
-                    {t('batchWizard.step1.textMethodStructured')}
-                  </SelectItem>
-                  <SelectItem value="smart">{t('batchWizard.step1.textMethodSmart')}</SelectItem>
-                  <SelectItem value="mask">{t('batchWizard.step1.textMethodMask')}</SelectItem>
-                  <SelectItem value="pseudonym">
-                    {t('batchWizard.step1.textMethodPseudonym')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {textRedactionMode === 'pseudonym' && (
-                <a
-                  href="/settings/word-pools"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
-                  data-testid="word-pool-settings-link"
                 >
-                  {t('batchWizard.step1.wordPoolLink')}
-                </a>
-              )}
-              <ul className="mt-1.5 space-y-1 overflow-hidden">
-                {textModeBullets.map((bullet) => (
-                  <li
-                    key={bullet.key}
-                    className={cn(
-                      'flex items-center gap-1.5 text-[11px] leading-4',
-                      bullet.key === textRedactionMode
-                        ? 'font-medium text-foreground'
-                        : 'text-muted-foreground',
-                    )}
+                  <SelectTrigger className="text-xs" data-testid="text-redaction-mode-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="structured">
+                      {t('batchWizard.step1.textMethodStructured')}
+                    </SelectItem>
+                    <SelectItem value="smart">{t('batchWizard.step1.textMethodSmart')}</SelectItem>
+                    <SelectItem value="mask">{t('batchWizard.step1.textMethodMask')}</SelectItem>
+                    <SelectItem value="pseudonym">
+                      {t('batchWizard.step1.textMethodPseudonym')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {textRedactionMode === 'pseudonym' && (
+                  <a
+                    href="/settings/word-pools"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                    data-testid="word-pool-settings-link"
                   >
-                    <span className="inline-block size-1 shrink-0 rounded-full bg-current" />
-                    <span className="truncate">{bullet.label}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                    {t('batchWizard.step1.wordPoolLink')}
+                  </a>
+                )}
+                <ul className="mt-1.5 space-y-1 overflow-hidden">
+                  {textModeBullets.map((bullet) => (
+                    <li
+                      key={bullet.key}
+                      className={cn(
+                        'flex items-center gap-1.5 text-[11px] leading-4',
+                        bullet.key === textRedactionMode
+                          ? 'font-medium text-foreground'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      <span className="inline-block size-1 shrink-0 rounded-full bg-current" />
+                      <span className="truncate">{bullet.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -291,7 +289,9 @@ function BatchStep1PresetCardsInner({
                 <div className="rounded-lg border border-border/70 !bg-white px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
                   <p>{defaultVisionSummary}</p>
                   {defaultVisionExcludedSummary ? (
-                    <p className="mt-1 text-[var(--warning-foreground)]">{defaultVisionExcludedSummary}</p>
+                    <p className="mt-1 text-[var(--warning-foreground)]">
+                      {defaultVisionExcludedSummary}
+                    </p>
                   ) : null}
                 </div>
               )}

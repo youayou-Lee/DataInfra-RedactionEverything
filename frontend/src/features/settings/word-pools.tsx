@@ -92,10 +92,7 @@ export function WordPoolsSettings() {
       setOverrides(data.overrides ?? {});
       setDrafts(
         Object.fromEntries(
-          Object.entries(data.merged ?? {}).map(([typeId, pool]) => [
-            typeId,
-            draftFromPool(pool),
-          ]),
+          Object.entries(data.merged ?? {}).map(([typeId, pool]) => [typeId, draftFromPool(pool)]),
         ),
       );
     } catch (error) {
@@ -206,10 +203,7 @@ export function WordPoolsSettings() {
         return;
       }
       const result = await importWordPools(overridesPayload, !importReplace);
-      showToast(
-        t('wordPools.importDone').replace('{count}', String(result.count ?? 0)),
-        'success',
-      );
+      showToast(t('wordPools.importDone').replace('{count}', String(result.count ?? 0)), 'success');
       await load();
     } catch (error) {
       showToast(localizeErrorMessage(error, 'wordPools.importFailed'), 'error');
@@ -276,11 +270,7 @@ export function WordPoolsSettings() {
                   if (file) void handleImportFile(file);
                 }}
               />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => importInputRef.current?.click()}
-              >
+              <Button size="sm" variant="outline" onClick={() => importInputRef.current?.click()}>
                 {t('wordPools.import')}
               </Button>
               <Button size="sm" variant="outline" onClick={() => void handleExport()}>
@@ -314,12 +304,18 @@ export function WordPoolsSettings() {
                         <span className="truncate text-sm font-semibold">
                           {typeNames[typeId] ?? typeId}
                         </span>
-                        <Badge variant="outline" className="shrink-0 rounded-full px-1.5 text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 rounded-full px-1.5 text-[10px]"
+                        >
                           {typeId}
                         </Badge>
                       </div>
                       {overridden && (
-                        <Badge className="shrink-0 rounded-full px-2 text-[10px]" variant="secondary">
+                        <Badge
+                          className="shrink-0 rounded-full px-2 text-[10px]"
+                          variant="secondary"
+                        >
                           {t('wordPools.customized')}
                         </Badge>
                       )}
@@ -349,7 +345,10 @@ export function WordPoolsSettings() {
                           patchDraft(typeId, { strategy: value })
                         }
                       >
-                        <SelectTrigger className="text-xs" data-testid={`word-pool-strategy-${typeId}`}>
+                        <SelectTrigger
+                          className="text-xs"
+                          data-testid={`word-pool-strategy-${typeId}`}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

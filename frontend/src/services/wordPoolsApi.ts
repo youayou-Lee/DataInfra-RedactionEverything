@@ -46,9 +46,13 @@ export async function importWordPools(
   overrides: Record<string, WordPool>,
   merge: boolean,
 ): Promise<WordPoolImportResult> {
-  return post<WordPoolImportResult>('/word-pools/import', { overrides }, {
-    params: { merge },
-  });
+  return post<WordPoolImportResult>(
+    '/word-pools/import',
+    { overrides },
+    {
+      params: { merge },
+    },
+  );
 }
 
 export async function updateWordPool(typeId: string, body: WordPoolUpdate): Promise<WordPool> {

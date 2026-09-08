@@ -7,7 +7,7 @@ import { useServiceHealth, type ServicesHealth } from '@/hooks/use-service-healt
 import { authFetch, downloadFile } from '@/services/api-client';
 import type { VersionHistoryEntry } from '@/types';
 import { localizeErrorMessage } from '@/utils/localizeError';
-import { safeJson } from '../utils';
+import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
 import { usePlaygroundFile } from './use-playground-file';
@@ -33,6 +33,7 @@ function serviceLabel(health: ServicesHealth, key: ServiceKey) {
 export function usePlayground() {
   const recognition = usePlaygroundRecognition();
   const { health, checking: healthChecking } = useServiceHealth();
+  const { setProcessingMode: setRecognitionProcessingMode } = recognition;
 
   const latestOcrHasTypesRef = useRef(recognition.selectedOcrHasTypes);
   const latestVisualFeatureTypesRef = useRef(recognition.selectedVisualFeatureTypes);
@@ -54,6 +55,15 @@ export function usePlayground() {
   const asyncResultEpochRef = useRef(0);
   const redactionAbortRef = useRef<AbortController | null>(null);
   const redactionInFlightRef = useRef(false);
+
+  // 化名映射确认（替换模式）：原文 → 化名。用户编辑过的行不被自动补全覆盖。
+  const [pseudonymMap, setPseudonymMap] = useState<Record<string, string>>({});
+  const [pseudonymMapLoading, setPseudonymMapLoading] = useState(false);
+  // 执行成功后快照 + 开关：结果页据此展示「下载化名对照表」
+  const [confirmedPseudonymMap, setConfirmedPseudonymMap] = useState<Record<string, string> | null>(
+    null,
+  );
+  const pseudonymEpochRef = useRef(0);
 
   const getRecognitionBlocker = useCallback(
     (file: { fileType: string; isScanned: boolean; content: string }) => {
@@ -119,14 +129,8 @@ export function usePlayground() {
   );
 
   const allSelectedVisionTypes = useMemo(
-    () => [
-      ...recognition.selectedOcrHasTypes,
-      ...recognition.selectedVisualFeatureTypes,
-    ],
-    [
-      recognition.selectedOcrHasTypes,
-      recognition.selectedVisualFeatureTypes,
-    ],
+    () => [...recognition.selectedOcrHasTypes, ...recognition.selectedVisualFeatureTypes],
+    [recognition.selectedOcrHasTypes, recognition.selectedVisualFeatureTypes],
   );
 
   const historyCtx = usePlaygroundHistory({
@@ -195,6 +199,94 @@ export function usePlayground() {
     setRecognitionIssue,
   ]);
 
+  // 替换模式下自动补默认化名：仅对缺失的原文 key 请求 preview-map，
+  // 合并时不覆盖已有（可能已被用户编辑）的行。
+  const selectedEntityTexts = useMemo(
+    () =>
+      Array.from(
+        new Set(entityCtx.entities.filter((e) => e.selected !== false).map((e) => e.text)),
+      ).filter(Boolean),
+    [entityCtx.entities],
+  );
+  const missingPseudonymKeys = useMemo(
+    () => selectedEntityTexts.filter((text) => !(text in pseudonymMap)),
+    [selectedEntityTexts, pseudonymMap],
+  );
+  useEffect(() => {
+    if (recognition.processingMode !== 'replace') return;
+    if (fileCtx.isImageMode) return;
+    if (missingPseudonymKeys.length === 0) return;
+    const epoch = ++pseudonymEpochRef.current;
+    const controller = new AbortController();
+    setPseudonymMapLoading(true);
+    const run = async () => {
+      try {
+        const res = await authFetch('/api/v1/redaction/preview-map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entities: entityCtx.entities
+              .filter((e) => e.selected !== false)
+              .map((e) => ({
+                id: e.id,
+                text: e.text,
+                type: e.type,
+                start: e.start,
+                end: e.end,
+                page: e.page ?? 1,
+                selected: true,
+              })),
+            config: { replacement_mode: 'pseudonym' },
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('preview-map failed');
+        const data = await safeJson<{ entity_map?: Record<string, string> }>(res);
+        if (epoch !== pseudonymEpochRef.current) return;
+        const incoming = data.entity_map ?? {};
+        setPseudonymMap((current) => {
+          const next = { ...current };
+          for (const [key, value] of Object.entries(incoming)) {
+            if (!(key in next)) next[key] = value;
+          }
+          return next;
+        });
+      } catch {
+        /* 静默失败：保留已有映射，用户可重试（重新进入替换模式会再触发） */
+      } finally {
+        if (epoch === pseudonymEpochRef.current) setPseudonymMapLoading(false);
+      }
+    };
+    void run();
+    return () => controller.abort();
+  }, [
+    missingPseudonymKeys.length,
+    recognition.processingMode,
+    fileCtx.isImageMode,
+    entityCtx.entities,
+  ]);
+
+  const setPseudonymReplacement = useCallback((text: string, replacement: string) => {
+    setPseudonymMap((current) => ({ ...current, [text]: replacement }));
+  }, []);
+
+  // 不同原文映射到同一非空化名 → 冲突（警告展示用）
+  const pseudonymConflicts = useMemo(() => {
+    const byReplacement = new Map<string, string[]>();
+    for (const [text, replacement] of Object.entries(pseudonymMap)) {
+      const key = replacement.trim();
+      if (!key) continue;
+      const list = byReplacement.get(key) ?? [];
+      list.push(text);
+      byReplacement.set(key, list);
+    }
+    const conflicted = new Set<string>();
+    for (const texts of byReplacement.values()) {
+      if (texts.length > 1) texts.forEach((text) => conflicted.add(text));
+    }
+    return conflicted;
+  }, [pseudonymMap]);
+
   const presetSeqRef = useRef(recognition.presetApplySeq);
   useEffect(() => {
     if (recognition.presetApplySeq === presetSeqRef.current) return;
@@ -231,6 +323,15 @@ export function usePlayground() {
         ? selectedBoxes.length
         : selectedEntities.length;
 
+      const isPseudonym = recognition.processingMode === 'replace';
+      const pseudonymReplacements: Record<string, string> = {};
+      if (isPseudonym) {
+        for (const entity of selectedEntities) {
+          const replacement = (pseudonymMap[entity.text] ?? '').trim();
+          if (replacement) pseudonymReplacements[entity.text] = replacement;
+        }
+      }
+
       const res = await authFetch('/api/v1/redaction/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -239,9 +340,9 @@ export function usePlayground() {
           entities: entityCtx.entities,
           bounding_boxes: imageCtx.boundingBoxes,
           config: {
-            replacement_mode: recognition.replacementMode,
+            replacement_mode: isPseudonym ? 'pseudonym' : recognition.replacementMode,
             entity_types: [],
-            custom_replacements: {},
+            custom_replacements: pseudonymReplacements,
             watermark_text: recognition.watermarkText.trim() || undefined,
           },
         }),
@@ -255,6 +356,7 @@ export function usePlayground() {
       const completedCount = requestedRedactionItemCount;
       setEntityMap(result.entity_map || {});
       setRedactedCount(completedCount);
+      setConfirmedPseudonymMap(isPseudonym ? { ...pseudonymReplacements } : null);
       setRedactionVersion((version) => version + 1);
       fileCtx.setStage('result');
 
@@ -320,6 +422,8 @@ export function usePlayground() {
     fileCtx,
     imageCtx.boundingBoxes,
     recognition.replacementMode,
+    recognition.processingMode,
+    pseudonymMap,
   ]);
 
   const cancelProcessing = useCallback(() => {
@@ -361,6 +465,7 @@ export function usePlayground() {
 
   const performReset = useCallback(() => {
     asyncResultEpochRef.current += 1;
+    pseudonymEpochRef.current += 1;
     latestFileIdRef.current = null;
     redactionAbortRef.current?.abort();
     redactionAbortRef.current = null;
@@ -372,6 +477,11 @@ export function usePlayground() {
     entityCtx.setEntities([]);
     setRedactedCount(0);
     setEntityMap({});
+    setPseudonymMap({});
+    setPseudonymMapLoading(false);
+    setConfirmedPseudonymMap(null);
+    // 新文件回到默认处理方式（打码），与"识别后默认匿名化"的既有行为一致
+    setRecognitionProcessingMode('mask');
     setRedactionVersion(0);
     setRedactionReport(null);
     setReportOpen(false);
@@ -380,7 +490,7 @@ export function usePlayground() {
     imageCtx.imageHistory.reset();
     setVersionHistory([]);
     setVersionHistoryOpen(false);
-  }, [entityCtx, fileCtx, imageCtx]);
+  }, [entityCtx, fileCtx, imageCtx, setRecognitionProcessingMode]);
 
   const handleReset = useCallback(() => {
     if (hasResetRisk) {
@@ -409,6 +519,15 @@ export function usePlayground() {
     });
   }, [fileCtx.fileInfo]);
 
+  // 化名对照表 csv（替换模式执行成功后可用）：前端从确认时的映射快照生成
+  const handleDownloadPseudonymCsv = useCallback(() => {
+    if (!fileCtx.fileInfo || !confirmedPseudonymMap) return;
+    const csv = buildPseudonymCsv(entityCtx.entities, confirmedPseudonymMap);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const base = fileCtx.fileInfo.filename.replace(/\.[^.]+$/, '');
+    triggerDownload(blob, `化名对照表_${base}.csv`);
+  }, [confirmedPseudonymMap, entityCtx.entities, fileCtx.fileInfo]);
+
   const openPopout = useCallback(() => {
     imageCtx.openPopout(recognition.visionTypes);
   }, [imageCtx, recognition.visionTypes]);
@@ -431,6 +550,14 @@ export function usePlayground() {
     recognitionIssue: fileCtx.recognitionIssue,
     entityMap,
     redactedCount,
+    processingMode: recognition.processingMode,
+    setProcessingMode: recognition.setProcessingMode,
+    pseudonymMap,
+    setPseudonymReplacement,
+    pseudonymMapLoading,
+    pseudonymConflicts,
+    confirmedPseudonymMap,
+    handleDownloadPseudonymCsv,
     redactionReport,
     reportOpen,
     setReportOpen,

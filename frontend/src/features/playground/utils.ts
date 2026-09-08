@@ -33,7 +33,11 @@ export function previewEntityHoverRingClass(source: Entity['source']): string {
   return getSelectionToneClasses(sourceToTone(source)).hoverRing;
 }
 
-export function getModePreview(mode: string, sampleEntity?: Entity) {
+export function getModePreview(
+  mode: string,
+  sampleEntity?: Entity,
+  pseudonymMap?: Record<string, string>,
+) {
   const name = sampleEntity?.text || t('editor.sampleName');
   switch (mode) {
     case 'smart':
@@ -42,13 +46,55 @@ export function getModePreview(mode: string, sampleEntity?: Entity) {
       return `${name} -> ${name[0]}${'*'.repeat(Math.max(name.length - 1, 1))}`;
     case 'structured':
       return `${name} -> <${t('editor.sampleStructured')}>`;
-    case 'pseudonym':
-      return `${name} -> ${t('editor.samplePseudonym')}`;
+    case 'pseudonym': {
+      const mapped = name ? pseudonymMap?.[name] : undefined;
+      return `${name} -> ${mapped?.trim() || t('editor.samplePseudonym')}`;
+    }
     default:
       return '';
   }
 }
 
+function csvEscape(value: string): string {
+  const s = String(value ?? '');
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/** 化名对照表 csv（utf-8 + BOM，Excel 直接打开中文不乱码） */
+export function buildPseudonymCsv(
+  entities: Entity[],
+  pseudonymMap: Record<string, string>,
+): string {
+  const counts = new Map<string, { type: string; count: number }>();
+  for (const entity of entities) {
+    if (!entity.text) continue;
+    const entry = counts.get(entity.text) ?? { type: entity.type, count: 0 };
+    entry.count += 1;
+    counts.set(entity.text, entry);
+  }
+  const header = ['原文', '类型', '化名', '出现次数'];
+  const rows = Object.entries(pseudonymMap)
+    .filter(([text]) => counts.has(text))
+    .map(([text, replacement]) => [
+      text,
+      counts.get(text)?.type ?? '',
+      replacement,
+      String(counts.get(text)?.count ?? 0),
+    ]);
+  const body = [header, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+  return `\uFEFF${body}\r\n`;
+}
+
+export function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  // 延迟回收，同步 revoke 在部分浏览器会取消尚未开始的下载。
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
 
 export const VISION_FETCH_TIMEOUT_MS = VISION_TIMEOUT;
 

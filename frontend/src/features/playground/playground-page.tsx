@@ -41,6 +41,14 @@ const PlaygroundInner: FC = () => {
     recognitionIssue,
     entityMap,
     redactedCount,
+    processingMode,
+    setProcessingMode,
+    pseudonymMap,
+    setPseudonymReplacement,
+    pseudonymMapLoading,
+    pseudonymConflicts,
+    confirmedPseudonymMap,
+    handleDownloadPseudonymCsv,
     redactionReport,
     reportOpen,
     setReportOpen,
@@ -340,6 +348,12 @@ const PlaygroundInner: FC = () => {
               }
               replacementMode={recognition.replacementMode}
               setReplacementMode={recognition.setReplacementMode}
+              processingMode={processingMode}
+              setProcessingMode={setProcessingMode}
+              pseudonymMap={pseudonymMap}
+              onPseudonymChange={setPseudonymReplacement}
+              pseudonymMapLoading={pseudonymMapLoading}
+              pseudonymConflicts={pseudonymConflicts}
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}
@@ -382,6 +396,7 @@ const PlaygroundInner: FC = () => {
             onBackToEdit={() => setStage('preview')}
             onReset={handleReset}
             onDownload={handleDownload}
+            onDownloadPseudonymCsv={confirmedPseudonymMap ? handleDownloadPseudonymCsv : undefined}
           />
         </div>
       )}

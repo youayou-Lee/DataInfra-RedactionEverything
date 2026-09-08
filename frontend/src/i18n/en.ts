@@ -96,6 +96,21 @@ const enBase: Record<string, string> = {
   'mode.pseudonym': 'Pseudonym',
   'editor.samplePseudonym': 'Alias A',
 
+  'playground.processingMode': 'Processing Method',
+  'playground.processingModeMask': 'Masking',
+  'playground.processingModeMaskDesc': 'Cover sensitive content',
+  'playground.processingModeReplace': 'Replace (Pseudonym)',
+  'playground.processingModeReplaceDesc': 'Fictional words, still readable',
+  'playground.pseudonymMap': 'Pseudonym Mapping',
+  'playground.pseudonymMapDesc':
+    'Confirm the replacement for each item before running; the output is exactly what you see. A mapping table is available for download.',
+  'playground.pseudonymLoading': 'Generating default pseudonyms…',
+  'playground.pseudonymNoEntities': 'No selected items yet',
+  'playground.pseudonymInputPlaceholder': 'Replacement',
+  'playground.pseudonymConflictWarning':
+    '{count} items map to the same replacement; adjust to avoid confusion',
+  'playground.downloadPseudonymCsv': 'Download Mapping Table',
+
   'job.status.draft': 'Draft',
   'job.status.queued': 'Queued',
   'job.status.pending': 'Pending',

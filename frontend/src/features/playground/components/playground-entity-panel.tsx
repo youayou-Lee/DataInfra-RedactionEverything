@@ -16,11 +16,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
-import {
-  ENTITY_GROUPS,
-  getEntityGroupLabel,
-  getEntityTypeName,
-} from '@/config/entityTypes';
+import { ENTITY_GROUPS, getEntityGroupLabel, getEntityTypeName } from '@/config/entityTypes';
 import { computeEntityStats, getModePreview } from '../utils';
 import type { BoundingBox, Entity } from '../types';
 
@@ -38,6 +34,12 @@ export interface PlaygroundEntityPanelProps {
   displayStats?: Record<string, { total: number; selected: number }>;
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  processingMode: 'mask' | 'replace';
+  setProcessingMode: (mode: 'mask' | 'replace') => void;
+  pseudonymMap: Record<string, string>;
+  onPseudonymChange: (text: string, replacement: string) => void;
+  pseudonymMapLoading: boolean;
+  pseudonymConflicts: Set<string>;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
@@ -65,6 +67,12 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     displayStats,
     replacementMode,
     setReplacementMode,
+    processingMode,
+    setProcessingMode,
+    pseudonymMap,
+    onPseudonymChange,
+    pseudonymMapLoading,
+    pseudonymConflicts,
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
@@ -81,7 +89,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
       () => (!isImageMode && displayStats ? displayStats : computeEntityStats(entities)),
       [displayStats, entities, isImageMode],
     );
-    const shownSelectedCount = isImageMode ? selectedCount : (displaySelectedCount ?? selectedCount);
+    const shownSelectedCount = isImageMode
+      ? selectedCount
+      : (displaySelectedCount ?? selectedCount);
     const totalCount = isImageMode ? visibleBoxes.length : (displayTotalCount ?? entities.length);
     const listTitle = isImageMode ? t('playground.regionList') : t('playground.results');
     const typeNameById = useMemo(() => {
@@ -175,21 +185,38 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
             </div>
 
             {!isImageMode && (
-              <ReplacementModeSelector
-                entities={entities}
-                mode={replacementMode}
-                onModeChange={(mode) => {
-                  clearPlaygroundTextPresetTracking();
-                  setReplacementMode(mode);
-                }}
-              />
+              <>
+                <ProcessingModeSelector
+                  mode={processingMode}
+                  onModeChange={(mode) => {
+                    clearPlaygroundTextPresetTracking();
+                    setProcessingMode(mode);
+                  }}
+                />
+                {processingMode === 'mask' ? (
+                  <MaskModeSelector
+                    entities={entities}
+                    mode={replacementMode === 'pseudonym' ? 'structured' : replacementMode}
+                    onModeChange={(mode) => {
+                      clearPlaygroundTextPresetTracking();
+                      setReplacementMode(mode);
+                    }}
+                  />
+                ) : (
+                  <PseudonymMapSection
+                    entities={entities}
+                    pseudonymMap={pseudonymMap}
+                    onPseudonymChange={onPseudonymChange}
+                    loading={pseudonymMapLoading}
+                    conflicts={pseudonymConflicts}
+                    typeNameById={typeNameById}
+                  />
+                )}
+              </>
             )}
 
             <div className="space-y-1">
-              <Label
-                htmlFor="playground-watermark"
-                className="text-xs text-muted-foreground"
-              >
+              <Label htmlFor="playground-watermark" className="text-xs text-muted-foreground">
                 {t('playground.watermarkLabel')}
               </Label>
               <Input
@@ -215,7 +242,10 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                   const selected = groupedStats.reduce((sum, [, count]) => sum + count.selected, 0);
 
                   return (
-                    <div key={group.id} className="rounded-[20px] border border-border/70 bg-muted/25">
+                    <div
+                      key={group.id}
+                      className="rounded-[20px] border border-border/70 bg-muted/25"
+                    >
                       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
                         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           {getEntityGroupLabel(group.id)}
@@ -299,22 +329,71 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
   },
 );
 
-const ReplacementModeSelector: FC<{
+const ProcessingModeSelector: FC<{
+  mode: 'mask' | 'replace';
+  onModeChange: (mode: 'mask' | 'replace') => void;
+}> = ({ mode, onModeChange }) => {
+  const t = useT();
+  const modes: { value: 'mask' | 'replace'; label: string; desc: string }[] = [
+    {
+      value: 'mask',
+      label: t('playground.processingModeMask'),
+      desc: t('playground.processingModeMaskDesc'),
+    },
+    {
+      value: 'replace',
+      label: t('playground.processingModeReplace'),
+      desc: t('playground.processingModeReplaceDesc'),
+    },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('playground.processingMode')}
+      </label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {modes.map((item) => (
+          <label
+            key={item.value}
+            data-testid={`playground-processing-mode-${item.value}`}
+            className={cn(
+              'flex min-w-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-colors',
+              mode === item.value
+                ? 'border-primary/50 bg-primary/5'
+                : 'border-border/70 bg-background hover:border-primary/30',
+            )}
+          >
+            <input
+              type="radio"
+              name="processingMode"
+              value={item.value}
+              checked={mode === item.value}
+              onChange={() => onModeChange(item.value)}
+              className="sr-only"
+            />
+            <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
+            <span className="truncate text-[10px] leading-3 text-muted-foreground">
+              {item.desc}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MaskModeSelector: FC<{
   entities: Entity[];
-  mode: 'structured' | 'smart' | 'mask' | 'pseudonym';
-  onModeChange: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  mode: 'structured' | 'smart' | 'mask';
+  onModeChange: (mode: 'structured' | 'smart' | 'mask') => void;
 }> = ({ entities, mode, onModeChange }) => {
   const t = useT();
   const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
-  const modes: {
-    value: 'structured' | 'smart' | 'mask' | 'pseudonym';
-    label: string;
-    badge?: string;
-  }[] = [
+  const modes: { value: 'structured' | 'smart' | 'mask'; label: string; badge?: string }[] = [
     { value: 'structured', label: t('mode.structured'), badge: t('playground.recommended') },
     { value: 'smart', label: t('mode.smart') },
     { value: 'mask', label: t('mode.mask') },
-    { value: 'pseudonym', label: t('mode.pseudonym') },
   ];
 
   return (
@@ -322,7 +401,7 @@ const ReplacementModeSelector: FC<{
       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {t('playground.redactMode')}
       </label>
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className="grid grid-cols-3 gap-1.5">
         {modes.map((item) => (
           <label
             key={item.value}
@@ -357,6 +436,96 @@ const ReplacementModeSelector: FC<{
       </div>
       <p className="truncate text-[11px] text-muted-foreground">
         {getModePreview(mode, sampleEntity)}
+      </p>
+    </div>
+  );
+};
+
+const PseudonymMapSection: FC<{
+  entities: Entity[];
+  pseudonymMap: Record<string, string>;
+  onPseudonymChange: (text: string, replacement: string) => void;
+  loading: boolean;
+  conflicts: Set<string>;
+  typeNameById: Map<string, string>;
+}> = ({ entities, pseudonymMap, onPseudonymChange, loading, conflicts, typeNameById }) => {
+  const t = useT();
+  const rows = useMemo(() => {
+    const byText = new Map<string, { type: string; count: number }>();
+    for (const entity of entities) {
+      if (entity.selected === false || !entity.text) continue;
+      const entry = byText.get(entity.text) ?? { type: entity.type, count: 0 };
+      entry.count += 1;
+      byText.set(entity.text, entry);
+    }
+    return Array.from(byText.entries());
+  }, [entities]);
+  const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
+  const conflictList = Array.from(conflicts);
+
+  return (
+    <div className="space-y-1.5" data-testid="playground-pseudonym-map">
+      <div className="flex items-center justify-between gap-2">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t('playground.pseudonymMap')}
+        </label>
+        {loading && (
+          <span className="text-[10px] text-muted-foreground">
+            {t('playground.pseudonymLoading')}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        {t('playground.pseudonymMapDesc')}
+      </p>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">{t('playground.pseudonymNoEntities')}</p>
+      ) : (
+        <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+          {rows.map(([text, info]) => {
+            const conflicted = conflicts.has(text);
+            return (
+              <div
+                key={text}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-lg border px-2 py-1.5',
+                  conflicted
+                    ? 'border-[var(--warning)]/60 bg-[var(--warning)]/5'
+                    : 'border-border/70 bg-background',
+                )}
+                data-testid={`pseudonym-row-${text}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground" title={text}>
+                    {text}
+                  </p>
+                  <p className="truncate text-[10px] text-muted-foreground">
+                    {typeNameById.get(info.type) ?? info.type} × {info.count}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">→</span>
+                <Input
+                  value={pseudonymMap[text] ?? ''}
+                  onChange={(event) => onPseudonymChange(text, event.target.value)}
+                  placeholder={t('playground.pseudonymInputPlaceholder')}
+                  className="h-8 w-28 shrink-0 text-xs"
+                  data-testid={`pseudonym-input-${text}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {conflictList.length > 0 && (
+        <p
+          className="text-[11px] leading-4 text-[var(--warning)]"
+          data-testid="playground-pseudonym-conflict"
+        >
+          {t('playground.pseudonymConflictWarning').replace('{count}', String(conflictList.length))}
+        </p>
+      )}
+      <p className="truncate text-[11px] text-muted-foreground">
+        {getModePreview('pseudonym', sampleEntity, pseudonymMap)}
       </p>
     </div>
   );
@@ -437,9 +606,7 @@ const BoxList: FC<{
                 <Badge variant="secondary">
                   {typeNameById.get(box.type) ?? getEntityTypeName(box.type)}
                 </Badge>
-                <Badge variant="outline">
-                  {sourceLabel}
-                </Badge>
+                <Badge variant="outline">{sourceLabel}</Badge>
               </div>
               <p className="truncate text-sm text-foreground">
                 {box.text || t('playground.imageRegion')}
@@ -503,12 +670,7 @@ const EntityRow: FC<{
         }}
         aria-label={t('playground.removeAnnotation')}
       >
-        <svg
-          className="size-3.5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -533,7 +695,9 @@ const EntityList: FC<{
     return <EmptyDetectionState mode="text" />;
   }
 
-  const groupedTypeIds = new Set(ENTITY_GROUPS.flatMap((group) => group.types.map((type) => type.id)));
+  const groupedTypeIds = new Set(
+    ENTITY_GROUPS.flatMap((group) => group.types.map((type) => type.id)),
+  );
   const customEntities = entities.filter((entity) => !groupedTypeIds.has(entity.type));
 
   return (

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """E2E 脱敏链路测试 —— 纯 API 驱动, 不经前端。在实例上用 ~/.venvs/app/bin/python 运行。"""
 import io
+import os
 import json
 import sys
 

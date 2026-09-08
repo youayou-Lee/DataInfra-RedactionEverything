@@ -62,6 +62,9 @@ class TextRedactorMixin:
         if trace_enabled and trace_path:
             self._init_docx_font_trace(trace_path, input_path, output_path, replacements)
 
+        # 存元素引用而非 id()：lxml 代理对象无引用时会被回收，同节点再遍历
+        # 会分配新代理导致 id 对不上；保引用可保证 pass2 拿到同一代理对象
+        processed_elements: set = set()
         for para_idx, para in enumerate(self._iter_all_paragraphs(doc)):
             redacted_count += self._replace_in_paragraph(
                 para,
@@ -70,13 +73,32 @@ class TextRedactorMixin:
                 trace_enabled=trace_enabled,
                 trace_path=trace_path,
             )
+            # 追踪修订「已删除」文本不进 python-docx 的 runs，单独处理
+            redacted_count += self._replace_in_docx_xml_paragraph(
+                para._p, replacements, node_query=".//w:delText"
+            )
+            processed_elements.add(para._p)
 
-        redacted_count += self._replace_in_docx_xml_parts(doc, replacements)
+        redacted_count += self._replace_in_docx_xml_parts(
+            doc, replacements, skip_elements=processed_elements
+        )
         doc.save(output_path)
         return redacted_count
 
-    def _replace_in_docx_xml_parts(self, doc: Document, replacements: dict[str, str]) -> int:
-        """Replace text in DOCX XML parts not exposed by python-docx objects."""
+    def _replace_in_docx_xml_parts(
+        self,
+        doc: Document,
+        replacements: dict[str, str],
+        skip_elements: set | None = None,
+    ) -> int:
+        """Replace text in DOCX XML parts.
+
+        pass1（python-docx 对象）只覆盖正文顶层/表格单元格/默认页眉页脚；
+        本趟按 XML 全量扫（文本框、嵌套表格、SDT、首页/奇偶页眉页脚、
+        批注/脚注/尾注都在内），跳过 pass1 已处理过的段落元素——
+        重复处理会在替换词恰为另一实体原文时改写刚写入的替换词。
+        """
+        skip = skip_elements or set()
         if not replacements:
             return 0
         target_content_types = {
@@ -101,14 +123,19 @@ class TextRedactorMixin:
                 continue
             part_replaced_count = 0
             for paragraph in self._docx_xpath(root, ".//w:p"):
+                if paragraph in skip:
+                    continue
                 part_replaced_count += self._replace_in_docx_xml_paragraph(paragraph, replacements)
             if part_replaced_count and getattr(part, "element", None) is None:
                 part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
             replaced_count += part_replaced_count
         return replaced_count
 
-    def _replace_in_docx_xml_paragraph(self, paragraph, replacements: dict[str, str]) -> int:
-        text_nodes = list(self._docx_xpath(paragraph, ".//w:t"))
+    def _replace_in_docx_xml_paragraph(
+        self, paragraph, replacements: dict[str, str], node_query: str = ".//w:t | .//w:delText"
+    ) -> int:
+        # w:delText 是追踪修订「已删除」的内容，仍留在文档修订历史里，同样是敏感源
+        text_nodes = list(self._docx_xpath(paragraph, node_query))
         if not text_nodes:
             return 0
         full_text = "".join(node.text or "" for node in text_nodes)

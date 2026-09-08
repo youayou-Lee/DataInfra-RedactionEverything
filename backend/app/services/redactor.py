@@ -7,7 +7,11 @@
 """
 import logging
 import os
+import re
 import uuid
+
+import fitz
+from docx import Document
 from typing import Any
 
 from app.core.config import settings
@@ -168,12 +172,82 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             except Exception:
                 logger.warning("watermark failed for %s", output_path, exc_info=True)
 
+        # 导出后自检：成品全文中不应再出现任何被替换实体的原文
+        residual_entities: list[str] = []
+        verify_types = [FileType.PDF, FileType.DOCX, FileType.DOC, FileType.TXT]
+        if file_type in verify_types and os.path.exists(output_path):
+            residual_entities = self._verify_export_residuals(
+                output_path, context.entity_map, file_type
+            )
+            if residual_entities:
+                logger.warning(
+                    "[export-verify] %d entities still present in output %s: %s",
+                    len(residual_entities), output_path, residual_entities[:10],
+                )
+
         return {
             "output_file_id": output_file_id,
             "output_path": output_path,
             "redacted_count": redacted_count,
             "entity_map": context.entity_map,
+            "residual_entities": residual_entities,
         }
+
+    def _verify_export_residuals(
+        self, output_path: str, entity_map: dict[str, str], file_type: FileType
+    ) -> list[str]:
+        """导出后自检：提取成品全文，返回仍残留原文的实体列表。
+
+        只做文本层校验（PDF 图像遮挡不在本契约内）；残留仅告警不阻断交付。
+        """
+        try:
+            text = self._extract_output_text(output_path, file_type)
+        except Exception:
+            logger.error("[export-verify] output text extraction FAILED, check inconclusive: %s",
+                         output_path, exc_info=True)
+            return []
+        if not text:
+            logger.error("[export-verify] empty output text, check inconclusive: %s", output_path)
+            return []
+        residuals = []
+        for orig in entity_map:
+            if not orig:
+                continue
+            if orig.isascii():
+                # 短 ASCII 实体做词边界匹配，避免 "Li"/"No." 命中无关单词
+                if re.search(rf"(?<![0-9A-Za-z]){re.escape(orig)}(?![0-9A-Za-z])", text):
+                    residuals.append(orig)
+            elif orig in text:
+                residuals.append(orig)
+        return residuals
+
+    def _extract_output_text(self, output_path: str, file_type: FileType) -> str:
+        if file_type == FileType.PDF:
+            doc = fitz.open(output_path)
+            try:
+                return "\n".join(page.get_text() for page in doc)
+            finally:
+                doc.close()
+        if file_type in [FileType.DOCX, FileType.DOC]:
+            # 直接读包内全部 word/*.xml 的文本节点：覆盖正文/页眉页脚/批注/
+            # 脚注尾注/文本框/修订历史（w:delText），比对象模型更全，
+            # 自检必须不弱于改写器的覆盖面
+            import zipfile
+            from lxml import etree as _etree
+
+            parts_text = []
+            with zipfile.ZipFile(output_path) as zf:
+                for name in zf.namelist():
+                    if name.startswith("word/") and name.endswith(".xml"):
+                        try:
+                            root = _etree.fromstring(zf.read(name))
+                        except _etree.XMLSyntaxError:
+                            continue
+                        parts_text.extend(t for t in root.itertext() if t)
+            return "\n".join(parts_text)
+        # TXT / MD / HTML / RTF
+        with open(output_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
 
     async def _convert_doc_to_docx(self, file_path: str) -> str | None:
         """将 .doc 转换为 .docx（复用 FileParser 逻辑）"""

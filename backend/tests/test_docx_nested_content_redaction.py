@@ -151,3 +151,53 @@ async def test_entity_spanning_run_and_hyperlink_redacted(_dirs):
     assert "振柏" not in xml, "超链接内半个实体残留"
     assert "甲某" in xml
     assert result["residual_entities"] == []
+
+
+@pytest.mark.asyncio
+async def test_mixed_paragraph_cross_key_no_wrong_pseudonym(_dirs):
+    """混合段落（run 键 + 跨界键并存）：张三→李四、李四→王五 且李四跨界。
+    run/union 分流若两趟先后跑，union 趟会把 run 趟刚写入的「李四」再改成
+    王五（错误化名）；混合段落必须单趟完成。"""
+    up, _ = _dirs
+    src = up / "mixed.docx"
+    doc = Document()
+    doc.add_paragraph("无关段落")
+    buf = BytesIO(); doc.save(buf)
+    zin = zipfile.ZipFile(BytesIO(buf.getvalue()))
+    root = et.fromstring(zin.read("word/document.xml"))
+    body = root.find(f"{{{W}}}body")
+    p = et.SubElement(body, f"{{{W}}}p")
+    r = et.SubElement(p, f"{{{W}}}r")
+    et.SubElement(r, f"{{{W}}}t").text = "张三与李"
+    hl = et.SubElement(p, f"{{{W}}}hyperlink")
+    hr = et.SubElement(hl, f"{{{W}}}r")
+    et.SubElement(hr, f"{{{W}}}t").text = "四同行"
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for item in zin.infolist():
+            data = (et.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+                    if item.filename == "word/document.xml" else zin.read(item.filename))
+            z.writestr(item, data)
+    with open(src, "wb") as f:
+        f.write(out.getvalue())
+
+    entities = [
+        Entity(id="e1", text="张三", type="PERSON", start=0, end=2, page=1, selected=True),
+        Entity(id="e2", text="李四", type="PERSON", start=0, end=2, page=1, selected=True),
+    ]
+    cfg = RedactionConfig(
+        replacement_mode="custom",
+        custom_replacements={"张三": "李四", "李四": "王五"},
+    )
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "docx"},
+        entities=entities, bounding_boxes=[], config=cfg,
+    )
+    with zipfile.ZipFile(result["output_path"]) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    assert "张三" not in xml
+    # 正确结果：张三→李四、李四→王五（不是全部变王五）
+    assert xml.count("王五") == 1 and xml.count("李四") == 1, \
+        f"跨键串词: 李四出现{xml.count('李四')}次 王五出现{xml.count('王五')}次"
+    # 李四作为张三的替换词出现在成品中，自检按词池回灌语义如实告警
+    assert result["residual_entities"] == ["李四"]

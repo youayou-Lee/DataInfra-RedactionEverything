@@ -71,7 +71,14 @@ class TextRedactorMixin:
             # 跨「直接 run ↔ 嵌套节点」边界的键走整段 XML 替换。两趟键集
             # 不相交，避免 run 级写入的替换词被第二趟当原文再改写。
             run_keys, union_keys = self._split_paragraph_replacement_keys(para, replacements)
-            if run_keys:
+            if run_keys and union_keys:
+                # 混合段落整体走单一 XML 趟：run 趟先写入的替换值若与 union
+                # 键的原文相同（词池回灌），union 趟会在跑完 run 趟后的文本上
+                # 把它再改写一次（错误化名）。单趟非重叠匹配无此问题
+                redacted_count += self._replace_in_docx_xml_paragraph(
+                    para._p, {**run_keys, **union_keys}
+                )
+            elif run_keys:
                 redacted_count += self._replace_in_paragraph(
                     para,
                     run_keys,
@@ -79,7 +86,7 @@ class TextRedactorMixin:
                     trace_enabled=trace_enabled,
                     trace_path=trace_path,
                 )
-            if union_keys:
+            elif union_keys:
                 redacted_count += self._replace_in_docx_xml_paragraph(para._p, union_keys)
             processed_elements.add(para._p)
 

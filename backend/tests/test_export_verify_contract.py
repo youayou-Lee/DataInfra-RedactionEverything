@@ -97,5 +97,60 @@ async def test_residual_detection_contract(_dirs):
         entities=entities, bounding_boxes=[],
         config=RedactionConfig(replacement_mode="pseudonym", word_pools=pools),
     )
-    assert result["entity_map"] == {"张三": "赵某1", "李四": "张三"} or result["entity_map"].get("李四") == "张三"
+    assert result["entity_map"].get("李四") == "张三"
     assert "张三" in result["residual_entities"], "自检未发现成品中的原文残留"
+
+
+@pytest.mark.asyncio
+async def test_docx_textbox_and_nested_table_redacted(_dirs):
+    """文本框（w:txbxContent）与嵌套表格由 XML 全量趟覆盖，不因 pass1 盲区漏脱敏。"""
+    up, out = _dirs
+    src = up / "t3.docx"
+    doc = Document()
+    doc.add_paragraph("正文：陈明飞")
+    outer = doc.add_table(rows=1, cols=1)
+    cell = outer.rows[0].cells[0]
+    cell.text = "外层单元格"
+    inner = cell.add_table(rows=1, cols=1)
+    inner.rows[0].cells[0].text = "嵌套表格：范治勋"
+    # 文本框：直接往 document.xml 注入 w:txbxContent
+    buf = BytesIO(); doc.save(buf)
+    import zipfile as zf
+    from lxml import etree as et
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    raw = zf.ZipFile(BytesIO(buf.getvalue())).read("word/document.xml")
+    root = et.fromstring(raw)
+    body = root.find(f"{{{W}}}body")
+    p = et.SubElement(body, f"{{{W}}}p")
+    r = et.SubElement(p, f"{{{W}}}r")
+    txbx = et.SubElement(r, f"{{{W}}}txbxContent")  # 简化：直接挂 txbxContent
+    tp = et.SubElement(txbx, f"{{{W}}}p")
+    tr = et.SubElement(tp, f"{{{W}}}r")
+    et.SubElement(tr, f"{{{W}}}t").text = "文本框：吴京承"
+    outbuf = BytesIO()
+    with zf.ZipFile(outbuf, "w") as z:
+        for item in zf.ZipFile(BytesIO(buf.getvalue())).infolist():
+            data = (et.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+                    if item.filename == "word/document.xml"
+                    else zf.ZipFile(BytesIO(buf.getvalue())).read(item.filename))
+            z.writestr(item, data)
+    with open(src, "wb") as f:
+        f.write(outbuf.getvalue())
+
+    entities = [
+        Entity(id="e1", text="陈明飞", type="PERSON", start=0, end=3, page=1, selected=True),
+        Entity(id="e2", text="范治勋", type="PERSON", start=0, end=3, page=1, selected=True),
+        Entity(id="e3", text="吴京承", type="PERSON", start=0, end=3, page=1, selected=True),
+    ]
+    pools = {"PERSON": {"words": ["甲某", "乙某", "丙某"], "strategy": "numbered", "custom_map": {}}}
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "docx"},
+        entities=entities, bounding_boxes=[],
+        config=RedactionConfig(replacement_mode="pseudonym", word_pools=pools),
+    )
+    with zipfile.ZipFile(result["output_path"]) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    assert "陈明飞" not in xml and "范治勋" not in xml and "吴京承" not in xml, \
+        "文本框/嵌套表格实体残留"
+    assert "甲某" in xml and "乙某" in xml and "丙某" in xml
+    assert result["residual_entities"] == []

@@ -7,6 +7,7 @@
 """
 import logging
 import os
+import re
 import uuid
 
 import fitz
@@ -173,7 +174,8 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
 
         # 导出后自检：成品全文中不应再出现任何被替换实体的原文
         residual_entities: list[str] = []
-        if file_type in [FileType.PDF, FileType.DOCX, FileType.TXT] and os.path.exists(output_path):
+        verify_types = [FileType.PDF, FileType.DOCX, FileType.DOC, FileType.TXT]
+        if file_type in verify_types and os.path.exists(output_path):
             residual_entities = self._verify_export_residuals(
                 output_path, context.entity_map, file_type
             )
@@ -201,11 +203,23 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         try:
             text = self._extract_output_text(output_path, file_type)
         except Exception:
-            logger.warning("[export-verify] output text extraction failed: %s", output_path, exc_info=True)
+            logger.error("[export-verify] output text extraction FAILED, check inconclusive: %s",
+                         output_path, exc_info=True)
             return []
         if not text:
+            logger.error("[export-verify] empty output text, check inconclusive: %s", output_path)
             return []
-        return [orig for orig in entity_map if orig and orig in text]
+        residuals = []
+        for orig in entity_map:
+            if not orig:
+                continue
+            if orig.isascii():
+                # 短 ASCII 实体做词边界匹配，避免 "Li"/"No." 命中无关单词
+                if re.search(rf"(?<![0-9A-Za-z]){re.escape(orig)}(?![0-9A-Za-z])", text):
+                    residuals.append(orig)
+            elif orig in text:
+                residuals.append(orig)
+        return residuals
 
     def _extract_output_text(self, output_path: str, file_type: FileType) -> str:
         if file_type == FileType.PDF:
@@ -214,9 +228,23 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 return "\n".join(page.get_text() for page in doc)
             finally:
                 doc.close()
-        if file_type == FileType.DOCX:
-            doc = Document(output_path)
-            return "\n".join(p.text for p in self._iter_all_paragraphs(doc))
+        if file_type in [FileType.DOCX, FileType.DOC]:
+            # 直接读包内全部 word/*.xml 的文本节点：覆盖正文/页眉页脚/批注/
+            # 脚注尾注/文本框/修订历史（w:delText），比对象模型更全，
+            # 自检必须不弱于改写器的覆盖面
+            import zipfile
+            from lxml import etree as _etree
+
+            parts_text = []
+            with zipfile.ZipFile(output_path) as zf:
+                for name in zf.namelist():
+                    if name.startswith("word/") and name.endswith(".xml"):
+                        try:
+                            root = _etree.fromstring(zf.read(name))
+                        except _etree.XMLSyntaxError:
+                            continue
+                        parts_text.extend(t for t in root.itertext() if t)
+            return "\n".join(parts_text)
         # TXT / MD / HTML / RTF
         with open(output_path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()

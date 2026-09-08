@@ -62,6 +62,9 @@ class TextRedactorMixin:
         if trace_enabled and trace_path:
             self._init_docx_font_trace(trace_path, input_path, output_path, replacements)
 
+        # 存元素引用而非 id()：lxml 代理对象无引用时会被回收，同节点再遍历
+        # 会分配新代理导致 id 对不上；保引用可保证 pass2 拿到同一代理对象
+        processed_elements: set = set()
         for para_idx, para in enumerate(self._iter_all_paragraphs(doc)):
             redacted_count += self._replace_in_paragraph(
                 para,
@@ -74,20 +77,34 @@ class TextRedactorMixin:
             redacted_count += self._replace_in_docx_xml_paragraph(
                 para._p, replacements, node_query=".//w:delText"
             )
+            processed_elements.add(para._p)
 
-        redacted_count += self._replace_in_docx_xml_parts(doc, replacements)
+        redacted_count += self._replace_in_docx_xml_parts(
+            doc, replacements, skip_elements=processed_elements
+        )
         doc.save(output_path)
         return redacted_count
 
-    def _replace_in_docx_xml_parts(self, doc: Document, replacements: dict[str, str]) -> int:
-        """Replace text in DOCX XML parts not exposed by python-docx objects."""
+    def _replace_in_docx_xml_parts(
+        self,
+        doc: Document,
+        replacements: dict[str, str],
+        skip_elements: set | None = None,
+    ) -> int:
+        """Replace text in DOCX XML parts.
+
+        pass1（python-docx 对象）只覆盖正文顶层/表格单元格/默认页眉页脚；
+        本趟按 XML 全量扫（文本框、嵌套表格、SDT、首页/奇偶页眉页脚、
+        批注/脚注/尾注都在内），跳过 pass1 已处理过的段落元素——
+        重复处理会在替换词恰为另一实体原文时改写刚写入的替换词。
+        """
+        skip = skip_elements or set()
         if not replacements:
             return 0
-        # 正文/页眉/页脚已由 _iter_all_paragraphs 替换过；这里只处理
-        # python-docx 对象模型覆盖不到的部件（批注/脚注/尾注）。
-        # 不能重复处理正文：若某实体的替换词恰为另一实体原文（词池回灌），
-        # 第二趟会把刚写入的替换词再替换掉。
         target_content_types = {
+            CT.WML_DOCUMENT_MAIN,
+            CT.WML_HEADER,
+            CT.WML_FOOTER,
             CT.WML_COMMENTS,
             CT.WML_FOOTNOTES,
             CT.WML_ENDNOTES,
@@ -106,6 +123,8 @@ class TextRedactorMixin:
                 continue
             part_replaced_count = 0
             for paragraph in self._docx_xpath(root, ".//w:p"):
+                if paragraph in skip:
+                    continue
                 part_replaced_count += self._replace_in_docx_xml_paragraph(paragraph, replacements)
             if part_replaced_count and getattr(part, "element", None) is None:
                 part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)

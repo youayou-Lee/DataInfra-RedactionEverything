@@ -62,12 +62,14 @@ class FileParser:
 
     # 判断 PDF 是否为扫描件的文本密度阈值
     TEXT_DENSITY_THRESHOLD = 100  # 每页至少 100 个字符才认为是文本 PDF
-    # 整页图片覆盖率达到该值时，视为扫描页（扫描件常内嵌一层低质量 OCR 文本叠在整页图片上）
+    # 整页图片覆盖率达到该值时，视为扫描页（扫描件常内嵌一层低质量 OCR 文本叠在整页图片上）。
+    # 注意取舍：带整页背景图的文本型 PDF（导出的演示文稿、信纸模板）会被误判走图像 OCR——
+    # 但图像 OCR 对这类文件仍能正确识别，代价只是变慢；反向漏判（扫描件走文本层）才是漏脱敏。
     SCAN_PAGE_IMAGE_COVER_RATIO = 0.9
     # 扫描页占比达到该值时，整份 PDF 按扫描件处理
     SCAN_PAGE_MAJORITY_RATIO = 0.5
-    # 文本层碎片化（断行严重）判定：中位平均行长过短且超短行占比过高
-    SCAN_TEXT_LAYER_MIN_MEDIAN_LINE_LEN = 12
+    # 文本层碎片化（断行严重）判定：平均行长过短且超短行占比过高
+    SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN = 12
     SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO = 0.3
 
     _pdf_page_image_cache: OrderedDict[tuple[str, int, int, int, int], bytes] = OrderedDict()
@@ -395,7 +397,7 @@ class FileParser:
             total_chars += len(text.strip())
             if self._is_scanned_page(page):
                 scanned_page_count += 1
-            elif self._has_fragmented_text_layer(text):
+            elif self.has_fragmented_text_layer(text):
                 fragmented_page_count += 1
 
         doc.close()
@@ -442,7 +444,7 @@ class FileParser:
         return False
 
     @staticmethod
-    def _has_fragmented_text_layer(text: str) -> bool:
+    def has_fragmented_text_layer(text: str) -> bool:
         """文本层是否碎片化（断行、乱序、字段错位），是低质量 OCR 文本层的典型特征。"""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if len(lines) < 5:
@@ -450,7 +452,7 @@ class FileParser:
         avg_line_len = sum(len(line) for line in lines) / len(lines)
         short_line_ratio = sum(1 for line in lines if len(line) <= 2) / len(lines)
         return (
-            avg_line_len < FileParser.SCAN_TEXT_LAYER_MIN_MEDIAN_LINE_LEN
+            avg_line_len < FileParser.SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN
             and short_line_ratio > FileParser.SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO
         )
 

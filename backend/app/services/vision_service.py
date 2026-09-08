@@ -164,7 +164,7 @@ async def prime_pdf_text_layer_sparse_probe(
         min_chars = int(settings.PDF_TEXT_LAYER_MIN_CHARS)
         layer_text = "\n".join(str(block.text or "") for block in blocks)
         scan_page = await parser.is_pdf_page_scanned(file_path, page) or (
-            parser._has_fragmented_text_layer(layer_text)
+            parser.has_fragmented_text_layer(layer_text)
         )
         if scan_page:
             stats["scan_page"] = True
@@ -1506,7 +1506,7 @@ class VisionService:
         # 字段错位），字符数再多也不能用于识别，必须回退图像 OCR。
         layer_text = "\n".join(str(block.text or "") for block in blocks)
         if await self.file_parser.is_pdf_page_scanned(file_path, page) or (
-            self.file_parser._has_fragmented_text_layer(layer_text)
+            self.file_parser.has_fragmented_text_layer(layer_text)
         ):
             self.last_pdf_text_layer_stats["scan_page"] = True
             raise ValueError(

@@ -66,9 +66,9 @@ async def test_scanned_pdf_with_ocr_layer_classified_as_scanned(tmp_path: Path) 
 
 def test_fragmented_text_layer_detected() -> None:
     broken = "\n".join(["顺", "序", "号", "文 件", "001", "报警", "回执", "002"])
-    assert FileParser._has_fragmented_text_layer(broken)
+    assert FileParser.has_fragmented_text_layer(broken)
     normal = "这是一段正常排版的文本行，长度足够长，不会被判为碎片化文本层。" * 3
-    assert not FileParser._has_fragmented_text_layer(normal)
+    assert not FileParser.has_fragmented_text_layer(normal)
 
 
 @pytest.mark.asyncio
@@ -82,6 +82,7 @@ async def test_prime_probe_marks_scanned_page_and_skips_layer(tmp_path: Path) ->
 
     p = tmp_path / "scanned.pdf"
     _make_scanned_pdf_with_ocr_layer(p)
+    _PDF_TEXT_LAYER_SPARSE_COUNTS.clear()
 
     stats = await prime_pdf_text_layer_sparse_probe(str(p), FileType.PDF_SCANNED)
     assert stats["ran"] is True

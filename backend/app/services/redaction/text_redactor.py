@@ -73,9 +73,17 @@ class TextRedactorMixin:
                 trace_enabled=trace_enabled,
                 trace_path=trace_path,
             )
-            # 追踪修订「已删除」文本不进 python-docx 的 runs，单独处理
+            # python-docx 的 runs 只含直接子 w:r；修订插入(w:ins)、超链接、
+            # smartTag 内的 w:t，修订删除(w:delText)与域代码(w:instrText)
+            # 都不进 runs，这里按 XML 节点补齐，防止整段被标记已处理后漏脱敏
             redacted_count += self._replace_in_docx_xml_paragraph(
-                para._p, replacements, node_query=".//w:delText"
+                para._p,
+                replacements,
+                node_query=(
+                    ".//w:delText | .//w:instrText"
+                    " | .//w:hyperlink//w:t | .//w:ins//w:t"
+                    " | .//w:smartTag//w:t"
+                ),
             )
             processed_elements.add(para._p)
 

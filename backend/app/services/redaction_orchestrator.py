@@ -18,6 +18,7 @@ from typing import Any
 
 from app.core.persistence import to_jsonable
 from app.core.visual_feature_categories import has_only_ocr_fallback_visual_slugs
+from app.models.common import ReplacementMode
 from app.models.schemas import (
     BoundingBox,
     CompareData,
@@ -208,6 +209,7 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 
     file_info = file_store[file_id]
 
+    _attach_word_pools(request.config, str(file_info.get("owner_id") or "local_user"))
     redactor = Redactor()
     result = await redactor.redact(
         file_info=file_info,
@@ -267,8 +269,18 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 # Preview
 # ---------------------------------------------------------------------------
 
+def _attach_word_pools(config: RedactionConfig, owner_id: str) -> None:
+    """化名模式按租户填充词池；调用方显式传入的 word_pools 优先。"""
+    if config.replacement_mode != ReplacementMode.PSEUDONYM or config.word_pools:
+        return
+    from app.services import word_pool_service
+
+    config.word_pools = word_pool_service.load_word_pools(owner_id=owner_id)
+
+
 def preview_entity_map(entities: list, config: RedactionConfig) -> PreviewEntityMapResponse:
     """Build preview entity_map without writing files."""
+    _attach_word_pools(config, "local_user")
     em = build_preview_entity_map(entities, config)
     return PreviewEntityMapResponse(entity_map=em)
 

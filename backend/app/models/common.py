@@ -114,6 +114,7 @@ class ReplacementMode(str, Enum):
     MASK = "mask"        # 掩码替换 (***)
     CUSTOM = "custom"    # 自定义替换
     STRUCTURED = "structured"  # 结构化语义标签
+    PSEUDONYM = "pseudonym"  # 化名替换：同类型虚构词（词池可配置）
 
 
 # ============ 通用响应 ============

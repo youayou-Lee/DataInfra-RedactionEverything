@@ -50,6 +50,8 @@ class RedactionConfig(BaseModel):
         default="#000000",
         description="Fill color for fill mode (#RRGGBB).",
     )
+    # 化名模式词池（由服务端按租户填充，前端/调用方无需传）：{type_id: {words, strategy, custom_map}}
+    word_pools: dict[str, dict] | None = Field(default=None)
     watermark_text: str | None = Field(
         default=None,
         max_length=64,

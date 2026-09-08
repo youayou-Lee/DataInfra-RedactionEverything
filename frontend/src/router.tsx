@@ -54,6 +54,9 @@ const Settings = React.lazy(() =>
 const RedactionListSettings = React.lazy(() =>
   import('./features/settings').then((m) => ({ default: m.RedactionListSettings })),
 );
+const WordPoolsSettings = React.lazy(() =>
+  import('./features/settings').then((m) => ({ default: m.WordPoolsSettings })),
+);
 const SystemSettings = React.lazy(() =>
   import('./features/settings').then((m) => ({ default: m.SystemSettings })),
 );
@@ -360,6 +363,14 @@ export const router = createBrowserRouter([
         element: (
           <LazyPage>
             <RedactionListSettings />
+          </LazyPage>
+        ),
+      },
+      {
+        path: 'settings/word-pools',
+        element: (
+          <LazyPage>
+            <WordPoolsSettings />
           </LazyPage>
         ),
       },

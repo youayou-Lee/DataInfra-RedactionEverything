@@ -2,7 +2,7 @@
 
 import { get, post, put, del } from './api-client';
 
-export type ReplacementMode = 'structured' | 'smart' | 'mask';
+export type ReplacementMode = 'structured' | 'smart' | 'mask' | 'pseudonym';
 
 export type PresetKind = 'text' | 'vision' | 'full';
 

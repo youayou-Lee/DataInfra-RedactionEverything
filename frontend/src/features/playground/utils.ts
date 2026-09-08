@@ -42,6 +42,8 @@ export function getModePreview(mode: string, sampleEntity?: Entity) {
       return `${name} -> ${name[0]}${'*'.repeat(Math.max(name.length - 1, 1))}`;
     case 'structured':
       return `${name} -> <${t('editor.sampleStructured')}>`;
+    case 'pseudonym':
+      return `${name} -> ${t('editor.samplePseudonym')}`;
     default:
       return '';
   }

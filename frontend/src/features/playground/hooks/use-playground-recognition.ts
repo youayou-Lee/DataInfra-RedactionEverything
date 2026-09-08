@@ -143,9 +143,9 @@ export function usePlaygroundRecognition() {
   const selectedVisualFeatureTypesRef = useRef(selectedVisualFeatureTypes);
   const [pipelines, setPipelines] = useState<PipelineConfig[]>(cachedPipelines);
   const [typeTab, setTypeTab] = useState<'text' | 'vision'>('text');
-  const [replacementMode, setReplacementMode] = useState<'structured' | 'smart' | 'mask'>(
-    'structured',
-  );
+  const [replacementMode, setReplacementMode] = useState<
+    'structured' | 'smart' | 'mask' | 'pseudonym'
+  >('structured');
   // 成品水印文案（W2-1）：只作用于最终执行输出，预览不加
   const [watermarkText, setWatermarkText] = useState('');
   const [playgroundPresets, setPlaygroundPresets] = useState<RecognitionPreset[]>([]);

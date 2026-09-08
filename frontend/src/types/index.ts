@@ -25,6 +25,7 @@ export enum ReplacementMode {
   SMART = 'smart',
   MASK = 'mask',
   STRUCTURED = 'structured',
+  PSEUDONYM = 'pseudonym',
 }
 
 export interface FileInfo {

@@ -36,8 +36,8 @@ export interface PlaygroundEntityPanelProps {
   displaySelectedCount?: number;
   displayTotalCount?: number;
   displayStats?: Record<string, { total: number; selected: number }>;
-  replacementMode: 'structured' | 'smart' | 'mask';
-  setReplacementMode: (mode: 'structured' | 'smart' | 'mask') => void;
+  replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
+  setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
@@ -301,15 +301,20 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
 
 const ReplacementModeSelector: FC<{
   entities: Entity[];
-  mode: 'structured' | 'smart' | 'mask';
-  onModeChange: (mode: 'structured' | 'smart' | 'mask') => void;
+  mode: 'structured' | 'smart' | 'mask' | 'pseudonym';
+  onModeChange: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
 }> = ({ entities, mode, onModeChange }) => {
   const t = useT();
   const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
-  const modes: { value: 'structured' | 'smart' | 'mask'; label: string; badge?: string }[] = [
+  const modes: {
+    value: 'structured' | 'smart' | 'mask' | 'pseudonym';
+    label: string;
+    badge?: string;
+  }[] = [
     { value: 'structured', label: t('mode.structured'), badge: t('playground.recommended') },
     { value: 'smart', label: t('mode.smart') },
     { value: 'mask', label: t('mode.mask') },
+    { value: 'pseudonym', label: t('mode.pseudonym') },
   ];
 
   return (
@@ -317,7 +322,7 @@ const ReplacementModeSelector: FC<{
       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {t('playground.redactMode')}
       </label>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         {modes.map((item) => (
           <label
             key={item.value}

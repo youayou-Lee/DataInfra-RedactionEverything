@@ -94,6 +94,7 @@ function BatchStep1PresetCardsInner({
     { key: 'structured', label: t('batchWizard.step1.textModeBulletStructured') },
     { key: 'smart', label: t('batchWizard.step1.textModeBulletSmart') },
     { key: 'mask', label: t('batchWizard.step1.textModeBulletMask') },
+    { key: 'pseudonym', label: t('batchWizard.step1.textModeBulletPseudonym') },
   ];
 
   return (
@@ -197,7 +198,7 @@ function BatchStep1PresetCardsInner({
                 <Select
                   disabled={disabled}
                   value={textRedactionMode}
-                  onValueChange={(value: 'structured' | 'smart' | 'mask') =>
+                  onValueChange={(value: 'structured' | 'smart' | 'mask' | 'pseudonym') =>
                     setCfg((current) => ({ ...current, replacementMode: value }))
                   }
                 >
@@ -210,8 +211,22 @@ function BatchStep1PresetCardsInner({
                     </SelectItem>
                     <SelectItem value="smart">{t('batchWizard.step1.textMethodSmart')}</SelectItem>
                     <SelectItem value="mask">{t('batchWizard.step1.textMethodMask')}</SelectItem>
+                    <SelectItem value="pseudonym">
+                      {t('batchWizard.step1.textMethodPseudonym')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                {textRedactionMode === 'pseudonym' && (
+                  <a
+                    href="/settings/word-pools"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                    data-testid="word-pool-settings-link"
+                  >
+                    {t('batchWizard.step1.wordPoolLink')}
+                  </a>
+                )}
                 <ul className="mt-1.5 space-y-1 overflow-hidden">
                   {textModeBullets.map((bullet) => (
                     <li
@@ -274,7 +289,9 @@ function BatchStep1PresetCardsInner({
                 <div className="rounded-lg border border-border/70 !bg-white px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
                   <p>{defaultVisionSummary}</p>
                   {defaultVisionExcludedSummary ? (
-                    <p className="mt-1 text-[var(--warning-foreground)]">{defaultVisionExcludedSummary}</p>
+                    <p className="mt-1 text-[var(--warning-foreground)]">
+                      {defaultVisionExcludedSummary}
+                    </p>
                   ) : null}
                 </div>
               )}

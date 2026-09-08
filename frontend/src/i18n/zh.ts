@@ -90,6 +90,8 @@ const zhBase: Record<string, string> = {
   'mode.smart': '智能替换',
   'mode.mask': '掩码替换',
   'mode.structured': '结构化标签',
+  'mode.pseudonym': '化名替换',
+  'editor.samplePseudonym': '化名甲',
 
   'job.status.draft': '草稿',
   'job.status.queued': '排队中',
@@ -719,6 +721,46 @@ const zhBase: Record<string, string> = {
     '图像识别超时（超过 3 分钟）。可换更小图片，或检查视觉特征服务（GLM-4.6V/vLLM）是否正常、显存是否充足。',
   'error.visionDetectionFailed': '图像识别失败',
   'error.reRecognizeFailed': '重新识别失败',
+
+  'nav.wordPools': '替换词池',
+  'nav.wordPools.sub': '化名替换模式词池',
+
+  'batchWizard.step1.textMethodPseudonym': '化名替换',
+  'batchWizard.step1.textModeBulletPseudonym':
+    '化名替换 - 用词池中的虚构词替换原文，保持文档可读性',
+  'batchWizard.step1.wordPoolLink': '配置替换词池 →',
+
+  'wordPools.title': '替换词池配置',
+  'wordPools.desc':
+    '为化名替换模式维护各实体类型的替换词池。命中 custom_map 的原文按精确映射替换；其余按词池顺序取词，耗尽后按所选策略继续。',
+  'wordPools.loadFailed': '词池加载失败',
+  'wordPools.empty': '暂无词池数据',
+  'wordPools.words': '替换词池（每行一个）',
+  'wordPools.wordsPlaceholder': '每行一个替换词，如：张三丰',
+  'wordPools.strategy': '耗尽策略',
+  'wordPools.strategy_numbered': '顺序编号（词1、词2…）',
+  'wordPools.strategy_cycle': '循环复用',
+  'wordPools.strategy_generated': '自动生成',
+  'wordPools.customMap': '精确映射（原词 → 替换词）',
+  'wordPools.customMapOrig': '原词',
+  'wordPools.customMapRepl': '替换词',
+  'wordPools.customMapAdd': '添加映射',
+  'wordPools.customMapRemove': '删除该映射',
+  'wordPools.save': '保存',
+  'wordPools.saving': '保存中…',
+  'wordPools.saved': '词池已保存',
+  'wordPools.saveFailed': '词池保存失败',
+  'wordPools.reset': '恢复默认',
+  'wordPools.resetDone': '已恢复默认词池',
+  'wordPools.resetFailed': '恢复默认失败',
+  'wordPools.export': '导出',
+  'wordPools.exportFailed': '导出失败',
+  'wordPools.import': '导入',
+  'wordPools.importReplace': '导入时整体替换',
+  'wordPools.importDone': '已导入 {count} 个词池',
+  'wordPools.importInvalid': '导入文件格式无效',
+  'wordPools.importFailed': '导入失败',
+  'wordPools.customized': '已自定义',
 };
 
 const zhOverrides: Record<string, string> = {

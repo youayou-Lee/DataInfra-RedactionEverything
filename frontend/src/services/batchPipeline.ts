@@ -68,7 +68,7 @@ export interface BatchWizardPersistedConfig {
   selectedEntityTypeIds: string[];
   ocrHasTypes: string[];
   visualFeatureTypes: string[];
-  replacementMode: 'structured' | 'smart' | 'mask';
+  replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   imageRedactionMethod?: 'mosaic' | 'blur' | 'fill';
   imageRedactionStrength?: number;
   imageFillColor?: string;
@@ -110,7 +110,9 @@ export function loadBatchWizardConfig(
         ? (raw.visualFeatureTypes as string[])
         : [],
       replacementMode:
-        raw.replacementMode === 'smart' || raw.replacementMode === 'mask'
+        raw.replacementMode === 'smart' ||
+        raw.replacementMode === 'mask' ||
+        raw.replacementMode === 'pseudonym'
           ? raw.replacementMode
           : 'structured',
       presetTextId:

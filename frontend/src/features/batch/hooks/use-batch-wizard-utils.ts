@@ -161,7 +161,8 @@ export function mergeJobConfigIntoWizardCfg(
     replacementMode:
       jc.replacement_mode === 'smart' ||
       jc.replacement_mode === 'mask' ||
-      jc.replacement_mode === 'structured'
+      jc.replacement_mode === 'structured' ||
+      jc.replacement_mode === 'pseudonym'
         ? (jc.replacement_mode as BatchWizardPersistedConfig['replacementMode'])
         : c.replacementMode,
     imageRedactionMethod:

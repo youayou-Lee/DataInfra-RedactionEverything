@@ -51,11 +51,6 @@ export const queryKeys = {
     all: (ownerId?: string | null) => ['presets', ownerId ?? 'anonymous'] as const,
   },
 
-  // ── Word pools (pseudonym replacement) ───────────────────────────────────
-  wordPools: {
-    all: () => ['wordPools'] as const,
-  },
-
   // ── Batch preview entity map ─────────────────────────────────────────────
   batchPreview: {
     /** Key for a specific entity-set + replacement-mode combination. */

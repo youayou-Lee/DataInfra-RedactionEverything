@@ -70,7 +70,9 @@ export function isJobConfigLockedError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const status = (error as { status?: unknown }).status;
   if (status === 409) return true;
-  const message = String((error as { message?: unknown; detail?: unknown }).message ?? '').toLowerCase();
+  const message = String(
+    (error as { message?: unknown; detail?: unknown }).message ?? '',
+  ).toLowerCase();
   const detail = String((error as { detail?: unknown }).detail ?? '').toLowerCase();
   return (
     (message.includes('config') && message.includes('locked')) ||
@@ -177,8 +179,7 @@ export function mergeJobConfigIntoWizardCfg(
         : c.imageRedactionStrength,
     imageFillColor:
       typeof jc.image_fill_color === 'string' ? jc.image_fill_color : c.imageFillColor,
-    watermarkText:
-      typeof jc.watermark_text === 'string' ? jc.watermark_text : c.watermarkText,
+    watermarkText: typeof jc.watermark_text === 'string' ? jc.watermark_text : c.watermarkText,
   };
 }
 
@@ -232,10 +233,7 @@ export function applyTextPresetFields(
 export function applyVisionPresetFields(
   p: RecognitionPreset,
   pipelines: PipelineCfg[],
-): Pick<
-  BatchWizardPersistedConfig,
-  'ocrHasTypes' | 'visualFeatureTypes' | 'presetVisionId'
-> {
+): Pick<BatchWizardPersistedConfig, 'ocrHasTypes' | 'visualFeatureTypes' | 'presetVisionId'> {
   const ocrIds = pipelines
     .filter((pl) => pl.mode === 'ocr_has' && pl.enabled)
     .flatMap((pl) => pl.types.filter((tt) => tt.enabled).map((tt) => tt.id));
@@ -278,7 +276,9 @@ export async function fetchBatchPreviewMap(
       ? ReplacementMode.SMART
       : replacementMode === 'mask'
         ? ReplacementMode.MASK
-        : ReplacementMode.STRUCTURED;
+        : replacementMode === 'pseudonym'
+          ? ReplacementMode.PSEUDONYM
+          : ReplacementMode.STRUCTURED;
   try {
     const map = await batchPreviewEntityMap({
       entities: payload,

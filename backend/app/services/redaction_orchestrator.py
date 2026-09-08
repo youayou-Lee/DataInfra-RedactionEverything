@@ -251,6 +251,7 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
         output_file_id=result["output_file_id"],
         redacted_count=result["redacted_count"],
         entity_map=result.get("entity_map", {}),
+        residual_entities=result.get("residual_entities", []),
         download_url=f"/api/v1/files/{file_id}/download?redacted=true",
         output_path=result.get("output_path"),
     )

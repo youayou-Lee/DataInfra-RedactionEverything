@@ -210,15 +210,24 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             logger.error("[export-verify] empty output text, check inconclusive: %s", output_path)
             return []
         residuals = []
-        for orig in entity_map:
+        normalized = re.sub(r"\s+", "", text)
+        for orig, repl in entity_map.items():
             if not orig:
                 continue
-            if orig.isascii():
-                # 短 ASCII 实体做词边界匹配，避免 "Li"/"No." 命中无关单词
-                if re.search(rf"(?<![0-9A-Za-z]){re.escape(orig)}(?![0-9A-Za-z])", text):
-                    residuals.append(orig)
-            elif orig in text:
+            # 原文残留检测（跨节点/跨行提取会插入空白，去空白比对；
+            # ASCII 加词边界匹配原始文本以减少短词误报；替换词本身包含
+            # 原文时（John→Johnson）归一化子串会误报，跳过该分支）
+            norm_orig = re.sub(r"\s+", "", orig)
+            norm_repl = re.sub(r"\s+", "", repl or "")
+            leaked = bool(
+                re.search(rf"(?<![0-9A-Za-z]){re.escape(orig)}(?![0-9A-Za-z])", text)
+            ) or (norm_orig in normalized and norm_orig not in norm_repl)
+            if leaked:
                 residuals.append(orig)
+                continue
+            # 替换词落盘检测（PDF 提取可能在字符间插空白，去空白比对）
+            if repl and re.sub(r"\s+", "", repl) not in normalized:
+                residuals.append(f"[未落盘] {orig} -> {repl}")
         return residuals
 
     def _extract_output_text(self, output_path: str, file_type: FileType) -> str:

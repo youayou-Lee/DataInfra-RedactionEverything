@@ -55,7 +55,11 @@ def load_default_pools() -> dict[str, dict[str, Any]]:
 
 
 def _normalize_pool(pool: dict[str, Any]) -> dict[str, Any]:
-    words = list(dict.fromkeys(str(w).strip() for w in (pool.get("words") or []) if str(w).strip()))
+    raw_words = pool.get("words")
+    if isinstance(raw_words, str):
+        # 字符串不是词列表（会被逐字符迭代成单字词），按无效处理
+        raw_words = []
+    words = list(dict.fromkeys(str(w).strip() for w in (raw_words or []) if str(w).strip()))
     strategy = str(pool.get("strategy") or "numbered")
     if strategy not in VALID_STRATEGIES:
         strategy = "numbered"
@@ -129,7 +133,7 @@ def export_word_pools(owner_id: str | None = None) -> dict[str, Any]:
 
 def import_word_pools(data: dict[str, Any], owner_id: str | None = None, *, merge: bool = True) -> int:
     """导入词池；merge=True 与现有覆盖合并（custom_map 键级合并），否则整体替换。"""
-    overrides_in = data.get("overrides") if isinstance(data, dict) else data
+    overrides_in = data.get("overrides") if isinstance(data, dict) and "overrides" in data else data
     if not isinstance(overrides_in, dict):
         raise ValueError("导入内容需为 {overrides: {...}} 或词池字典")
     path = _store_path(owner_id)

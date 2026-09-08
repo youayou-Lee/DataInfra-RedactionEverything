@@ -14,6 +14,7 @@ from typing import Any
 
 from app.core.persistence import to_jsonable
 from app.core.sqlite_base import connect_sqlite
+from app.models.common import ReplacementMode
 from app.models.errors import ConflictError, NotFoundError, ValidationError
 from app.models.schemas import (
     BoundingBox,
@@ -1176,6 +1177,12 @@ async def commit_review(
         raise NotFoundError("file not found")
 
     config = build_redaction_config(job)
+    # 化名模式：批量导出同样按租户注入词池，保证与单文件流程同一套化名
+    _job_owner = str(job.get("owner_id") or file_info.get("owner_id") or "local_user")
+    if config.replacement_mode == ReplacementMode.PSEUDONYM and not config.word_pools:
+        from app.services import word_pool_service
+
+        config.word_pools = word_pool_service.load_word_pools(owner_id=_job_owner)
 
     try:
         redactor = Redactor()

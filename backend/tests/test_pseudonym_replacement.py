@@ -181,3 +181,42 @@ def test_pool_word_equal_to_entity_text_not_identity_replaced():
     c = ctx.get_replacement(_entity("王五", coref="c3"))
     assert a != "张三" and b != "李四"
     assert len({a, b, c}) == 3
+
+
+def test_mixed_coref_and_no_coref_consistent():
+    """同一原文（无 coref 正则命中 + 有 coref 模型命中混排）必须分到同一个化名。"""
+    pools = {"PERSON": {"words": ["张三", "李四"], "strategy": "numbered", "custom_map": {}}}
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("王建国"))                     # 无 coref，按文本键
+    b = ctx.get_replacement(_entity("王建国", coref="coref-9"))     # 有 coref，不同键
+    c = ctx.get_replacement(_entity("王建国"))                      # 回到无 coref
+    assert a == b == c
+    # 别的实体照常分到下一个词
+    d = ctx.get_replacement(_entity("李建国", coref="coref-10"))
+    assert d != a
+
+
+def test_custom_map_word_reserved_from_pool():
+    """custom_map 用掉的词要从词池分配中扣除，避免两个实体拿到同一个词。"""
+    pools = {"PERSON": {"words": ["张三", "李四"], "strategy": "numbered",
+                        "custom_map": {"老王": "张三"}}}
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("老王"))
+    b = ctx.get_replacement(_entity("甲", coref="c1"))
+    c = ctx.get_replacement(_entity("乙", coref="c2"))
+    assert a == "张三"
+    assert b == "李四"  # 张三已被 custom_map 占用
+    assert c == "张三1"
+
+
+def test_attach_word_pools_normalizes_client_pools():
+    from app.models.redaction_schemas import RedactionConfig
+    from app.services.redaction_orchestrator import _attach_word_pools
+
+    cfg = RedactionConfig(
+        replacement_mode="pseudonym",
+        word_pools={"PERSON": {"words": "张三李四", "strategy": "bad"}},
+    )
+    _attach_word_pools(cfg, "someone")
+    # 畸形结构被丢弃，回退加载租户词池（含默认）
+    assert isinstance(cfg.word_pools, dict) and "PERSON" in cfg.word_pools

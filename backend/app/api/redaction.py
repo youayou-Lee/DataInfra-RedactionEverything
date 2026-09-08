@@ -72,9 +72,9 @@ async def execute_redaction(
     response_model=PreviewEntityMapResponse,
     include_in_schema=False,
 )
-async def preview_entity_map(body: PreviewEntityMapRequest):
+async def preview_entity_map(body: PreviewEntityMapRequest, owner_id: str = Depends(require_auth)):
     """Preview entity replacement mapping without writing files."""
-    return _orch.preview_entity_map(body.entities, body.config)
+    return _orch.preview_entity_map(body.entities, body.config, owner_id=owner_id)
 
 
 @router.post("/redaction/{file_id}/preview-image", response_model=PreviewImageResponse)

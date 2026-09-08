@@ -527,6 +527,11 @@ class TextRedactorMixin:
                 color=(0, 0, 0), align=fitz.TEXT_ALIGN_LEFT,
             )
             if rc >= 0 or size <= 4.0:
+                if rc < 0:
+                    logger.warning(
+                        "PDF replacement text still does not fit at %.1fpt, dropped: %r rect=%s",
+                        size, text[:40], rect,
+                    )
                 return
             size = max(4.0, size - 1.0)
 

@@ -4,7 +4,6 @@
 维护实体映射关系，确保同一实体在文档中的一致性
 """
 import logging
-import random
 
 from app.models.schemas import (
     Entity,
@@ -87,6 +86,13 @@ class RedactionContext:
             replacement = self._coref_map[entity_key]
             if entity.text not in self.entity_map:
                 self.entity_map[entity.text] = replacement
+            return replacement
+
+        # 化名模式：同一原文此前已分配过（如无 coref 的正则命中与有 coref 的
+        # 模型命中混排），复用既有替换词，保证全文一致
+        if self.mode == ReplacementMode.PSEUDONYM and entity.text in self.entity_map:
+            replacement = self.entity_map[entity.text]
+            self._coref_map[entity_key] = replacement
             return replacement
 
         # 根据模式生成替换文本
@@ -263,6 +269,7 @@ class RedactionContext:
         # 用户显式指定的替换（请求级）优先级最高
         explicit = self.custom_replacements.get(text)
         if explicit:
+            self._reserve_pool_word(type_key, explicit)
             return explicit
 
         from app.services.word_pool_service import pool_type_for
@@ -273,6 +280,7 @@ class RedactionContext:
         # 词池级精确映射（跨文档同套化名的载体）
         exact = (pool.get("custom_map") or {}).get(text)
         if exact:
+            self._reserve_pool_word(type_key, exact)
             return exact
 
         strategy = pool.get("strategy") or "numbered"
@@ -296,11 +304,23 @@ class RedactionContext:
                 if word != text:
                     assigned.append(word)
                     return word
-        # 默认 numbered：张三1、张三2……
+        # 默认 numbered：张三1、张三2……（跳过已被占用的组合）
         extra = len(assigned) - len(words)
-        word = f"{words[extra % len(words)]}{extra // len(words) + 1}"
+        while True:
+            word = f"{words[extra % len(words)]}{extra // len(words) + 1}"
+            if word not in taken:
+                break
+            extra += 1
         assigned.append(word)
         return word
+
+    def _reserve_pool_word(self, type_key: str, word: str) -> None:
+        """精确映射命中的替换词登记占用，避免词池再把同一个词分给别的实体。"""
+        from app.services.word_pool_service import pool_type_for
+
+        assigned = self._pool_assigned.setdefault(pool_type_for(type_key), [])
+        if word not in assigned:
+            assigned.append(word)
 
     def _generate_format_fictional(self, type_key: str) -> str:
         """生成格式合法的虚构号：身份证带校验位、手机合法号段、银行卡过 Luhn。"""

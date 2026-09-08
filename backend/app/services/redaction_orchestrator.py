@@ -271,16 +271,26 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 
 def _attach_word_pools(config: RedactionConfig, owner_id: str) -> None:
     """化名模式按租户填充词池；调用方显式传入的 word_pools 优先。"""
-    if config.replacement_mode != ReplacementMode.PSEUDONYM or config.word_pools:
+    if config.replacement_mode != ReplacementMode.PSEUDONYM:
         return
     from app.services import word_pool_service
 
+    if config.word_pools:
+        # 调用方显式传入的词池也走归一化，防止畸形结构（words 传成字符串等）
+        config.word_pools = {
+            str(k): word_pool_service._normalize_pool(v)
+            for k, v in (config.word_pools or {}).items()
+            if isinstance(v, dict)
+        }
+        return
     config.word_pools = word_pool_service.load_word_pools(owner_id=owner_id)
 
 
-def preview_entity_map(entities: list, config: RedactionConfig) -> PreviewEntityMapResponse:
+def preview_entity_map(
+    entities: list, config: RedactionConfig, owner_id: str = "local_user"
+) -> PreviewEntityMapResponse:
     """Build preview entity_map without writing files."""
-    _attach_word_pools(config, "local_user")
+    _attach_word_pools(config, owner_id)
     em = build_preview_entity_map(entities, config)
     return PreviewEntityMapResponse(entity_map=em)
 

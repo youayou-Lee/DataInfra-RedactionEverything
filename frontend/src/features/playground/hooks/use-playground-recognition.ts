@@ -169,6 +169,13 @@ export function usePlaygroundRecognition() {
     setProcessingMode('mask');
     setReplacementModeState(mode);
   }, []);
+  // 切回「打码」时清掉残留的 pseudonym 子模式（预设带入），保证打码分支
+  // 永远以三种打码方式之一执行，不会以 pseudonym 模式产出化名成品
+  const setProcessingModeGuarded = useCallback((mode: 'mask' | 'replace') => {
+    setProcessingMode(mode);
+    if (mode === 'mask')
+      setReplacementModeState((current) => (current === 'pseudonym' ? 'structured' : current));
+  }, []);
   // 成品水印文案（W2-1）：只作用于最终执行输出，预览不加
   const [watermarkText, setWatermarkText] = useState('');
   const [playgroundPresets, setPlaygroundPresets] = useState<RecognitionPreset[]>([]);
@@ -653,7 +660,7 @@ export function usePlaygroundRecognition() {
     typeTab,
     setTypeTab,
     processingMode,
-    setProcessingMode,
+    setProcessingMode: setProcessingModeGuarded,
     replacementMode,
     setReplacementMode,
     watermarkText,

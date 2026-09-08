@@ -91,7 +91,6 @@ const zhBase: Record<string, string> = {
   'mode.mask': '掩码替换',
   'mode.structured': '结构化标签',
   'mode.pseudonym': '化名替换',
-  'editor.samplePseudonym': '化名甲',
 
   'playground.processingMode': '处理方式',
   'playground.processingModeMask': '打码',
@@ -109,6 +108,9 @@ const zhBase: Record<string, string> = {
   'playground.pseudonymRetry': '重试',
   'playground.pseudonymConfirmRequired':
     '请先确认所有化名映射（等待生成完成、每行填写替换词）后再执行',
+  'playground.pseudonymConfirmRequiredShort': '请先确认化名映射（等待生成、填齐每行、统一共指组）',
+  'playground.pseudonymCorefConflictWarning':
+    '有 {count} 个共指实体（同一对象的不同写法）替换词不一致，请统一后再执行',
   'playground.pseudonymCsvColOriginal': '原文',
   'playground.pseudonymCsvColType': '类型',
   'playground.pseudonymCsvColReplacement': '化名',

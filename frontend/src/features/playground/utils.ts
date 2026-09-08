@@ -47,7 +47,7 @@ export function getModePreview(
     case 'structured':
       return `${name} -> <${t('editor.sampleStructured')}>`;
     case 'pseudonym': {
-      const mapped = name ? pseudonymMap?.[name] : undefined;
+      const mapped = pseudonymMap?.[name];
       return `${name} -> ${mapped?.trim() || '…'}`;
     }
     default:
@@ -57,8 +57,8 @@ export function getModePreview(
 
 function csvEscape(value: string): string {
   const s = String(value ?? '');
-  // 公式注入防护：= + - @ 开头的单元格加前缀单引号
-  const guarded = /^[=+\-@]/.test(s) ? `'${s}` : s;
+  // 公式注入防护：= + - @ / 制表符开头的单元格加前缀单引号
+  const guarded = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
   if (/[",\r\n]/.test(guarded)) return `"${guarded.replace(/"/g, '""')}"`;
   return guarded;
 }

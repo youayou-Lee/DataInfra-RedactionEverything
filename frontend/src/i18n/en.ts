@@ -94,7 +94,6 @@ const enBase: Record<string, string> = {
   'mode.mask': 'Mask',
   'mode.structured': 'Structured Tags',
   'mode.pseudonym': 'Pseudonym',
-  'editor.samplePseudonym': 'Alias A',
 
   'playground.processingMode': 'Processing Method',
   'playground.processingModeMask': 'Masking',
@@ -114,6 +113,10 @@ const enBase: Record<string, string> = {
   'playground.pseudonymRetry': 'Retry',
   'playground.pseudonymConfirmRequired':
     'Confirm all pseudonym mappings first (wait for generation and fill in every row) before running',
+  'playground.pseudonymConfirmRequiredShort':
+    'Confirm pseudonym mappings first (wait, fill every row, align coreferent groups)',
+  'playground.pseudonymCorefConflictWarning':
+    '{count} coreferent entities (different spellings of the same target) have inconsistent replacements; align them before running',
   'playground.pseudonymCsvColOriginal': 'Original',
   'playground.pseudonymCsvColType': 'Type',
   'playground.pseudonymCsvColReplacement': 'Pseudonym',

@@ -218,7 +218,11 @@ export function usePlayground() {
   useEffect(() => {
     if (recognition.processingMode !== 'replace') return;
     if (fileCtx.isImageMode) return;
-    if (missingPseudonymKeys.length === 0) return;
+    // 全部行已补齐（可能含失败后手动填全的情况）时清掉残留错误，避免卡死执行按钮
+    if (missingPseudonymKeys.length === 0) {
+      setPseudonymMapError(null);
+      return;
+    }
     const epoch = ++pseudonymEpochRef.current;
     const controller = new AbortController();
     setPseudonymMapLoading(true);
@@ -239,7 +243,7 @@ export function usePlayground() {
           }),
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error('preview-map failed');
+        if (!res.ok) throw new Error(t('playground.pseudonymLoadFailed'));
         const data = await safeJson<{ entity_map?: Record<string, string> }>(res);
         if (epoch !== pseudonymEpochRef.current) return;
         const incoming = data.entity_map ?? {};
@@ -277,25 +281,6 @@ export function usePlayground() {
     setPseudonymMap((current) => ({ ...current, [text]: replacement }));
   }, []);
 
-  // 替换模式执行门槛：默认化名仍在生成、生成失败、或有已选实体的映射被清空时，
-  // 不允许执行——避免成品与用户在 UI 确认的映射不一致
-  const replaceUnready = useMemo(
-    () =>
-      recognition.processingMode === 'replace' &&
-      !fileCtx.isImageMode &&
-      (pseudonymMapLoading ||
-        Boolean(pseudonymMapError) ||
-        selectedEntityTexts.some((text) => !(pseudonymMap[text] ?? '').trim())),
-    [
-      recognition.processingMode,
-      fileCtx.isImageMode,
-      pseudonymMapLoading,
-      pseudonymMapError,
-      selectedEntityTexts,
-      pseudonymMap,
-    ],
-  );
-
   // 已选实体的范围内，不同原文映射到同一非空化名 → 冲突（警告展示用）
   const pseudonymConflicts = useMemo(() => {
     const inScope = new Set(selectedEntityTexts);
@@ -314,6 +299,49 @@ export function usePlayground() {
     }
     return conflicted;
   }, [pseudonymMap, selectedEntityTexts]);
+
+  // 共指组（同一对象的不同写法，coref_id 相同）内替换词不一致 → 视为未确认：
+  // 后端 coref 复用以组内首个显式值为准，不一致的其余值会被静默覆盖
+  const pseudonymCorefConflicts = useMemo(() => {
+    const groups = new Map<string, Set<string>>();
+    for (const entity of entityCtx.entities) {
+      if (entity.selected === false || !entity.text || !entity.coref_id) continue;
+      const texts = groups.get(entity.coref_id) ?? new Set<string>();
+      texts.add(entity.text);
+      groups.set(entity.coref_id, texts);
+    }
+    const conflicted = new Set<string>();
+    for (const texts of groups.values()) {
+      const values = new Set<string>();
+      for (const text of texts) {
+        const value = (pseudonymMap[text] ?? '').trim();
+        if (value) values.add(value);
+      }
+      if (values.size > 1) texts.forEach((text) => conflicted.add(text));
+    }
+    return conflicted;
+  }, [entityCtx.entities, pseudonymMap]);
+
+  // 替换模式执行门槛：默认化名仍在生成、生成失败、有已选实体的映射被清空、
+  // 或共指组内替换词不一致时，不允许执行——避免成品与用户在 UI 确认的映射不一致
+  const replaceUnready = useMemo(
+    () =>
+      recognition.processingMode === 'replace' &&
+      !fileCtx.isImageMode &&
+      (pseudonymMapLoading ||
+        Boolean(pseudonymMapError) ||
+        selectedEntityTexts.some((text) => !(pseudonymMap[text] ?? '').trim()) ||
+        pseudonymCorefConflicts.size > 0),
+    [
+      recognition.processingMode,
+      fileCtx.isImageMode,
+      pseudonymMapLoading,
+      pseudonymMapError,
+      selectedEntityTexts,
+      pseudonymMap,
+      pseudonymCorefConflicts,
+    ],
+  );
 
   const presetSeqRef = useRef(recognition.presetApplySeq);
   useEffect(() => {
@@ -357,6 +385,12 @@ export function usePlayground() {
         : selectedEntities.length;
 
       const isPseudonym = recognition.processingMode === 'replace' && !fileCtx.isImageMode;
+      // 双保险：打码分支永远不透传 pseudonym（防御残留状态），回落结构化标签
+      const effectiveReplacementMode = isPseudonym
+        ? 'pseudonym'
+        : recognition.replacementMode === 'pseudonym'
+          ? 'structured'
+          : recognition.replacementMode;
       const pseudonymReplacements: Record<string, string> = {};
       if (isPseudonym) {
         for (const entity of selectedEntities) {
@@ -373,7 +407,7 @@ export function usePlayground() {
           entities: entityCtx.entities,
           bounding_boxes: imageCtx.boundingBoxes,
           config: {
-            replacement_mode: isPseudonym ? 'pseudonym' : recognition.replacementMode,
+            replacement_mode: effectiveReplacementMode,
             entity_types: [],
             custom_replacements: pseudonymReplacements,
             watermark_text: recognition.watermarkText.trim() || undefined,
@@ -603,6 +637,7 @@ export function usePlayground() {
     retryPseudonymLoad,
     replaceUnready,
     pseudonymConflicts,
+    pseudonymCorefConflicts,
     confirmedPseudonymMap,
     handleDownloadPseudonymCsv,
     redactionReport,

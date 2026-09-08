@@ -104,3 +104,50 @@ def test_normalize_pool_string_words():
 
     pool = _normalize_pool({"words": "张三李四", "strategy": "numbered"})
     assert pool["words"] == [], "字符串 words 应被丢弃而非逐字拆分"
+
+
+@pytest.mark.asyncio
+async def test_entity_spanning_run_and_hyperlink_redacted(_dirs):
+    """实体横跨「直接 run ↔ 超链接」边界：run 级与嵌套级单独都拼不出
+    完整原文，必须由整段 XML 趟兜住；自检也不得误报干净。"""
+    up, _ = _dirs
+    src = up / "span.docx"
+    doc = Document()
+    doc.add_paragraph("另一处完整出现：马振柏")
+    buf = BytesIO(); doc.save(buf)
+    zin = zipfile.ZipFile(BytesIO(buf.getvalue()))
+    root = et.fromstring(zin.read("word/document.xml"))
+    body = root.find(f"{{{W}}}body")
+    p = et.SubElement(body, f"{{{W}}}p")
+    for text in ("客户", "马"):
+        r = et.SubElement(p, f"{{{W}}}r")
+        et.SubElement(r, f"{{{W}}}t").text = text
+    hl = et.SubElement(p, f"{{{W}}}hyperlink")
+    hr = et.SubElement(hl, f"{{{W}}}r")
+    et.SubElement(hr, f"{{{W}}}t").text = "振柏"
+    r2 = et.SubElement(p, f"{{{W}}}r")
+    et.SubElement(r2, f"{{{W}}}t").text = "签收。"
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for item in zin.infolist():
+            data = (et.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+                    if item.filename == "word/document.xml" else zin.read(item.filename))
+            z.writestr(item, data)
+    with open(src, "wb") as f:
+        f.write(out.getvalue())
+
+    entities = [Entity(id="e1", text="马振柏", type="PERSON", start=0, end=3, page=1, selected=True)]
+    pools = {"PERSON": {"words": ["甲某"], "strategy": "numbered", "custom_map": {}}}
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "docx"},
+        entities=entities, bounding_boxes=[],
+        config=RedactionConfig(replacement_mode="pseudonym", word_pools=pools),
+    )
+    with zipfile.ZipFile(result["output_path"]) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    assert "马振柏" not in xml and "马" + "振柏" not in xml.replace("</w:t>", "").replace('<w:t xml:space="preserve">', ""), \
+        "跨界实体残留"
+    # 直接 run 里的「马」与超链接里的「振柏」拼成原文也算残留——XML 逐节点断言
+    assert "振柏" not in xml, "超链接内半个实体残留"
+    assert "甲某" in xml
+    assert result["residual_entities"] == []

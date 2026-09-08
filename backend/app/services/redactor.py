@@ -214,10 +214,11 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         for orig, repl in entity_map.items():
             if not orig:
                 continue
-            # 原文残留检测
+            # 原文残留检测（跨节点/跨行提取会插入空白，去空白比对；
+            # ASCII 加词边界匹配原始文本以减少短词误报）
             leaked = (
                 bool(re.search(rf"(?<![0-9A-Za-z]){re.escape(orig)}(?![0-9A-Za-z])", text))
-                if orig.isascii() else orig in text
+                or re.sub(r"\s+", "", orig) in normalized
             )
             if leaked:
                 residuals.append(orig)

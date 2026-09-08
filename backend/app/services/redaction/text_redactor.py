@@ -66,25 +66,21 @@ class TextRedactorMixin:
         # 会分配新代理导致 id 对不上；保引用可保证 pass2 拿到同一代理对象
         processed_elements: set = set()
         for para_idx, para in enumerate(self._iter_all_paragraphs(doc)):
-            redacted_count += self._replace_in_paragraph(
-                para,
-                replacements,
-                para_idx=para_idx,
-                trace_enabled=trace_enabled,
-                trace_path=trace_path,
-            )
-            # python-docx 的 runs 只含直接子 w:r；修订插入(w:ins)、超链接、
-            # smartTag 内的 w:t，修订删除(w:delText)与域代码(w:instrText)
-            # 都不进 runs，这里按 XML 节点补齐，防止整段被标记已处理后漏脱敏
-            redacted_count += self._replace_in_docx_xml_paragraph(
-                para._p,
-                replacements,
-                node_query=(
-                    ".//w:delText | .//w:instrText"
-                    " | .//w:hyperlink//w:t | .//w:ins//w:t"
-                    " | .//w:smartTag//w:t"
-                ),
-            )
+            # 按出现位置分流：完全落在直接 run 区域的键走 run 级替换（保格式），
+            # 含嵌套节点（超链接/修订插入/smartTag/delText/instrText）字符或
+            # 跨「直接 run ↔ 嵌套节点」边界的键走整段 XML 替换。两趟键集
+            # 不相交，避免 run 级写入的替换词被第二趟当原文再改写。
+            run_keys, union_keys = self._split_paragraph_replacement_keys(para, replacements)
+            if run_keys:
+                redacted_count += self._replace_in_paragraph(
+                    para,
+                    run_keys,
+                    para_idx=para_idx,
+                    trace_enabled=trace_enabled,
+                    trace_path=trace_path,
+                )
+            if union_keys:
+                redacted_count += self._replace_in_docx_xml_paragraph(para._p, union_keys)
             processed_elements.add(para._p)
 
         redacted_count += self._replace_in_docx_xml_parts(
@@ -92,6 +88,56 @@ class TextRedactorMixin:
         )
         doc.save(output_path)
         return redacted_count
+
+    def _split_paragraph_replacement_keys(
+        self, para, replacements: dict[str, str]
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """把替换键分流为（run 级 / 整段 XML 级）两组，键集互斥。"""
+        direct_nodes: list = []
+        for run in para.runs:
+            direct_nodes.extend(
+                t for t in self._docx_xpath(run._r, "./w:t") if t is not None
+            )
+        direct_refs = {id(t) for t in direct_nodes}
+        all_nodes = list(
+            self._docx_xpath(para._p, ".//w:t | .//w:delText | .//w:instrText")
+        )
+        if not all_nodes:
+            return (dict(replacements), {})
+
+        pieces: list[str] = []
+        is_direct_flags: list[bool] = []
+        for node in all_nodes:
+            text = node.text or ""
+            pieces.append(text)
+            is_direct_flags.extend([id(node) in direct_refs] * len(text))
+        full_text = "".join(pieces)
+        if not full_text:
+            return (dict(replacements), {})
+
+        run_keys: dict[str, str] = {}
+        union_keys: dict[str, str] = {}
+        for old_text, new_text in replacements.items():
+            if not old_text:
+                continue
+            start = full_text.find(old_text)
+            if start < 0:
+                continue
+            needs_union = False
+            pos = 0
+            while True:
+                found = full_text.find(old_text, pos)
+                if found < 0:
+                    break
+                if not all(is_direct_flags[found : found + len(old_text)]):
+                    needs_union = True
+                    break
+                pos = found + len(old_text)
+            if needs_union:
+                union_keys[old_text] = new_text
+            else:
+                run_keys[old_text] = new_text
+        return (run_keys, union_keys)
 
     def _replace_in_docx_xml_parts(
         self,
@@ -140,7 +186,8 @@ class TextRedactorMixin:
         return replaced_count
 
     def _replace_in_docx_xml_paragraph(
-        self, paragraph, replacements: dict[str, str], node_query: str = ".//w:t | .//w:delText"
+        self, paragraph, replacements: dict[str, str],
+        node_query: str = ".//w:t | .//w:delText | .//w:instrText",
     ) -> int:
         # w:delText 是追踪修订「已删除」的内容，仍留在文档修订历史里，同样是敏感源
         text_nodes = list(self._docx_xpath(paragraph, node_query))

@@ -281,6 +281,7 @@ class Settings(BaseSettings):
     PIPELINE_STORE_PATH: str = ""
     PRESET_STORE_PATH: str = ""
     ENTITY_TYPES_STORE_PATH: str = ""
+    WORD_POOL_STORE_PATH: str = ""
     MODEL_CONFIG_PATH: str = ""
 
     # PaddleOCR-VL 微服务配置（独立进程，端口8082）
@@ -753,6 +754,10 @@ class Settings(BaseSettings):
             self.ENTITY_TYPES_STORE_PATH = os.path.join(d, "entity_types.json")
         else:
             self.ENTITY_TYPES_STORE_PATH = _resolve_local_path(self.ENTITY_TYPES_STORE_PATH)
+        if not self.WORD_POOL_STORE_PATH:
+            self.WORD_POOL_STORE_PATH = os.path.join(d, "word_pools.json")
+        else:
+            self.WORD_POOL_STORE_PATH = _resolve_local_path(self.WORD_POOL_STORE_PATH)
         if not self.MODEL_CONFIG_PATH:
             self.MODEL_CONFIG_PATH = os.path.join(d, "model_config.json")
         else:

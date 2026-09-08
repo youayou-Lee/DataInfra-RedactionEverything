@@ -32,6 +32,7 @@ from app.api import (
     redaction,
     structured,
     vision_pipeline,
+    word_pools,
 )
 from app.api import (
     license as license_api,
@@ -473,6 +474,7 @@ app.include_router(vision_pipeline.router, prefix=settings.API_PREFIX, tags=["�
 app.include_router(model_config.router, prefix=settings.API_PREFIX, tags=["推理模型配置"], dependencies=[Depends(require_super_admin)])
 app.include_router(ner_backend.router, prefix=settings.API_PREFIX, tags=["文本NER后端"], dependencies=[Depends(require_super_admin)])
 app.include_router(presets.router, prefix=settings.API_PREFIX, tags=["识别配置预设"], dependencies=[Depends(require_auth)])
+app.include_router(word_pools.router, prefix=settings.API_PREFIX, tags=["替换词池"], dependencies=[Depends(require_auth)])
 app.include_router(jobs.router, prefix=settings.API_PREFIX, tags=["批量任务"], dependencies=[Depends(require_auth)])
 app.include_router(structured.router, prefix=settings.API_PREFIX, tags=["structured"], dependencies=[Depends(require_auth)])
 app.include_router(dicom.router, prefix=settings.API_PREFIX, tags=["DICOM"], dependencies=[Depends(require_auth)])

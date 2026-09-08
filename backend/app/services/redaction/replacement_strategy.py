@@ -51,12 +51,24 @@ class RedactionContext:
     维护实体映射关系，确保同一实体在文档中的一致性
     """
 
-    def __init__(self, mode: ReplacementMode):
+    # 格式类实体：无词池也按规则生成合法虚构号（校验位/Luhn/号段）
+    FORMAT_GENERATED_TYPES = frozenset({"ID_CARD", "PHONE", "BANK_CARD", "EMAIL", "LICENSE_PLATE"})
+
+    def __init__(self, mode: ReplacementMode, word_pools: dict | None = None):
         self.mode = mode
         self.entity_map: dict[str, str] = {}
         self._coref_map: dict[str, str] = {}
         self.type_counters: dict[str, int] = {}
         self.custom_replacements: dict[str, str] = {}
+        # 化名词池：{pool_type: {words, strategy, custom_map}}；None 时懒加载默认词池
+        self.word_pools: dict | None = word_pools
+        # 词池已分配词（pool_type → 有序列表）：同类型不同实体分到不同词，
+        # 且跳过与实体原文相同的词（避免“张三→张三”的原样替换）
+        self._pool_assigned: dict[str, list[str]] = {}
+        self._generated_seq = 0
+
+    def set_word_pools(self, pools: dict | None) -> None:
+        self.word_pools = pools
 
     def set_custom_replacements(self, replacements: dict[str, str]):
         """设置自定义替换映射"""
@@ -76,6 +88,13 @@ class RedactionContext:
                 self.entity_map[entity.text] = replacement
             return replacement
 
+        # 化名模式：同一原文此前已分配过（如无 coref 的正则命中与有 coref 的
+        # 模型命中混排），复用既有替换词，保证全文一致
+        if self.mode == ReplacementMode.PSEUDONYM and entity.text in self.entity_map:
+            replacement = self.entity_map[entity.text]
+            self._coref_map[entity_key] = replacement
+            return replacement
+
         # 根据模式生成替换文本
         if self.mode == ReplacementMode.CUSTOM:
             # 自定义模式：使用预设的替换
@@ -89,6 +108,9 @@ class RedactionContext:
         elif self.mode == ReplacementMode.STRUCTURED:
             # 结构化语义标签
             replacement = self._generate_structured_replacement(entity)
+        elif self.mode == ReplacementMode.PSEUDONYM:
+            # 化名替换：同类型虚构词（词池 + 精确映射 + 格式生成）
+            replacement = self._generate_pseudonym_replacement(entity)
         else:
             # 智能模式
             replacement = self._generate_smart_replacement(entity)
@@ -229,6 +251,93 @@ class RedactionContext:
         except (ImportError, KeyError, AttributeError):
             return None
 
+    # ---------- 化名（pseudonym）模式 ----------
+
+    def _resolve_word_pools(self) -> dict:
+        if self.word_pools is None:
+            from app.services import word_pool_service
+
+            self.word_pools = word_pool_service.load_word_pools()
+        return self.word_pools or {}
+
+    def _generate_pseudonym_replacement(self, entity: Entity) -> str:
+        """同类型虚构词替换：精确映射 > 词池按序 > 耗尽策略 > 格式生成。"""
+        type_key = _type_key_for_entity(entity)
+        text = (entity.text or "").strip()
+        pools = self._resolve_word_pools()
+
+        # 用户显式指定的替换（请求级）优先级最高
+        explicit = self.custom_replacements.get(text)
+        if explicit:
+            self._reserve_pool_word(type_key, explicit)
+            return explicit
+
+        from app.services.word_pool_service import pool_type_for
+
+        pool_key = pool_type_for(type_key)
+        pool = pools.get(pool_key) or {}
+
+        # 词池级精确映射（跨文档同套化名的载体）
+        exact = (pool.get("custom_map") or {}).get(text)
+        if exact:
+            self._reserve_pool_word(type_key, exact)
+            return exact
+
+        strategy = pool.get("strategy") or "numbered"
+        words = pool.get("words") or []
+
+        if type_key in self.FORMAT_GENERATED_TYPES and (strategy == "generated" or not words):
+            return self._generate_format_fictional(type_key)
+
+        if not words:
+            # 无词池的非格式类型：回退智能标签，保证可用
+            return self._generate_smart_replacement(entity)
+
+        assigned = self._pool_assigned.setdefault(pool_key, [])
+        taken = set(assigned) | {text}
+        for word in words:
+            if word not in taken:
+                assigned.append(word)
+                return word
+        if strategy == "cycle":
+            for word in words:
+                if word != text:
+                    assigned.append(word)
+                    return word
+        # 默认 numbered：张三1、张三2……（跳过已被占用的组合）
+        extra = len(assigned) - len(words)
+        while True:
+            word = f"{words[extra % len(words)]}{extra // len(words) + 1}"
+            if word not in taken:
+                break
+            extra += 1
+        assigned.append(word)
+        return word
+
+    def _reserve_pool_word(self, type_key: str, word: str) -> None:
+        """精确映射命中的替换词登记占用，避免词池再把同一个词分给别的实体。"""
+        from app.services.word_pool_service import pool_type_for
+
+        assigned = self._pool_assigned.setdefault(pool_type_for(type_key), [])
+        if word not in assigned:
+            assigned.append(word)
+
+    def _generate_format_fictional(self, type_key: str) -> str:
+        """生成格式合法的虚构号：身份证带校验位、手机合法号段、银行卡过 Luhn。"""
+        self._generated_seq += 1
+        seq = self._generated_seq
+        if type_key == "ID_CARD":
+            return _fictional_id_card(seq)
+        if type_key == "PHONE":
+            return _fictional_phone(seq)
+        if type_key == "BANK_CARD":
+            return _fictional_bank_card(seq)
+        if type_key == "EMAIL":
+            return f"user{seq:04d}@example.com"
+        if type_key == "LICENSE_PLATE":
+            return _fictional_license_plate(seq)
+        return f"-fictional-{seq}"
+
     def _coref_key_for_entity(self, entity: Entity, type_key: str) -> str:
         coref_id = entity.coref_id
         if not coref_id:
@@ -263,12 +372,58 @@ class RedactionContext:
         return tag_head in compatible_heads[type_key]
 
 
+def _fictional_id_card(seq: int) -> str:
+    """18 位身份证：110101 + 1980 年代出生日 + 序号 + GB 11643 校验位。"""
+    year = 1980 + (seq - 1) % 20
+    month = 1 + (seq * 3) % 12
+    day = 1 + (seq * 7) % 28
+    body = f"110101{year:04d}{month:02d}{day:02d}{(seq % 999):03d}"
+    weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+    check_chars = "10X98765432"
+    total = sum(int(c) * w for c, w in zip(body, weights))
+    return body + check_chars[total % 11]
+
+
+def _fictional_phone(seq: int) -> str:
+    """11 位手机号：1 + 合法号段第二位 + 9 位序号。"""
+    second = "3456789"[(seq - 1) % 7]
+    return f"1{second}{seq % 1000000000:09d}"
+
+
+def _luhn_checksum(digits: str) -> int:
+    """计算 Luhn 校验位：body 从最右位起隔位翻倍，再补成 10 的倍数。"""
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 0:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return (10 - total % 10) % 10
+
+
+def _fictional_bank_card(seq: int) -> str:
+    """19 位银行卡：6222 前缀 + 序号 + Luhn 校验位。"""
+    body = f"6222{seq % 100000000000000:014d}"
+    return body + str(_luhn_checksum(body))
+
+
+def _fictional_license_plate(seq: int) -> str:
+    """普通车牌：省简称 + 发牌机关字母 + 5 位序号。"""
+    provinces = "京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼"
+    letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    p = provinces[(seq - 1) % len(provinces)]
+    letter = letters[(seq - 1) % len(letters)]
+    return f"{p}{letter}{seq % 100000:05d}"
+
+
 def build_preview_entity_map(entities: list[Entity], config: RedactionConfig) -> dict[str, str]:
     """
     计算与 execute 一致的「原文 -> 替换」映射，不落盘、不写文件。
     供批量向导第 4 步与单文件处理一致的三列预览。
     """
-    context = RedactionContext(config.replacement_mode)
+    context = RedactionContext(config.replacement_mode, word_pools=config.word_pools)
     context.set_custom_replacements(dict(config.custom_replacements or {}))
     for entity in entities:
         if entity.selected:

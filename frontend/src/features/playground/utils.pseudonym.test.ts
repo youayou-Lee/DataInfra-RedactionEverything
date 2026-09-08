@@ -44,6 +44,39 @@ describe('buildPseudonymCsv', () => {
     const csv = buildPseudonymCsv([entity({ text: 'a,b' })], { 'a,b': 'x"y' });
     expect(csv.slice(1).trimEnd().split('\r\n')[1]).toBe('"a,b",PERSON,"x""y",1');
   });
+
+  it('未勾选实体不参与计数', () => {
+    const entities = [
+      entity({ text: '甲' }),
+      entity({ text: '甲', selected: false }),
+      entity({ text: '乙', selected: false }),
+    ];
+    const csv = buildPseudonymCsv(entities, { 甲: 'A', 乙: 'B' });
+    const lines = csv.slice(1).trimEnd().split('\r\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe('甲,PERSON,A,1');
+  });
+
+  it('自定义表头与类型本地化', () => {
+    const csv = buildPseudonymCsv(
+      [entity({ text: '甲', type: 'PERSON' })],
+      { 甲: 'A' },
+      {
+        headers: ['Original', 'Type', 'Pseudonym', 'Count'],
+        typeLabel: (type) => (type === 'PERSON' ? '姓名' : type),
+      },
+    );
+    const lines = csv.slice(1).trimEnd().split('\r\n');
+    expect(lines[0]).toBe('Original,Type,Pseudonym,Count');
+    expect(lines[1]).toBe('甲,姓名,A,1');
+  });
+
+  it('公式开头值加单引号前缀防注入', () => {
+    const csv = buildPseudonymCsv([entity({ text: '=SUM(A1)' })], { '=SUM(A1)': '@x' });
+    const cells = csv.slice(1).trimEnd().split('\r\n')[1].split(',');
+    expect(cells[0]).toBe("'=SUM(A1)");
+    expect(cells[2]).toBe("'@x");
+  });
 });
 
 describe('getModePreview (pseudonym)', () => {
@@ -52,8 +85,8 @@ describe('getModePreview (pseudonym)', () => {
     expect(getModePreview('pseudonym', sample, { 陈明飞: '张某1' })).toBe('陈明飞 -> 张某1');
   });
 
-  it('无映射时回退到示例化名', () => {
+  it('无映射时显示待填写占位', () => {
     const sample = entity({ text: '陈明飞' });
-    expect(getModePreview('pseudonym', sample, {})).toBe('陈明飞 -> 化名甲');
+    expect(getModePreview('pseudonym', sample, {})).toBe('陈明飞 -> …');
   });
 });

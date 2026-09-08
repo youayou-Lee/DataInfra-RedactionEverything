@@ -110,6 +110,15 @@ const enBase: Record<string, string> = {
   'playground.pseudonymConflictWarning':
     '{count} items map to the same replacement; adjust to avoid confusion',
   'playground.downloadPseudonymCsv': 'Download Mapping Table',
+  'playground.pseudonymLoadFailed': 'Failed to generate default pseudonyms',
+  'playground.pseudonymRetry': 'Retry',
+  'playground.pseudonymConfirmRequired':
+    'Confirm all pseudonym mappings first (wait for generation and fill in every row) before running',
+  'playground.pseudonymCsvColOriginal': 'Original',
+  'playground.pseudonymCsvColType': 'Type',
+  'playground.pseudonymCsvColReplacement': 'Pseudonym',
+  'playground.pseudonymCsvColCount': 'Occurrences',
+  'playground.pseudonymCsvFilePrefix': 'pseudonym-mapping',
 
   'job.status.draft': 'Draft',
   'job.status.queued': 'Queued',

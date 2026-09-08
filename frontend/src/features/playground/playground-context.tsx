@@ -41,6 +41,8 @@ export interface PlaygroundDataContextValue {
   processingMode: PlaygroundContextValue['processingMode'];
   pseudonymMap: PlaygroundContextValue['pseudonymMap'];
   pseudonymMapLoading: PlaygroundContextValue['pseudonymMapLoading'];
+  pseudonymMapError: PlaygroundContextValue['pseudonymMapError'];
+  replaceUnready: PlaygroundContextValue['replaceUnready'];
   pseudonymConflicts: PlaygroundContextValue['pseudonymConflicts'];
   confirmedPseudonymMap: PlaygroundContextValue['confirmedPseudonymMap'];
 }
@@ -68,6 +70,7 @@ export interface PlaygroundActionsContextValue {
   handleDownloadPseudonymCsv: PlaygroundContextValue['handleDownloadPseudonymCsv'];
   setProcessingMode: PlaygroundContextValue['setProcessingMode'];
   setPseudonymReplacement: PlaygroundContextValue['setPseudonymReplacement'];
+  retryPseudonymLoad: PlaygroundContextValue['retryPseudonymLoad'];
   mergeVisibleBoxes: PlaygroundContextValue['mergeVisibleBoxes'];
   setCurrentPage: PlaygroundContextValue['setCurrentPage'];
   openPopout: PlaygroundContextValue['openPopout'];
@@ -126,6 +129,8 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       processingMode: ctx.processingMode,
       pseudonymMap: ctx.pseudonymMap,
       pseudonymMapLoading: ctx.pseudonymMapLoading,
+      pseudonymMapError: ctx.pseudonymMapError,
+      replaceUnready: ctx.replaceUnready,
       pseudonymConflicts: ctx.pseudonymConflicts,
       confirmedPseudonymMap: ctx.confirmedPseudonymMap,
     }),
@@ -163,6 +168,8 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.processingMode,
       ctx.pseudonymMap,
       ctx.pseudonymMapLoading,
+      ctx.pseudonymMapError,
+      ctx.replaceUnready,
       ctx.pseudonymConflicts,
       ctx.confirmedPseudonymMap,
     ],
@@ -195,6 +202,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       openPopout: ctx.openPopout,
       setProcessingMode: ctx.setProcessingMode,
       setPseudonymReplacement: ctx.setPseudonymReplacement,
+      retryPseudonymLoad: ctx.retryPseudonymLoad,
     }),
     [
       ctx.setStage,
@@ -222,6 +230,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.openPopout,
       ctx.setProcessingMode,
       ctx.setPseudonymReplacement,
+      ctx.retryPseudonymLoad,
     ],
   );
 

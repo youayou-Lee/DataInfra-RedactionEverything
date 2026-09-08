@@ -48,7 +48,7 @@ export function getModePreview(
       return `${name} -> <${t('editor.sampleStructured')}>`;
     case 'pseudonym': {
       const mapped = name ? pseudonymMap?.[name] : undefined;
-      return `${name} -> ${mapped?.trim() || t('editor.samplePseudonym')}`;
+      return `${name} -> ${mapped?.trim() || '…'}`;
     }
     default:
       return '';
@@ -57,28 +57,41 @@ export function getModePreview(
 
 function csvEscape(value: string): string {
   const s = String(value ?? '');
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  // 公式注入防护：= + - @ 开头的单元格加前缀单引号
+  const guarded = /^[=+\-@]/.test(s) ? `'${s}` : s;
+  if (/[",\r\n]/.test(guarded)) return `"${guarded.replace(/"/g, '""')}"`;
+  return guarded;
 }
 
-/** 化名对照表 csv（utf-8 + BOM，Excel 直接打开中文不乱码） */
+export interface PseudonymCsvOptions {
+  headers?: [string, string, string, string];
+  typeLabel?: (type: string) => string;
+}
+
+/**
+ * 化名对照表 csv（utf-8 + BOM，Excel 直接打开中文不乱码）。
+ * 仅统计已勾选（将参与替换）的实体；映射应传执行响应的 entity_map
+ * （后端真实替换结果），保证对照表与成品一致。
+ */
 export function buildPseudonymCsv(
   entities: Entity[],
   pseudonymMap: Record<string, string>,
+  options: PseudonymCsvOptions = {},
 ): string {
   const counts = new Map<string, { type: string; count: number }>();
   for (const entity of entities) {
-    if (!entity.text) continue;
+    if (!entity.text || entity.selected === false) continue;
     const entry = counts.get(entity.text) ?? { type: entity.type, count: 0 };
     entry.count += 1;
     counts.set(entity.text, entry);
   }
-  const header = ['原文', '类型', '化名', '出现次数'];
+  const header = options.headers ?? ['原文', '类型', '化名', '出现次数'];
+  const typeLabel = options.typeLabel ?? ((type: string) => type);
   const rows = Object.entries(pseudonymMap)
     .filter(([text]) => counts.has(text))
     .map(([text, replacement]) => [
       text,
-      counts.get(text)?.type ?? '',
+      typeLabel(counts.get(text)?.type ?? ''),
       replacement,
       String(counts.get(text)?.count ?? 0),
     ]);

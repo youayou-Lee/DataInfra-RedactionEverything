@@ -39,6 +39,9 @@ export interface PlaygroundEntityPanelProps {
   pseudonymMap: Record<string, string>;
   onPseudonymChange: (text: string, replacement: string) => void;
   pseudonymMapLoading: boolean;
+  pseudonymMapError?: string | null;
+  onRetryPseudonymLoad?: () => void;
+  replaceUnready?: boolean;
   pseudonymConflicts: Set<string>;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
@@ -72,6 +75,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     pseudonymMap,
     onPseudonymChange,
     pseudonymMapLoading,
+    pseudonymMapError,
+    onRetryPseudonymLoad,
+    replaceUnready,
     pseudonymConflicts,
     watermarkText,
     setWatermarkText,
@@ -208,6 +214,8 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                     pseudonymMap={pseudonymMap}
                     onPseudonymChange={onPseudonymChange}
                     loading={pseudonymMapLoading}
+                    error={pseudonymMapError}
+                    onRetry={onRetryPseudonymLoad}
                     conflicts={pseudonymConflicts}
                     typeNameById={typeNameById}
                   />
@@ -312,11 +320,13 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
         )}
         <Button
           onClick={onRedact}
-          disabled={shownSelectedCount === 0 || isLoading}
+          disabled={
+            shownSelectedCount === 0 || isLoading || Boolean(replaceUnready && !isImageMode)
+          }
           aria-describedby={disabledReason ? 'playground-redact-disabled-reason' : undefined}
           className={cn(
             'h-11 shrink-0 rounded-[20px] text-sm font-semibold shadow-[var(--shadow-control)]',
-            shownSelectedCount === 0 && 'opacity-50',
+            (shownSelectedCount === 0 || (replaceUnready && !isImageMode)) && 'opacity-50',
           )}
           data-testid="playground-redact-btn"
         >
@@ -446,9 +456,20 @@ const PseudonymMapSection: FC<{
   pseudonymMap: Record<string, string>;
   onPseudonymChange: (text: string, replacement: string) => void;
   loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   conflicts: Set<string>;
   typeNameById: Map<string, string>;
-}> = ({ entities, pseudonymMap, onPseudonymChange, loading, conflicts, typeNameById }) => {
+}> = ({
+  entities,
+  pseudonymMap,
+  onPseudonymChange,
+  loading,
+  error,
+  onRetry,
+  conflicts,
+  typeNameById,
+}) => {
   const t = useT();
   const rows = useMemo(() => {
     const byText = new Map<string, { type: string; count: number }>();
@@ -460,7 +481,10 @@ const PseudonymMapSection: FC<{
     }
     return Array.from(byText.entries());
   }, [entities]);
-  const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
+  // 样例预览只取已勾选实体，避免展示"不会参与替换的原文"
+  const sampleEntity = entities.find(
+    (entity) => entity.selected !== false && entity.text && entity.text.length > 0,
+  );
   const conflictList = Array.from(conflicts);
 
   return (
@@ -478,6 +502,26 @@ const PseudonymMapSection: FC<{
       <p className="text-[11px] leading-4 text-muted-foreground">
         {t('playground.pseudonymMapDesc')}
       </p>
+      {error && (
+        <div
+          className="flex items-center justify-between gap-2 rounded-lg border border-[var(--destructive)]/50 bg-[var(--destructive)]/5 px-2 py-1.5"
+          data-testid="playground-pseudonym-error"
+        >
+          <p className="min-w-0 truncate text-[11px] text-[var(--destructive)]">{error}</p>
+          {onRetry && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-[11px]"
+              onClick={onRetry}
+              data-testid="playground-pseudonym-retry"
+            >
+              {t('playground.pseudonymRetry')}
+            </Button>
+          )}
+        </div>
+      )}
       {rows.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">{t('playground.pseudonymNoEntities')}</p>
       ) : (

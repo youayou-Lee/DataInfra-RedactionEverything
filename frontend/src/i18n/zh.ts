@@ -105,6 +105,15 @@ const zhBase: Record<string, string> = {
   'playground.pseudonymInputPlaceholder': '替换词',
   'playground.pseudonymConflictWarning': '有 {count} 个原文映射到同一替换词，请调整避免混淆',
   'playground.downloadPseudonymCsv': '下载化名对照表',
+  'playground.pseudonymLoadFailed': '默认化名生成失败',
+  'playground.pseudonymRetry': '重试',
+  'playground.pseudonymConfirmRequired':
+    '请先确认所有化名映射（等待生成完成、每行填写替换词）后再执行',
+  'playground.pseudonymCsvColOriginal': '原文',
+  'playground.pseudonymCsvColType': '类型',
+  'playground.pseudonymCsvColReplacement': '化名',
+  'playground.pseudonymCsvColCount': '出现次数',
+  'playground.pseudonymCsvFilePrefix': '化名对照表',
 
   'job.status.draft': '草稿',
   'job.status.queued': '排队中',

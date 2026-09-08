@@ -46,6 +46,9 @@ const PlaygroundInner: FC = () => {
     pseudonymMap,
     setPseudonymReplacement,
     pseudonymMapLoading,
+    pseudonymMapError,
+    retryPseudonymLoad,
+    replaceUnready,
     pseudonymConflicts,
     confirmedPseudonymMap,
     handleDownloadPseudonymCsv,
@@ -353,6 +356,9 @@ const PlaygroundInner: FC = () => {
               pseudonymMap={pseudonymMap}
               onPseudonymChange={setPseudonymReplacement}
               pseudonymMapLoading={pseudonymMapLoading}
+              pseudonymMapError={pseudonymMapError}
+              onRetryPseudonymLoad={retryPseudonymLoad}
+              replaceUnready={replaceUnready}
               pseudonymConflicts={pseudonymConflicts}
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}

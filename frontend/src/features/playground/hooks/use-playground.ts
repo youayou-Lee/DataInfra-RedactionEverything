@@ -59,7 +59,10 @@ export function usePlayground() {
   // 化名映射确认（替换模式）：原文 → 化名。用户编辑过的行不被自动补全覆盖。
   const [pseudonymMap, setPseudonymMap] = useState<Record<string, string>>({});
   const [pseudonymMapLoading, setPseudonymMapLoading] = useState(false);
-  // 执行成功后快照 + 开关：结果页据此展示「下载化名对照表」
+  const [pseudonymMapError, setPseudonymMapError] = useState<string | null>(null);
+  const [pseudonymRetryTick, setPseudonymRetryTick] = useState(0);
+  // 替换模式执行过（结果页据此展示「下载化名对照表」）；对照表内容用
+  // 执行响应的 entity_map（后端真实替换结果，含 coref 复用），与成品天然一致
   const [confirmedPseudonymMap, setConfirmedPseudonymMap] = useState<Record<string, string> | null>(
     null,
   );
@@ -219,23 +222,19 @@ export function usePlayground() {
     const epoch = ++pseudonymEpochRef.current;
     const controller = new AbortController();
     setPseudonymMapLoading(true);
+    setPseudonymMapError(null);
     const run = async () => {
       try {
         const res = await authFetch('/api/v1/redaction/preview-map', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            // 完整透传实体（含 coref_id），与 execute 的后端替换语义保持一致：
+            // 后端 coref 复用优先于 custom_replacements，preview 若丢弃 coref_id，
+            // 组织别名等共指组的默认化名会与实际执行结果不一致
             entities: entityCtx.entities
               .filter((e) => e.selected !== false)
-              .map((e) => ({
-                id: e.id,
-                text: e.text,
-                type: e.type,
-                start: e.start,
-                end: e.end,
-                page: e.page ?? 1,
-                selected: true,
-              })),
+              .map((e) => ({ ...e, selected: true })),
             config: { replacement_mode: 'pseudonym' },
           }),
           signal: controller.signal,
@@ -251,8 +250,10 @@ export function usePlayground() {
           }
           return next;
         });
-      } catch {
-        /* 静默失败：保留已有映射，用户可重试（重新进入替换模式会再触发） */
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (epoch !== pseudonymEpochRef.current) return;
+        setPseudonymMapError(localizeErrorMessage(err, 'playground.pseudonymLoadFailed'));
       } finally {
         if (epoch === pseudonymEpochRef.current) setPseudonymMapLoading(false);
       }
@@ -264,16 +265,43 @@ export function usePlayground() {
     recognition.processingMode,
     fileCtx.isImageMode,
     entityCtx.entities,
+    pseudonymRetryTick,
   ]);
+
+  const retryPseudonymLoad = useCallback(() => {
+    setPseudonymMapError(null);
+    setPseudonymRetryTick((tick) => tick + 1);
+  }, []);
 
   const setPseudonymReplacement = useCallback((text: string, replacement: string) => {
     setPseudonymMap((current) => ({ ...current, [text]: replacement }));
   }, []);
 
-  // 不同原文映射到同一非空化名 → 冲突（警告展示用）
+  // 替换模式执行门槛：默认化名仍在生成、生成失败、或有已选实体的映射被清空时，
+  // 不允许执行——避免成品与用户在 UI 确认的映射不一致
+  const replaceUnready = useMemo(
+    () =>
+      recognition.processingMode === 'replace' &&
+      !fileCtx.isImageMode &&
+      (pseudonymMapLoading ||
+        Boolean(pseudonymMapError) ||
+        selectedEntityTexts.some((text) => !(pseudonymMap[text] ?? '').trim())),
+    [
+      recognition.processingMode,
+      fileCtx.isImageMode,
+      pseudonymMapLoading,
+      pseudonymMapError,
+      selectedEntityTexts,
+      pseudonymMap,
+    ],
+  );
+
+  // 已选实体的范围内，不同原文映射到同一非空化名 → 冲突（警告展示用）
   const pseudonymConflicts = useMemo(() => {
+    const inScope = new Set(selectedEntityTexts);
     const byReplacement = new Map<string, string[]>();
     for (const [text, replacement] of Object.entries(pseudonymMap)) {
+      if (!inScope.has(text)) continue;
       const key = replacement.trim();
       if (!key) continue;
       const list = byReplacement.get(key) ?? [];
@@ -285,7 +313,7 @@ export function usePlayground() {
       if (texts.length > 1) texts.forEach((text) => conflicted.add(text));
     }
     return conflicted;
-  }, [pseudonymMap]);
+  }, [pseudonymMap, selectedEntityTexts]);
 
   const presetSeqRef = useRef(recognition.presetApplySeq);
   useEffect(() => {
@@ -305,6 +333,11 @@ export function usePlayground() {
   const handleRedact = useCallback(async () => {
     if (!fileCtx.fileInfo) return;
     if (redactionInFlightRef.current) return;
+    // 替换模式映射未确认完（生成中/失败/有空值）不允许执行，保证成品即所见
+    if (replaceUnready) {
+      showToast(t('playground.pseudonymConfirmRequired'), 'info');
+      return;
+    }
 
     redactionAbortRef.current?.abort();
     const controller = new AbortController();
@@ -323,7 +356,7 @@ export function usePlayground() {
         ? selectedBoxes.length
         : selectedEntities.length;
 
-      const isPseudonym = recognition.processingMode === 'replace';
+      const isPseudonym = recognition.processingMode === 'replace' && !fileCtx.isImageMode;
       const pseudonymReplacements: Record<string, string> = {};
       if (isPseudonym) {
         for (const entity of selectedEntities) {
@@ -424,6 +457,7 @@ export function usePlayground() {
     recognition.replacementMode,
     recognition.processingMode,
     pseudonymMap,
+    replaceUnready,
   ]);
 
   const cancelProcessing = useCallback(() => {
@@ -479,6 +513,7 @@ export function usePlayground() {
     setEntityMap({});
     setPseudonymMap({});
     setPseudonymMapLoading(false);
+    setPseudonymMapError(null);
     setConfirmedPseudonymMap(null);
     // 新文件回到默认处理方式（打码），与"识别后默认匿名化"的既有行为一致
     setRecognitionProcessingMode('mask');
@@ -519,14 +554,23 @@ export function usePlayground() {
     });
   }, [fileCtx.fileInfo]);
 
-  // 化名对照表 csv（替换模式执行成功后可用）：前端从确认时的映射快照生成
+  // 化名对照表 csv（替换模式执行成功后可用）：用执行响应的 entity_map
+  // （后端真实替换结果，含 coref 复用）生成，与成品天然一致
   const handleDownloadPseudonymCsv = useCallback(() => {
     if (!fileCtx.fileInfo || !confirmedPseudonymMap) return;
-    const csv = buildPseudonymCsv(entityCtx.entities, confirmedPseudonymMap);
+    const csv = buildPseudonymCsv(entityCtx.entities, entityMap, {
+      headers: [
+        t('playground.pseudonymCsvColOriginal'),
+        t('playground.pseudonymCsvColType'),
+        t('playground.pseudonymCsvColReplacement'),
+        t('playground.pseudonymCsvColCount'),
+      ],
+      typeLabel: (type) => recognition.getTypeConfig(type)?.name ?? type,
+    });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const base = fileCtx.fileInfo.filename.replace(/\.[^.]+$/, '');
-    triggerDownload(blob, `化名对照表_${base}.csv`);
-  }, [confirmedPseudonymMap, entityCtx.entities, fileCtx.fileInfo]);
+    triggerDownload(blob, `${t('playground.pseudonymCsvFilePrefix')}_${base}.csv`);
+  }, [confirmedPseudonymMap, entityCtx.entities, entityMap, fileCtx.fileInfo, recognition]);
 
   const openPopout = useCallback(() => {
     imageCtx.openPopout(recognition.visionTypes);
@@ -555,6 +599,9 @@ export function usePlayground() {
     pseudonymMap,
     setPseudonymReplacement,
     pseudonymMapLoading,
+    pseudonymMapError,
+    retryPseudonymLoad,
+    replaceUnready,
     pseudonymConflicts,
     confirmedPseudonymMap,
     handleDownloadPseudonymCsv,

@@ -29,8 +29,10 @@
 
 - 实体面板(文本模式)顶部:「处理方式」二选一 Button 组(打码=默认 / 替换(化名)),`data-testid="playground-processing-mode-{mask|replace}"`;
 - mask 分支:原模式栅格去掉 pseudonym 项(3 选);
-- replace 分支:**化名映射小节**——每行 `原文 | 类型徽章 | 化名 Input`;顶部小字说明"确认后执行替换,可逐行调整";冲突行高亮警告;加载中显示 skeleton;
-- 样例预览:`getModePreview` 的 pseudonym 分支改用实际映射(`原文 -> 化名`),签名加可选 map 参数;
+- replace 分支:**化名映射小节**——每行 `原文 | 类型徽章 | 化名 Input`;顶部小字说明"确认后执行替换,可逐行调整";冲突行高亮警告;加载中显示文字提示;生成失败显示错误条 + 重试按钮;
+- **执行门槛**(review 修复):替换模式下默认化名生成中/失败、或存在映射为空的已选实体时,执行按钮禁用——成品必须与用户确认的映射一致;
+- **对照表数据源**(review 修复):csv 用执行响应的 `entity_map`(后端真实替换结果,含 coref 复用)生成,而非前端确认快照,保证与成品一致;preview-map 请求透传完整实体(含 coref_id),与 execute 同语义;
+- 样例预览:`getModePreview` 的 pseudonym 分支改用实际映射(`原文 -> 化名`,未映射显示 …),签名加可选 map 参数,只取已勾选实体;
 - 结果页:replace 执行后「下载化名对照表」按钮(与现有下载并列)。
 
 ### 2.4 不改动
@@ -54,5 +56,5 @@
 ## 4. 风险
 
 - preview-map 在切换/勾选频繁时的请求节流:仅对缺失 key 触发,entities 引用变更才重算(derived),无轮询;
-- 大实体量(数百行)渲染:映射小节放 ScrollArea,行高紧凑;
+- 大实体量(数百行)渲染:映射小节限高滚动(max-h + overflow-y-auto),行高紧凑;
 - 已合并的 4 选 1 UI 被替换:`replacementMode` 仍含 pseudonym(类型层不动),仅展示层重组,批量向导不受影响。

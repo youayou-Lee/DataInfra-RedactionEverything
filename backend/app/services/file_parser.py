@@ -62,6 +62,15 @@ class FileParser:
 
     # 判断 PDF 是否为扫描件的文本密度阈值
     TEXT_DENSITY_THRESHOLD = 100  # 每页至少 100 个字符才认为是文本 PDF
+    # 整页图片覆盖率达到该值时，视为扫描页（扫描件常内嵌一层低质量 OCR 文本叠在整页图片上）。
+    # 注意取舍：带整页背景图的文本型 PDF（导出的演示文稿、信纸模板）会被误判走图像 OCR——
+    # 但图像 OCR 对这类文件仍能正确识别，代价只是变慢；反向漏判（扫描件走文本层）才是漏脱敏。
+    SCAN_PAGE_IMAGE_COVER_RATIO = 0.9
+    # 扫描页占比达到该值时，整份 PDF 按扫描件处理
+    SCAN_PAGE_MAJORITY_RATIO = 0.5
+    # 文本层碎片化（断行严重）判定：平均行长过短且超短行占比过高
+    SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN = 12
+    SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO = 0.3
 
     _pdf_page_image_cache: OrderedDict[tuple[str, int, int, int, int], bytes] = OrderedDict()
     _pdf_page_image_cache_lock = Lock()
@@ -70,6 +79,8 @@ class FileParser:
         tuple[list["OCRTextBlock"], int, int],
     ] = OrderedDict()
     _pdf_page_text_blocks_cache_lock = Lock()
+    _pdf_page_scan_cache: OrderedDict[tuple[str, int, int, int, int], bool] = OrderedDict()
+    _pdf_page_scan_cache_lock = Lock()
 
     def __init__(self) -> None:
         self.last_pdf_page_image_cache_hit: bool | None = None
@@ -376,18 +387,34 @@ class FileParser:
 
         pages = []
         total_chars = 0
+        scanned_page_count = 0
+        fragmented_page_count = 0
 
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             text = page.get_text()
             pages.append(text)
             total_chars += len(text.strip())
+            if self._is_scanned_page(page):
+                scanned_page_count += 1
+            elif self.has_fragmented_text_layer(text):
+                fragmented_page_count += 1
 
         doc.close()
 
-        # 判断是否为扫描件
-        avg_chars_per_page = total_chars / len(pages) if pages else 0
-        is_scanned = avg_chars_per_page < self.TEXT_DENSITY_THRESHOLD
+        page_count = len(pages)
+        # 判断是否为扫描件：
+        # 1) 整页扫描图占多数（扫描件即使内嵌 OCR 文本层也能识别出来）；
+        # 2) 文本层碎片化（断行严重、列错位）的页面占多数；
+        # 3) 兜底沿用原有的平均文本密度阈值。
+        avg_chars_per_page = total_chars / page_count if page_count else 0
+        scanned_ratio = scanned_page_count / page_count if page_count else 0
+        fragmented_ratio = fragmented_page_count / page_count if page_count else 0
+        is_scanned = (
+            scanned_ratio >= self.SCAN_PAGE_MAJORITY_RATIO
+            or fragmented_ratio >= self.SCAN_PAGE_MAJORITY_RATIO
+            or avg_chars_per_page < self.TEXT_DENSITY_THRESHOLD
+        )
 
         content = "\n\n".join(pages)
 
@@ -395,10 +422,71 @@ class FileParser:
             file_id="",
             file_type=FileType.PDF_SCANNED if is_scanned else FileType.PDF,
             content=content if not is_scanned else "",
-            page_count=len(pages),
+            page_count=page_count,
             pages=pages if not is_scanned else [],
             is_scanned=is_scanned,
         )
+
+    @staticmethod
+    def _is_scanned_page(page: "fitz.Page") -> bool:
+        """单页是否为扫描页：有整页大小的图片覆盖（文本型 PDF 不会有整页底图）。"""
+        page_area = abs(page.rect)
+        if page_area <= 0:
+            return False
+        for image in page.get_images(full=True):
+            try:
+                rects = page.get_image_rects(image[0])
+            except Exception:
+                continue
+            for rect in rects:
+                if abs(rect) >= page_area * FileParser.SCAN_PAGE_IMAGE_COVER_RATIO:
+                    return True
+        return False
+
+    @staticmethod
+    def has_fragmented_text_layer(text: str) -> bool:
+        """文本层是否碎片化（断行、乱序、字段错位），是低质量 OCR 文本层的典型特征。"""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) < 5:
+            return False
+        avg_line_len = sum(len(line) for line in lines) / len(lines)
+        short_line_ratio = sum(1 for line in lines if len(line) <= 2) / len(lines)
+        return (
+            avg_line_len < FileParser.SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN
+            and short_line_ratio > FileParser.SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO
+        )
+
+    async def is_pdf_page_scanned(self, file_path: str, page: int) -> bool:
+        """单页是否为扫描页（整页图片覆盖），带缓存。
+
+        供视觉链路在尝试内嵌文本层前调用：扫描页的文本层是叠在整页图上的
+        低质量 OCR 产物，即使字符数充足也不应使用。
+        """
+        _validate_path(file_path)
+        cache_key = self._pdf_page_cache_key(file_path, page, 0)
+        cache_limit = int(settings.PDF_PAGE_IMAGE_CACHE_PAGES)
+        if cache_limit > 0:
+            with self._pdf_page_scan_cache_lock:
+                cached = self._pdf_page_scan_cache.get(cache_key)
+                if cached is not None:
+                    self._pdf_page_scan_cache.move_to_end(cache_key)
+                    return cached
+
+        doc = fitz.open(cache_key[0])
+        try:
+            if page < 1 or page > len(doc):
+                raise ValueError(f"页码超出范围: {page}")
+            result = self._is_scanned_page(doc.load_page(page - 1))
+        finally:
+            doc.close()
+
+        if cache_limit > 0:
+            with self._pdf_page_scan_cache_lock:
+                self._pdf_page_scan_cache[cache_key] = result
+                self._pdf_page_scan_cache.move_to_end(cache_key)
+                while len(self._pdf_page_scan_cache) > cache_limit:
+                    self._pdf_page_scan_cache.popitem(last=False)
+        return result
 
     async def _parse_image(self, file_path: str) -> ParseResult:
         """解析图片文件"""

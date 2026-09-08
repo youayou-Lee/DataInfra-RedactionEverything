@@ -740,7 +740,8 @@ class HybridNERService:
                         start=pos,
                         end=end,
                         page=getattr(source_entity, "page", 1),
-                        confidence=min(float(getattr(source_entity, "confidence", 0.9)), 0.9),
+                        # HaS 实体按 schema 可以不带分数（confidence=None），回退 0.9
+                        confidence=min(float(_c) if (_c := getattr(source_entity, "confidence", None)) is not None else 0.9, 0.9),
                         source="has",
                         coref_id=source_entity.coref_id or f"semantic:{source_entity.type}:{value}",
                     ))

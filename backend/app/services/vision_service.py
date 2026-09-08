@@ -162,7 +162,16 @@ async def prime_pdf_text_layer_sparse_probe(
             "duration_ms": _elapsed_ms(started),
         }
         min_chars = int(settings.PDF_TEXT_LAYER_MIN_CHARS)
-        if text_chars < min_chars:
+        layer_text = "\n".join(str(block.text or "") for block in blocks)
+        scan_page = await parser.is_pdf_page_scanned(file_path, page) or (
+            parser.has_fragmented_text_layer(layer_text)
+        )
+        if scan_page:
+            stats["scan_page"] = True
+            stats["sparse"] = True
+            _record_sparse_pdf_text_layer_probe(file_path, file_type, stats=stats)
+            stats["skip_after_probe"] = _should_skip_sparse_pdf_text_layer(file_path, file_type)
+        elif text_chars < min_chars:
             _record_sparse_pdf_text_layer_probe(file_path, file_type, stats=stats)
             stats["sparse"] = True
             stats["skip_after_probe"] = _should_skip_sparse_pdf_text_layer(file_path, file_type)
@@ -1493,6 +1502,17 @@ class VisionService:
                 getattr(self.file_parser, "last_pdf_page_text_blocks_cache_hit", False)
             ),
         }
+        # 扫描页的内嵌文本层是叠在整页图片上的低质量 OCR 产物（断行、乱序、
+        # 字段错位），字符数再多也不能用于识别，必须回退图像 OCR。
+        layer_text = "\n".join(str(block.text or "") for block in blocks)
+        if await self.file_parser.is_pdf_page_scanned(file_path, page) or (
+            self.file_parser.has_fragmented_text_layer(layer_text)
+        ):
+            self.last_pdf_text_layer_stats["scan_page"] = True
+            raise ValueError(
+                f"scanned page with embedded OCR text layer ({text_chars} chars)"
+            )
+
         if text_chars < int(settings.PDF_TEXT_LAYER_MIN_CHARS):
             raise ValueError(
                 f"sparse native text layer ({text_chars} chars < {settings.PDF_TEXT_LAYER_MIN_CHARS})"

@@ -115,7 +115,9 @@ function BatchStep1ConfigInner() {
       ? t('batchWizard.step1.textMethodSmart')
       : textRedactionMode === 'mask'
         ? t('batchWizard.step1.textMethodMask')
-        : t('batchWizard.step1.textMethodStructured');
+        : textRedactionMode === 'pseudonym'
+          ? t('batchWizard.step1.textMethodPseudonym')
+          : t('batchWizard.step1.textMethodStructured');
   const imageMethodLabel =
     imageRedactionMethod === 'blur'
       ? t('batchWizard.step1.imageMethodBlur')

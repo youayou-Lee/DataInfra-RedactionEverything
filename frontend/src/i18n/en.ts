@@ -93,6 +93,8 @@ const enBase: Record<string, string> = {
   'mode.smart': 'Smart Replace',
   'mode.mask': 'Mask',
   'mode.structured': 'Structured Tags',
+  'mode.pseudonym': 'Pseudonym',
+  'editor.samplePseudonym': 'Alias A',
 
   'job.status.draft': 'Draft',
   'job.status.queued': 'Queued',
@@ -797,6 +799,46 @@ const enBase: Record<string, string> = {
     'Vision detection timed out (over 3 min). Try a smaller image, or check that the vision service (GLM-4.6V/vLLM) is healthy and has enough free GPU memory.',
   'error.visionDetectionFailed': 'Vision detection failed',
   'error.reRecognizeFailed': 'Re-recognition failed',
+
+  'nav.wordPools': 'Word Pools',
+  'nav.wordPools.sub': 'Pools for pseudonym mode',
+
+  'batchWizard.step1.textMethodPseudonym': 'Pseudonym',
+  'batchWizard.step1.textModeBulletPseudonym':
+    'Pseudonym - replace text with fictional words from pools, keeping documents readable',
+  'batchWizard.step1.wordPoolLink': 'Configure word pools →',
+
+  'wordPools.title': 'Word Pool Configuration',
+  'wordPools.desc':
+    'Maintain per-entity-type word pools for pseudonym mode. Originals matched in the custom map are replaced exactly; others draw from the pool in order, with the selected strategy once exhausted.',
+  'wordPools.loadFailed': 'Failed to load word pools',
+  'wordPools.empty': 'No word pools yet',
+  'wordPools.words': 'Pool words (one per line)',
+  'wordPools.wordsPlaceholder': 'One replacement word per line, e.g. John Doe',
+  'wordPools.strategy': 'Exhaustion strategy',
+  'wordPools.strategy_numbered': 'Numbered (Word1, Word2…)',
+  'wordPools.strategy_cycle': 'Cycle',
+  'wordPools.strategy_generated': 'Auto-generated',
+  'wordPools.customMap': 'Exact mapping (original → replacement)',
+  'wordPools.customMapOrig': 'Original',
+  'wordPools.customMapRepl': 'Replacement',
+  'wordPools.customMapAdd': 'Add mapping',
+  'wordPools.customMapRemove': 'Remove this mapping',
+  'wordPools.save': 'Save',
+  'wordPools.saving': 'Saving…',
+  'wordPools.saved': 'Word pool saved',
+  'wordPools.saveFailed': 'Failed to save word pool',
+  'wordPools.reset': 'Reset to default',
+  'wordPools.resetDone': 'Word pool reset to default',
+  'wordPools.resetFailed': 'Failed to reset word pool',
+  'wordPools.export': 'Export',
+  'wordPools.exportFailed': 'Export failed',
+  'wordPools.import': 'Import',
+  'wordPools.importReplace': 'Replace all on import',
+  'wordPools.importDone': 'Imported {count} word pools',
+  'wordPools.importInvalid': 'Invalid import file',
+  'wordPools.importFailed': 'Import failed',
+  'wordPools.customized': 'Customized',
 };
 
 const enOverrides: Record<string, string> = {

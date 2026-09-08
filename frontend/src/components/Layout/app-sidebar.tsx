@@ -129,6 +129,12 @@ export function AppSidebar() {
       sublabel: t('nav.redactionList.sub'),
       icon: RulesIcon,
     },
+    {
+      path: '/settings/word-pools',
+      label: t('nav.wordPools'),
+      sublabel: t('nav.wordPools.sub'),
+      icon: RulesIcon,
+    },
     ...(isAdmin
       ? [
           {

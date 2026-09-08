@@ -86,6 +86,8 @@ def chat_completions(req: ChatRequest):
     # 实际以 <|im_end|>(151645) 结束 → 不显式指定则永远等不到停止符, 每次生成拉满
     # max_tokens(实测 660-1450 tokens/次, 且内容复读)。两者都加入停止集后 22 tokens 收敛
     _im_end = tok.convert_tokens_to_ids("<|im_end|>")
+    if _im_end is not None and _im_end == getattr(tok, "unk_token_id", None):
+        _im_end = None  # 词表无此 token 时返回 unk id, 误作停止符会在首个 <unk> 处截断
     _eos_ids = [i for i in {tok.eos_token_id, _im_end} if i is not None]
     gen_kwargs = {
         "max_new_tokens": max_new,
@@ -103,7 +105,9 @@ def chat_completions(req: ChatRequest):
             out = model.generate(**inputs, **gen_kwargs)
     new_tokens = out[0][inputs["input_ids"].shape[1]:]
     content = tok.decode(new_tokens, skip_special_tokens=True)
-    finish_reason = "length" if len(new_tokens) >= max_new else "stop"
+    # EOS 恰好落在 cap 上时 HF 会把它包含进输出, 此时是自然停止而非截断
+    _hit_eos = bool(new_tokens) and int(new_tokens[-1]) in _eos_ids
+    finish_reason = "length" if (len(new_tokens) >= max_new and not _hit_eos) else "stop"
     return {
         "id": f"chatcmpl-has-{int(started)}",
         "object": "chat.completion",

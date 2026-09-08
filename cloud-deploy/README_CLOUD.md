@@ -3,6 +3,13 @@
 适用：ModelScope 免费 GPU 实例等**无法运行 Docker** 的环境。
 本地机器只需要跑一次打包脚本，其余都在云上执行。
 
+> 配套部署实录：[SCNet L20 (NVIDIA)](../docs/SCNet-L20-jupyterlab-pytorch-部署教程.md) ｜
+> [SCNet K100_AI (海光 DCU/DTK)](../docs/SCNet-K100_AI-DCU-DTK26.04-部署教程.md)——DCU 适配用
+> `setup_dtk.sh`/`start_dtk.sh`（transformers 自包 NER），本 README 描述的 NVIDIA 路径用
+> `setup_cloud.sh`/`start_cloud.sh`（vLLM NER）。
+
+> 凭据：平台代理经环境变量注入，运行前 `export SCNET_PROXY_URL='http://<user>:<pass>@<代理地址:端口>'`
+
 ## 部署的是什么
 
 | 端口 | 进程 | 对应 Docker 容器 | 运行环境 |
@@ -27,10 +34,10 @@ cd /home/you/workspace/Desensitization
 ./pack_upload.sh user@服务器IP
 ```
 
-脚本会打两个包并 scp 上去：
-- `redaction-code.tar.gz`：代码 + 部署脚本（排除 node_modules / venv / 模型）
-- `locateanything-weights.tar.gz`：LocateAnything-3B 权重 7.3GB（官方渠道分发，本地已有，直接传）
-- HaS 1.2GB 不传，云上从 hf-mirror 下载（机房带宽远快于家用上行）
+脚本会打包并 scp 上去：
+- `redaction-code.tar.gz`：代码 + 部署脚本（排除 node_modules / venv / 模型 / .env）
+- `yoloe-weights.tar.gz`：可选，仅当本地 `yoloe-service/*.pt` 存在时才打包（不装不影响主平台）
+- HaS 1.2GB / LocateAnything 7.3GB 不传：云上从 hf-mirror / ModelScope 直下（机房带宽远快于家用上行）
 
 ### ② 云端：一次性安装（约 20-40 分钟，取决于网速）
 
@@ -38,11 +45,11 @@ cd /home/you/workspace/Desensitization
 
 ```bash
 cd ~/redaction
-tar xzf redaction-code.tar.gz && tar xzf locateanything-weights.tar.gz
+tar xzf redaction-code.tar.gz   # yoloe 权重包存在时另行: tar xzf yoloe-weights.tar.gz -C yoloe-service
 ./setup_cloud.sh
 ```
 
-setup 做的事：系统依赖 → 两个 venv → pip 依赖（清华源）→ 下载 HaS 模型（hf-mirror）→ 生成 .env（自动生成 JWT 密钥）→ nvm + Node 22 → 前端构建。可重复执行（已装的会跳过）。
+setup 做的事：系统依赖 → 两个 venv → pip 依赖（清华源）→ 下载 HaS 模型（hf-mirror）→ 生成 .env（自动生成 JWT 密钥）→ Node 22（官方 tarball → ~/.local/node-v22）→ 前端构建。可重复执行（已装的会跳过）。
 
 ### ③ 云端：启动
 

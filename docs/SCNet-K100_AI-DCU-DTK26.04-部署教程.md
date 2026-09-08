@@ -163,4 +163,5 @@ OCR 撞 GPU 硬检查 FATAL `installed Paddle build has no CUDA support`。已�
   - 管道并行（OCR 与 LA 并行，backend 代码改造）：-20% 量级
 - 光合社区 z-file 还有 `torch251/torch271` 等其他配套 wheel，目录
   `https://download.sourcefind.cn:65024/4/main/vision/DAS1.8`（浏览需真浏览器，curl 是 SPA 壳）
+- 安全提示：NER/LA/OCR 三个模型服务无鉴权且绑定 0.0.0.0，当前仅因平台只映射 3000 而安全；切勿将其余端口暴露到公网，或前置网关鉴权后再暴露
 - 商用许可提醒同 L20（Personal Use + LA 权重 NVIDIA 非商业 + PyMuPDF AGPL）

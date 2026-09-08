@@ -6,11 +6,13 @@
 #   bash $P/bootstrap.sh                # 只做环境校验+修复（软链、run_backend.sh、验证）
 #   bash $P/bootstrap.sh --services     # 修复后拉起 CPU 三件套（OCR/backend/frontend，无卡模式用）
 #   有卡模式起全量5服务: cd /root/redaction/cloud-deploy && bash start_cloud.sh
-set -e
+set -euo pipefail
+# 平台代理账密不入库: 运行前必须 export SCNET_PROXY_URL(平台控制台获取)
+: "${SCNET_PROXY_URL:?请先 export SCNET_PROXY_URL='http://<user>:<pass>@<代理地址:端口>'}"
 P=/root/private_data/redaction-persist
 UP=/root/redaction/DataInfra-RedactionEverything
 LOG=/root/redaction/cloud-deploy/logs
-PROXY_URL='$SCNET_PROXY_URL'
+PROXY_URL="$SCNET_PROXY_URL"
 step(){ echo; echo "==> $*"; }
 
 [ -d "$P/dot-venvs" ] || { echo "致命: 持久卷 $P 不存在（未挂载或数据丢失）"; exit 1; }
@@ -18,7 +20,7 @@ step(){ echo; echo "==> $*"; }
 
 step "0/5 PATH 与代理写入 .bashrc（交互 shell 生效）"
 grep -q "/opt/conda/bin" ~/.bashrc 2>/dev/null || echo 'export PATH=/opt/conda/bin:$PATH' >> ~/.bashrc
-if ! grep -q "<代理地址:端口>" ~/.bashrc 2>/dev/null; then
+if ! grep -q "# 平台代理" ~/.bashrc 2>/dev/null; then
   cat >> ~/.bashrc <<EOF
 
 # 平台代理

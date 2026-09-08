@@ -21,7 +21,11 @@ set +u
 source /opt/dtk/env.sh
 set -u
 # MIOpen 算子内核缓存落持久卷: 首次 JIT(~60s/新形状)的结果重启/换实例不再重算
-mkdir -p /root/private_data/redaction-persist/miopen-cache
+# 哨兵检查: 持久卷未挂载时 mkdir 会在容器临时层"成功", 缓存持久化的意义悄然落空
+if [ ! -d /root/private_data/redaction-persist/dot-venvs ] && [ ! -d /root/private_data/redaction-persist/backend-models ]; then
+    echo "警告: 平台持久卷疑似未挂载(缺 dot-venvs/backend-models 哨兵), miopen/paddlex 缓存将落临时层"
+fi
+mkdir -p /root/private_data/redaction-persist/miopen-cache 2>/dev/null || mkdir -p /root/.cache/miopen
 export MIOPEN_USER_CACHE_PATH=/root/private_data/redaction-persist/miopen-cache
 DTK_EXPORT="source /opt/dtk/env.sh; export MIOPEN_USER_CACHE_PATH=/root/private_data/redaction-persist/miopen-cache;"
 

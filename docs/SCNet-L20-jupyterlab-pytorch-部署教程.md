@@ -230,4 +230,5 @@ python3 -m venv --system-site-packages ~/.venvs/vllm2
 - yoloe 服务（8095）未部署（可选，不影响主平台）
 - 公网端口映射由平台控制台操作（只需 3000）
 - 若换新实例重做：按本教程四→八顺序执行约 1 小时；本地 `cloud-deploy/` 脚本已含全部修复
+- 安全提示：NER/LA/OCR 三个模型服务无鉴权且绑定 0.0.0.0，当前仅因平台只映射 3000 而安全；切勿将其余端口暴露到公网，或前置网关鉴权后再暴露
 - 商用提醒：项目为 Personal Use License + LA 权重 NVIDIA 非商业许可 + PyMuPDF AGPL，商用需单独授权（详见项目 LICENSE）

@@ -54,11 +54,14 @@ echo "磁盘可用: ${AVAIL_GB}GB (需约 30GB: 模型8.5 + venv/pip ~8 + node_m
 
 # ---------- 1. venv-app: backend + OCR (CPU paddle) ----------
 log "venv-app (backend + OCR CPU paddle)"
-if [ ! -f "$VENV_APP/bin/activate" ]; then
+# 印章式幂等: activate 存在≠装完(半途失败会被永久跳过), 以装完印章为准
+if [ ! -f "$VENV_APP/.install-complete" ]; then
     python3 -m venv "$VENV_APP"
     "$VENV_APP/bin/pip" install -q --upgrade pip
+    [ -f "$BACKEND/requirements.txt" ] || { echo "缺少 requirements.txt — 未按 README 步骤解包代码"; exit 1; }
     grep -vE '^\s*(--extra-index-url|paddlepaddle-gpu)' "$BACKEND/requirements.txt" > /tmp/req-dtk.txt
     "$VENV_APP/bin/pip" install paddlepaddle==3.2.2 -r /tmp/req-dtk.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    touch "$VENV_APP/.install-complete"
 fi
 "$VENV_APP/bin/python" -c "import paddle; print('paddle', paddle.__version__)" 2>/dev/null || echo "警告: paddle 导入失败"
 
@@ -66,11 +69,12 @@ fi
 # 注意: 绝不能在此 venv 里 pip install torch（会覆盖为 CUDA 版）。
 # transformers 等只装 CPU 侧依赖，GPU 计算走系统 DTK torch。
 log "venv-nl (transformers 服务，复用系统 DTK torch)"
-if [ ! -f "$VENV_NL/bin/activate" ]; then
+if [ ! -f "$VENV_NL/.install-complete" ]; then
     python3 -m venv --system-site-packages "$VENV_NL"
     "$VENV_NL/bin/pip" install -q --upgrade pip
     "$VENV_NL/bin/pip" install "transformers==4.57.1" fastapi "uvicorn[standard]" pydantic httpx accelerate safetensors pillow \
         -i https://pypi.tuna.tsinghua.edu.cn/simple
+    touch "$VENV_NL/.install-complete"
 fi
 # LocateAnything 附加依赖装到 --target 目录（其版本锁不污染 venv），独立判存保证可修复重装
 # 坑(实测两连): ①不带 --no-deps → peft 拖下 torch 2.14 + CUDA13 全家桶 ~2G(装完即删的纯浪费);

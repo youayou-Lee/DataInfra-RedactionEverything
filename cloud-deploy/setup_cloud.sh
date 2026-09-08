@@ -39,28 +39,36 @@ for pkg in tar curl tmux; do command -v $pkg >/dev/null || { echo "缺少 $pkg�
 
 # ---------- 1. venv-app: backend + OCR ----------
 log "venv-app（backend + PP-StructureV3 OCR, CPU paddle）"
-if [ ! -f "$VENV_APP/bin/activate" ]; then
+# 印章式幂等: activate 存在≠装完(半途失败的安装会被永久跳过), 以装完末尾的印章为准
+if [ ! -f "$VENV_APP/.install-complete" ]; then
     python3 -m venv "$VENV_APP"
     "$VENV_APP/bin/pip" install -q --upgrade pip
     # requirements.txt 里的 paddlepaddle-gpu 是 cu129 wheel，需要驱动>=575，
     # 云机驱动不满足；替换为 CPU 版 3.2.2（与已验证的 Docker OCR 容器同版本行为）
+    [ -f "$BACKEND/requirements.txt" ] || { echo "缺少 requirements.txt — 未按 README 步骤② 解包代码"; exit 1; }
     grep -vE '^\s*(--extra-index-url|paddlepaddle-gpu)' "$BACKEND/requirements.txt" > /tmp/req-cloud.txt
     "$VENV_APP/bin/pip" install $PIP_ARGS paddlepaddle==3.2.2
     "$VENV_APP/bin/pip" install $PIP_ARGS -r /tmp/req-cloud.txt
     "$VENV_APP/bin/pip" install $PIP_ARGS -U "huggingface_hub"
+    touch "$VENV_APP/.install-complete"
 fi
 "$VENV_APP/bin/python" -c "import paddle; print('paddle', paddle.__version__)" 2>/dev/null \
   || echo "警告: paddle 导入失败，检查 logs"
 
 # ---------- 2. venv-vllm: vLLM + LocateAnything ----------
 log "venv-vllm（vLLM + LocateAnything）"
-if [ ! -f "$VENV_VLLM/bin/activate" ]; then
+if [ ! -f "$VENV_VLLM/.install-vllm" ]; then
     python3 -m venv "$VENV_VLLM"
     "$VENV_VLLM/bin/pip" install -q --upgrade pip
     # vLLM 0.8.5 对应 torch 2.7.0（cu126 wheel 兼容驱动 535/CUDA 11.8 实例）
     "$VENV_VLLM/bin/pip" install $PIP_ARGS vllm==0.8.5    # 自带匹配的 torch 栈（约2.5GB，耐心等）
-    # LocateAnything 附加依赖装到独立 --target 目录，避免与 vLLM 版本锁冲突
+    touch "$VENV_VLLM/.install-vllm"
+fi
+# LocateAnything 附加依赖装到独立 --target 目录（版本锁不污染 venv），独立判存可修复重装
+if [ ! -d "$LA_DEPS/peft" ]; then
     "$VENV_VLLM/bin/pip" install $PIP_ARGS --target "$LA_DEPS" -r "$BACKEND/requirements-locateanything.txt"
+    # 坑(L20 实测③): --target 会拖进 CUDA torch/numpy, PYTHONPATH 优先于 venv torch → 必删
+    rm -rf "$LA_DEPS"/torch* "$LA_DEPS"/numpy*
 fi
 
 # ---------- 3. 模型权重 ----------
@@ -104,6 +112,11 @@ EOF
 else
     echo ".env 已存在，跳过"
 fi
+
+# backend 只读 backend/.env (config.py BACKEND_DIR=parents[2]); 缺失时 VISUAL_FEATURES_BASE_URL
+# 回落默认 9090(实际 8090) → LA 被静默判 offline。软链对齐, 不依赖 tmux 环境继承的侥幸
+ln -sfn "$UPSTREAM/.env" "$BACKEND/.env"
+echo "backend/.env -> $(readlink "$BACKEND/.env")"
 
 # ---------- 5. Node + 前端构建 ----------
 log "Node 22 + 前端构建"

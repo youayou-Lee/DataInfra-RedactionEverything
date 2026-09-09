@@ -144,7 +144,12 @@ def _require_gpu_or_exit() -> None:
         _fatal(1)
 
     try:
-        paddle.set_device("gpu:0")
+        # DCU 部署：gpu:0 会走 enable_use_gpu → ROCm C++ 侧设置
+        # conv_workspace_size_limit gflag（部分 DCU 环境未注册该 gflag，predictor
+        # 创建直接 InvalidArgument）。走 dcu:0 custom-device 路径 + 预设
+        # FLAGS_conv_workspace_size_limit 环境变量可绕过（DTK 26.04 实测）。
+        # NVIDIA 部署保持 gpu:0 默认不变。
+        paddle.set_device(os.environ.get("OCR_DEVICE", "gpu:0"))
         _paddle_device = str(paddle.get_device())
         print(f"[OCR] Paddle GPU ready: device={_paddle_device}, visible_gpus={gpu_count}", flush=True)
     except Exception as exc:
@@ -279,6 +284,7 @@ def get_structure_engine() -> Any | None:
         from paddleocr import PPStructureV3
 
         _structure = PPStructureV3(
+            device=os.environ.get("OCR_DEVICE") or None,
             use_table_recognition=False,  # 表格识别会把单元格重新 OCR 一遍，按表格几何重投到错误列/重复出框（同源于 seal 的伪坐标病理）；普通行检测已完整覆盖表格内印刷体数字
             use_seal_recognition=False,  # 公章由 LocateAnything 负责；关掉避免印章曲文被去扭曲后堆到左上角伪坐标
             use_formula_recognition=False,

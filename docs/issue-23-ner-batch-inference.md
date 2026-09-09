@@ -77,17 +77,20 @@ batch 摊薄每 token 的权重读取，理论接近线性加速直到 compute �
 1. 用户勾选类型按 `NER_TYPE_GROUP_MAP`（id→组标签，G1/G2/G3）查表分配；
 2. 未命中映射的类型（自定义/非默认勾选）→ 沿用现有 `_pack_ner_type_batches` 的
    token 预算分桶逻辑，作为第 4+ 批（不与固定组混合，避免语义污染）；
-3. 组数上限 `HAS_NER_TYPE_GROUPS_MAX`（默认 3+兜底批）；单组类型数超
+3. 组数 = 命中的语义组数 + 兜底批（默认场景 3 批）；单组类型数超
    `HAS_NER_MAX_TYPES_PER_REQUEST` 时组内再按现有逻辑拆；
-4. 单元素组不单独成请求（并入兜底批），避免空转。
 
 **执行与合并**：每组一个 `client.ner(text, group_types)` 调用，`asyncio.gather` +
 既有信号量并发；合并 = 结果 dict 按 key update（组间类型集合构造上不相交，无冲突路径）。
 
-**失败语义**（与现状等价，不静默丢类型）：
-- 组级失败：走既有 `retry_sync`（2 次退避）→ 仍失败则**整页失败**（现状单请求失败同语义）；
+**失败语义**（沿用现状容忍语义，零行为变更）：
+- 现状多批本就是 `asyncio.gather(return_exceptions=True)` + 失败批跳过（`has_service.py:322-329`），
+  依赖 `retry_sync`（2 次退避）、熔断器与 hybrid_ner 正则兜底；分组后同语义：组失败经重试仍败则跳过该组，
+  但日志需列出该组丢失的类型清单（可观测性增强，防「丢 G2 数字组无人知晓」）；
 - 组级截断（`finish_reason=length`）：既有「缺失类型补查 + 末桶残值丢弃」逻辑按组独立生效；
-- 组间结果类型集合并后必须 ⊇ 请求类型集，否则按失败处理（防御性校验）。
+- 组间类型集合按构造不相交（映射表互斥），合并无冲突路径。
+  注：模型对无匹配类型返回空是 prompt 约定的正常行为（"Do not return requested types with no
+  matches"），因此**不得**对「合并结果 ⊆ 请求类型集」做失败判定。
 
 **共指/coref 兼容性**：类型分组只改变 `ner()` 端点的调用粒度。hide/pair/seek 的输入是
 NER **合并后**的完整结果（assistant 回填，`has_client.py:672-707`），无组概念；

@@ -378,6 +378,11 @@ class Settings(BaseSettings):
     HAS_NER_SINGLE_PASS_MAX_TYPES: int = 96
     HAS_NER_SINGLE_PASS_MAX_TEXT_CHARS: int = 1600
     HAS_NER_MAX_PARALLEL_REQUESTS: int = 4
+    # Issue #23 轴A：类型语义分组并发。off = 现状（token 预算单批/自适应分批）；
+    # semantic = 按 G1 人员/组织、G2 标识号码、G3 时空固定映射拆组并发，每组
+    # 输出 token 少（60~100），配合服务端 batch（轴B）摊薄 decode 带宽。
+    # 组间类型按构造不相交；未映射类型（自定义/扩展）全部落入兜底批。
+    HAS_NER_TYPE_GROUPING: str = "off"
     # 全进程 HaS NER 并发闸门（shared_gpu_inference_slot 的信号量大小）。
     # 1 = 历史串行行为（单卡小显存部署安全默认）；vLLM 多实例部署可放开
     # （双卡 5090 生产 = 6：双实例 × 每实例 ~3，受 KV cache 预算约束）。

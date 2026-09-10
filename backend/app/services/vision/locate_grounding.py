@@ -22,7 +22,6 @@ from app.models.schemas import BoundingBox
 from app.services import model_config_service
 from app.services.vision.locate_payload import (
     _COORD_MODE_TOLERANCE,  # noqa: F401  # re-exported for API stability
-    _JPEG_QUALITY,
     _clamp_box,
     _extract_json_payload,
     _image_data_url,
@@ -33,11 +32,6 @@ from app.services.vision.locate_payload import (
 from app.services.vision.locate_requests import (
     _checklist_prompt,
     _detect_requests,
-)
-from app.services.vision.machine_code_detector import (
-    BARCODE_SLUG,
-    QR_CODE_SLUG,
-    detect_machine_code_regions,
 )
 
 logger = logging.getLogger(__name__)

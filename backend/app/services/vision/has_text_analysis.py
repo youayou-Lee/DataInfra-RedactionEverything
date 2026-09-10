@@ -23,8 +23,6 @@ from app.services.vision.has_text_payload import (
     _filter_blocks_for_has_text,
     _item_query_labels,
 )
-from app.services.vision.ocr_entity_match import _is_isolated_token_occurrence
-from app.services.vision.ocr_table_semantics import _block_search_text
 from app.services.vision.ocr_cache import (
     _add_has_text_duration,
     _begin_has_text_ner_inflight,
@@ -34,6 +32,8 @@ from app.services.vision.ocr_cache import (
     _has_text_ner_inflight_key,
     _record_has_text_metric,
 )
+from app.services.vision.ocr_entity_match import _is_isolated_token_occurrence
+from app.services.vision.ocr_table_semantics import _block_search_text
 from app.services.vision.ocr_tuning import (
     _BRIDGE_PAYLOAD_MAX_CHARS,
     _NER_DEFAULT_MIN_LEN,
@@ -246,7 +246,7 @@ def _block_residual_ink(block_compact: str, consumed_values: list[str]) -> str |
                     covered[i] = True
                 anchored_lens.append(len(value))
             start = block_compact.find(value, start + 1)
-    leftover = "".join(ch for ch, is_cov in zip(block_compact, covered) if not is_cov)
+    leftover = "".join(ch for ch, is_cov in zip(block_compact, covered, strict=False) if not is_cov)
     if not leftover:
         return None
     if not anchored_lens:

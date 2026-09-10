@@ -396,7 +396,7 @@ class HaSService:
                 *(run_batch(batch) for batch in batches),
                 return_exceptions=True,
             )
-            for batch, batch_result in zip(batches, batch_results):
+            for batch, batch_result in zip(batches, batch_results, strict=False):
                 if isinstance(batch_result, Exception):
                     # Issue #23：容忍语义与现状一致（跳过失败批，靠 retry/熔断/正则兜底），
                     # 但必须列出该批丢失的类型清单——G2 数字组丢失无人知晓就是漏脱敏。

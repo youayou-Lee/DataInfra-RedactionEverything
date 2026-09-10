@@ -1,0 +1,55 @@
+# ============================================================================
+# Dockerfile.dtk-paddle-vllm —— SCNet Dockerfile 构建用（平台支持指定驱动）
+# 目标：DTK 25.04.2 基座上同时得到 paddle-dcu GPU + DAS 定制 vLLM
+#
+# 关键事实（2026-09-10 实测）：
+#   1. paddle-dcu 全部 7 个稳定版本在 DTK 25.04.1 上 conv 全崩 MIOpen bad_alloc；
+#      DTK 25.04.2 + 3.2.1 是唯一 GPU 验证过的组合（scnet-paddle，1.61s/页）
+#   2. 本 vllm0.9 镜像里的 vllm/torch 是 DAS 定制 wheel，来自构建内网源
+#      http://10.16.4.1:8000（运行实例不可达，构建环境可达），路径按 DTK 分目录：
+#        /customized/vllm/dtk25.04.1/vllm-0.9.2+das.opt1.beta.dtk25041/<hash>/...whl
+#        /customized/pytorch/dtk25.04.1-release/torch251/<hash>/...whl
+#   3. PyPI 的 vllm 会拖 CUDA torch，在 DTK 上绝不能装（DTK26.04 实测毁栈）
+#
+# 待工程师确认后填入：
+#   BASE      —— DTK 25.04.2 基础镜像名（scnet-paddle 实例同款）
+#   VLLM_WHL  —— 10.16.4.1:8000 上 dtk25.04.2 对应的 vllm wheel 完整 URL
+#   TORCH_WHL —— 同上 torch wheel（若 BASE 未自带匹配 torch）
+# ============================================================================
+ARG BASE=registry.placeholder/dtk-base:25.04.2
+FROM ${BASE}
+
+ARG PADDLE_VER=3.2.1
+# 例：http://10.16.4.1:8000/customized/vllm/dtk25.04.2/vllm-0.9.x+das.opt1.dtk25042/<hash>/vllm-...-cp310-...whl
+ARG VLLM_WHL=
+ARG TORCH_WHL=
+
+ENV PADDLE_PDX_CACHE_HOME=/root/paddlex-cache \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
+    PADDLE_PDX_DISABLE_DEV_MODEL_WL=true
+
+# --- ① DAS 定制栈（构建内网源，wheel 直链；必须先 torch 后 vllm）---
+RUN if [ -n "$TORCH_WHL" ]; then pip install --no-cache-dir "$TORCH_WHL"; fi \
+ && if [ -n "$VLLM_WHL" ]; then pip install --no-cache-dir "$VLLM_WHL"; fi
+
+# --- ② paddle GPU（依赖顺序：safetensors 先行，官方 DCU 源）---
+RUN pip install --no-cache-dir \
+      https://paddle-whl.bj.bcebos.com/nightly/cu126/safetensors/safetensors-0.6.2.dev0-cp38-abi3-linux_x86_64.whl \
+ && pip install --no-cache-dir "paddlepaddle-dcu==${PADDLE_VER}" \
+      -i https://www.paddlepaddle.org.cn/packages/stable/dcu/ \
+ && pip install --no-cache-dir "paddleocr[doc-parser]"
+
+# --- ③ 部署工具链（代码/权重走持久卷，不打进镜像保持瘦身）---
+COPY cloud-deploy/ /root/cloud-deploy/
+
+# 构建示例：
+#   docker build -f Dockerfile.dtk-paddle-vllm \
+#     --build-arg BASE=<工程师给的25.04.2基础镜像> \
+#     --build-arg VLLM_WHL=<10.16.4.1上的25.04.2 vllm wheel URL> \
+#     --build-arg TORCH_WHL=<对应 torch wheel URL> \
+#     -t dtk-paddle-vllm:25.04.2 .
+#
+# 验收冒烟（起实例后）：
+#   1) paddle:  set_device("dcu:0") + conv2d（判别器，run_check 会假阳性）
+#   2) vllm:    python3 -m vllm.entrypoints.openai.api_server ... + verify_ner.py 3/3
+#   3) OCR GPU: PPStructureV3(device="dcu:0") 真页 1.6s/页 量级

@@ -36,11 +36,12 @@ import httpx
 HERE = Path(__file__).resolve().parent
 
 
-def poll_health(base: str, timeout_s: float, log_file: Path) -> bool:
+def poll_health(health_url: str, timeout_s: float, log_file: Path) -> bool:
+    """健康检查打根路径 /health（注意：不是 OpenAI 基座 /v1/health，那是 404）。"""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            r = httpx.get(f"{base.rstrip('/')}/health", timeout=5.0)
+            r = httpx.get(health_url, timeout=5.0)
             if r.status_code == 200 and r.json().get("ready"):
                 return True
         except Exception:
@@ -49,7 +50,7 @@ def poll_health(base: str, timeout_s: float, log_file: Path) -> bool:
             # 服务进程崩溃时提前退出，避免傻等满超时
             time.sleep(2)
             try:
-                r = httpx.get(f"{base.rstrip('/')}/health", timeout=5.0)
+                r = httpx.get(health_url, timeout=5.0)
                 if r.status_code == 200 and r.json().get("ready"):
                     return True
             except Exception:
@@ -67,6 +68,7 @@ class ServerProc:
         self.window_ms = window_ms
         self.proc = None
         self.base = f"http://127.0.0.1:{port}/v1"
+        self.health_url = f"http://127.0.0.1:{port}/health"
         self.log_file = Path(args.out) / f"server-p{port}-w{int(window_ms)}.log"
 
     def __enter__(self):
@@ -92,7 +94,7 @@ class ServerProc:
         self.log_handle = open(self.log_file, "ab")
         print(f"[server] 拉起 port={self.port} window={self.window_ms}ms …", flush=True)
         self.proc = subprocess.Popen(cmd, stdout=self.log_handle, stderr=subprocess.STDOUT, env=env)
-        if not poll_health(self.base, self.args.server_boot_timeout, self.log_file):
+        if not poll_health(self.health_url, self.args.server_boot_timeout, self.log_file):
             self.__exit__(None, None, None)
             raise RuntimeError(f"NER 服务 {self.port} 未在 {self.args.server_boot_timeout}s 内就绪，日志: {self.log_file}")
         print(f"[server] 就绪 {self.base}", flush=True)
@@ -245,7 +247,7 @@ def main() -> int:
               "", "明细：各配置同名 .json/.md；服务日志 server-*.log；逐项运行日志 *.run.log。"]
     (out / "SUMMARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (out / "summary.json").write_text(
-        json.dumps({k: {kk: v[kk] for kk in ("overall", "digital", "latency_sec", "comparison", "config")}
+        json.dumps({k: {kk: v.get(kk) for kk in ("overall", "digital", "latency_sec", "comparison", "config")}
                     for k, v in results.items()}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("\n".join(lines), flush=True)
     print(f"\nOK -> {out}/SUMMARY.md", flush=True)

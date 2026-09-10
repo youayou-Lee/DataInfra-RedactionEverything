@@ -9,11 +9,13 @@ import hashlib
 import inspect
 import io
 import logging
-from collections import OrderedDict
 import re
 import time
 import uuid
+from collections import OrderedDict
 from types import SimpleNamespace
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,6 @@ from app.core.visual_feature_categories import (
 from app.models.schemas import BoundingBox, FileType
 from app.services.file_parser import FileParser
 from app.services.ocr_has_vision_service import get_ocr_has_vision_service
-from app.services.vision.image_pipeline import (
-    PreviewBox,
-    SourcePipeline,
-    draw_preview_boxes,
-)
 from app.services.vision.box_geometry import (
     _calculate_iou,
     _calculate_smaller_overlap,
@@ -44,7 +41,11 @@ from app.services.vision.box_geometry import (
     _norm_box_type,
     _x_overlap_fraction,
 )
-from app.services.vision.redaction_effects import _apply_box_effect
+from app.services.vision.image_pipeline import (
+    PreviewBox,
+    SourcePipeline,
+    draw_preview_boxes,
+)
 from app.services.vision.la_consensus import consensus_boxes
 from app.services.vision.locate_grounding import (
     _HANDWRITING_GROUNDING_QUERIES,
@@ -66,6 +67,7 @@ from app.services.vision.pdf_text_layer_probe import (
     _record_sparse_pdf_text_layer_probe,
     _should_skip_sparse_pdf_text_layer,
 )
+from app.services.vision.redaction_effects import _apply_box_effect
 
 VISUAL_TYPE_LABELS_ZH = {
     **SLUG_TO_NAME_ZH,
@@ -692,7 +694,6 @@ class VisionService:
         the entire width (``_RULE_MIN_RUN_WIDTH_FRAC``) — a shape identity of
         "a line", not a tuned score.
         """
-        import numpy as np
 
         h, w = mask.shape
         out = np.zeros(h, dtype=bool)
@@ -760,7 +761,7 @@ class VisionService:
             ]
             if not candidates:
                 continue
-            la = min(candidates, key=lambda l: abs((l.y + l.height / 2.0) - cy))
+            la = min(candidates, key=lambda lb: abs((lb.y + lb.height / 2.0) - cy))
             x0 = max(0, int(box.x * pw))
             x1 = min(pw, int((box.x + box.width) * pw))
             win_top = max(0, int((la.y - la.height) * ph))

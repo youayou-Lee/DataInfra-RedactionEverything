@@ -9,10 +9,9 @@ import logging
 import os
 import re
 import uuid
+from typing import Any
 
 import fitz
-from docx import Document
-from typing import Any
 
 from app.core.config import settings
 from app.models.schemas import (
@@ -242,6 +241,7 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             # 脚注尾注/文本框/修订历史（w:delText），比对象模型更全，
             # 自检必须不弱于改写器的覆盖面
             import zipfile
+
             from lxml import etree as _etree
 
             parts_text = []
@@ -255,7 +255,7 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                         parts_text.extend(t for t in root.itertext() if t)
             return "\n".join(parts_text)
         # TXT / MD / HTML / RTF
-        with open(output_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(output_path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     async def _convert_doc_to_docx(self, file_path: str) -> str | None:

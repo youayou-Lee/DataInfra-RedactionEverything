@@ -13,6 +13,7 @@ import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
 from app.core.config import settings
 from app.core.errors import error_response
 from app.core.license import STATE_BLOCKED, STATE_GRACE_READONLY, STATE_INVALID, get_license_state

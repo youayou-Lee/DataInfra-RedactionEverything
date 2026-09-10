@@ -58,3 +58,5 @@ cryptography>=46.0.7
 # Development tools
 python-dotenv>=1.2.2
 pytest>=9.0.3
+# tests/ 的 async 用例依赖 pytest-asyncio（CI 的 backend job 与本地共用此清单）
+pytest-asyncio>=0.26.0

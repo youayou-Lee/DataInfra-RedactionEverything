@@ -41,9 +41,9 @@ from app.api import safety as safety_api
 from app.core.auth import require_auth, require_super_admin
 from app.core.config import settings
 from app.core.errors import AppError, app_error_handler, http_exception_handler, validation_exception_handler
+from app.core.gpu_memory import filter_visible_gpu_cards as _filter_visible_gpu_cards
 from app.core.gpu_memory import query_gpu_memory as _query_gpu_memory
 from app.core.gpu_memory import query_gpu_memory_all as _query_gpu_memory_all
-from app.core.gpu_memory import filter_visible_gpu_cards as _filter_visible_gpu_cards
 from app.core.health_checks import check_has_ner_health, check_ocr_health_sync, check_service_health_sync
 from app.core.license import get_license_state
 from app.core.logging_config import setup_logging
@@ -201,7 +201,8 @@ async def lifespan(app: FastAPI):
             try:
                 import io as _io
 
-                from PIL import Image as _Image, ImageDraw as _ImageDraw
+                from PIL import Image as _Image
+                from PIL import ImageDraw as _ImageDraw
 
                 canvas = _Image.new("RGB", (800, 1100), "white")
                 draw = _ImageDraw.Draw(canvas)

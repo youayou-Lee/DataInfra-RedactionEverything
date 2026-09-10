@@ -380,7 +380,7 @@ def _fictional_id_card(seq: int) -> str:
     body = f"110101{year:04d}{month:02d}{day:02d}{(seq % 999):03d}"
     weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
     check_chars = "10X98765432"
-    total = sum(int(c) * w for c, w in zip(body, weights))
+    total = sum(int(c) * w for c, w in zip(body, weights, strict=False))
     return body + check_chars[total % 11]
 
 

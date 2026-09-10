@@ -84,13 +84,39 @@ bash …/vllm-img-kit/start_core.sh              # NER8080/LA/backend/frontend
 
 venv 绑 Python 小版本（3.10）不绑镜像——py3.10 镜像间通用，零重建。
 
-## 8. 已知问题（真实数据 E2E 发现，2026-09-10）
+## 8. 镜像与 venv 的交付（handoff）
+
+### 8.1 镜像获取四条路（按推荐序）
+
+| 路 | 做法 | 前提 |
+|---|---|---|
+| **A. 平台社区镜像** | 修好的实例"保存镜像"→ 平台发布/共享到镜像社区，他人直接选用 | 平台控制台支持共享（镜像属主操作） |
+| **B. 指引选公共镜像** | "BW1000+DTK+vLLM 开发环境"本就是 SCNet 公共镜像，任何人开实例可选——他人缺的是"选哪个"的知识（本文 §2） | 无 |
+| **C. Dockerfile 自建** | `cloud-deploy/Dockerfile.dtk-paddle-vllm` + 平台 Dockerfile 构建（可指定驱动），dtk25.04.2 torch/vllm wheel 直链已内置 | 平台账号有构建功能 |
+| **D. 矩阵降级兜底** | 按 §3/§4 矩阵：DTK25.04.1 镜像 → OCR 退 CPU（14.9s/页）；无 vLLM 镜像 → NER 退 transformers（2.5s） | 无 |
+
+**🚨 保存/共享镜像前清理红线（真实案件数据严禁入镜像）**：
+`/root/cases/`（测试案卷）、`backend/uploads/` 与 `backend/data/`（上传原件+脱敏成品）、
+`/root/e2e_real_report.json`、`/root/audit_scan.out`（审计日志含真实身份证/手机号）、tmux 日志。
+
+### 8.2 venv 交付三种方式
+
+| 方式 | 内容 | 适用 |
+|---|---|---|
+| **重建（主推）** | `cloud-deploy/venv/requirements-*.txt` ×4 + `cloud-deploy/build_venvs.sh`（过滤系统栈泄漏/paddle 依赖顺序/UTC 垫片全部内置），约 15–25 分钟 | 任何人的新实例 |
+| venv tar 快照 | dot-venvs 打包（无敏感数据）放 release；py3.10+路径一致即用 | 跳过安装 |
+| 持久卷 | SCNet 同账号同区域共享 | 仅自己账号（他人不可见） |
+
+注意：持久卷**不同账号不共享**，"下载别人的 venv"在平台上走不通；重建是通用路径。
+venv 只绑 Python 小版本（3.10）不绑镜像——快照/卷在任意 py3.10 镜像通用。
+
+## 9. 已知问题（真实数据 E2E 发现，2026-09-10）
 
 1. **扫描件泄漏（严重，待修）**：对图片型成品做逐页 OCR 审计，4 份扫描件中 3 份发现未脱敏身份证/手机号残留（如证据卷 2 个身份证号各出现 4 次）。文本层正则审计对扫描件是**假阴性**（成品无文本层），必须 OCR 审计。疑似 NER 检出/文本匹配覆盖不足，归性能/质量分支处理。
 2. **加密案卷**：真实卷宗存在 user-password 加密 PDF（上传后 vision 404 "document closed or encrypted"），需前置解密或明确报错引导。
 3. vision 响应 `entities` 恒空、实体信息在 `bounding_boxes`（API 契约待理顺）。
 
-## 9. 坑清单（15 条，按类）
+## 10. 坑清单（15 条，按类）
 
 **DTK/驱动**
 1. 非交互 shell 必须显式 `source /opt/dtk/env.sh`，且 `set +u; source; set -u` 包裹（env.sh 引用未定义变量）
@@ -117,7 +143,7 @@ venv 绑 Python 小版本（3.10）不绑镜像——py3.10 镜像间通用，�
 **运维**
 15. `pkill -f xxx` 若模式串在同条 ssh 命令明文出现会自杀（exit 255）；保存镜像**全程实例必须开机**（commit 中途关机=容器消失）
 
-## 10. 相关文档
+## 11. 相关文档
 
 - `docs/SCNet-K100_AI-DCU-DTK26.04-部署教程.md`（PR #10，DTK26.04 时代教程）
 - 运维原件（工作区，含真实凭据，不入库）：`Paddle-DCU-部署验证记录.md`、`DCU极速部署指南.md`、`多卡DCU部署记录-2x16g.md`、`云实例依赖配齐手册.md`

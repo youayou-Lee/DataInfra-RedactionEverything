@@ -117,7 +117,7 @@ const enBase: Record<string, string> = {
   'playground.pseudonymConfirmRequired':
     'Confirm all pseudonym mappings first (wait for generation and fill in every row) before running',
   'playground.pseudonymConfirmRequiredShort':
-    'Confirm pseudonym mappings first (wait, fill every row, align coreferent groups)',
+    'Confirm the pseudonym mapping first (fill in every row)',
   'playground.pseudonymCsvColOriginal': 'Original',
   'playground.pseudonymCsvColType': 'Type',
   'playground.pseudonymCsvColReplacement': 'Pseudonym',

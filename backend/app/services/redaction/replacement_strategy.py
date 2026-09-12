@@ -30,10 +30,12 @@ MASK_MIN_LEN_BANK_CARD = 16  # 银行卡：保留后4
 # 机构名文本特征 → 词池精化：模型对机关/银行类机构的类型粒度不足（真实案卷实测
 # 公安局/法院全部标为 INSTITUTION_NAME），只按类型落池会把「某市公安局」换成
 # 「某公司」。按文本关键词精化到语义正确的词池。
+# 词形取「名称后缀」口径，避免「司法鉴定服务有限公司」「海关咨询有限公司」这类
+# 名字里恰好含机关词的公司名被误入机关池（公司名永远不会以下列后缀结尾）。
 INSTITUTION_GOV_TEXT_RE = re.compile(
-    r"公安|派出所|法院|检察院|司法|人民政府|办事处|分局|监察委|税务局|海关|市场监管|局$"
+    r"(公安局|派出所|法院|检察院|人民政府|司法局|监察委|税务局|海关|市场监管|分局|局)$"
 )
-INSTITUTION_BANK_TEXT_RE = re.compile(r"银行|信用社|信用合作联社")
+INSTITUTION_BANK_TEXT_RE = re.compile(r"(银行|支行|分行|信用社|信用合作联社)$")
 
 # 掩码模式：明文保留的前缀/后缀字符数
 MASK_KEEP_PREFIX_PHONE = 3  # 电话保留前3位
@@ -281,11 +283,16 @@ class RedactionContext:
             self._reserve_pool_word(type_key, explicit, text)
             return explicit
 
+        from app.services.word_pool_service import pool_type_for
+
         pool_key = self._pool_key_for(type_key, text)
         pool = pools.get(pool_key) or {}
 
-        # 词池级精确映射（跨文档同套化名的载体）
+        # 词池级精确映射（跨文档同套化名的载体）。精化池 miss 后回退查基座池，
+        # 兼容租户把机关/银行词形的精确映射配在 INSTITUTION_NAME 池的存量数据。
         exact = (pool.get("custom_map") or {}).get(text)
+        if exact is None and pool_key != pool_type_for(type_key):
+            exact = (pools.get(pool_type_for(type_key), {}).get("custom_map") or {}).get(text)
         if exact:
             self._reserve_pool_word(type_key, exact, text)
             return exact

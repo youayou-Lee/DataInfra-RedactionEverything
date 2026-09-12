@@ -4,8 +4,6 @@
 （身份证校验位 / 手机号段 / 银行卡 Luhn）、精确映射优先级、无词池回退。
 """
 
-import pytest
-
 from app.models.common import ReplacementMode
 from app.models.entity_schemas import Entity
 from app.services.redaction.replacement_strategy import (
@@ -98,7 +96,7 @@ def test_format_fictional_valid():
         assert len(_fictional_id_card(seq)) == 18
         body, check = _fictional_id_card(seq)[:-1], _fictional_id_card(seq)[-1]
         weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
-        total = sum(int(c) * w for c, w in zip(body, weights))
+        total = sum(int(c) * w for c, w in zip(body, weights, strict=False))
         assert check == "10X98765432"[total % 11]
 
         phone = _fictional_phone(seq)
@@ -264,17 +262,39 @@ def test_bank_institution_text_uses_bank_pool():
 
 
 def test_custom_map_reserve_uses_refined_pool_key():
-    """custom_map 命中登记占用时按同一精化规则归池，跨子池不误伤。"""
+    """机关精化池的 custom_map 命中后登记占用，跨池不误伤。"""
     pools = {
-        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered",
-                             "custom_map": {"某市公安局": "某公安局"}},
-        "GOVERNMENT_AGENCY": {"words": ["某公安局", "某局"], "strategy": "numbered",
-                              "custom_map": {}},
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某局"], "strategy": "numbered",
+                              "custom_map": {"某市公安局": "某公安局"}},
     }
     ctx = _ctx(pools)
     a = ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME"))
     b = ctx.get_replacement(_entity("某县自然资源局", type_="INSTITUTION_NAME"))
     c = ctx.get_replacement(_entity("某科技有限公司", type_="INSTITUTION_NAME"))
-    assert a == "某公安局"          # custom_map 精确映射
-    assert b == "某局"              # 某公安局已被占用，机关池顺延（"局$"后缀 → 机关池）
+    assert a == "某公安局"          # 机关池 custom_map 精确映射（非池词）
+    assert b == "某局"              # 某公安局已被占用，机关池顺延
     assert c == "某公司"            # 公司池不受机关池占用影响
+
+
+def test_gov_text_refinement_no_false_positive():
+    """名字含机关词但以公司后缀结尾的，留在公司池。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某司法鉴定服务有限公司", type_="INSTITUTION_NAME")) == "某公司"
+    assert ctx.get_replacement(_entity("海关咨询有限公司", type_="INSTITUTION_NAME")) == "某公司1"  # 池耗尽顺延编号，仍在公司池
+    assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局"
+
+
+def test_base_pool_custom_map_fallback_for_refined_text():
+    """精化池没有该原文的 custom_map 时，回退查基座池的存量映射（数据兼容）。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered",
+                             "custom_map": {"某市公安局": "自定义机关甲"}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "自定义机关甲"

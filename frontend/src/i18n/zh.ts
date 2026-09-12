@@ -111,7 +111,7 @@ const zhBase: Record<string, string> = {
   'playground.pseudonymRetry': '重试',
   'playground.pseudonymConfirmRequired':
     '请先确认所有化名映射（等待生成完成、每行填写替换词）后再执行',
-  'playground.pseudonymConfirmRequiredShort': '请先确认化名映射（等待生成、填齐每行、统一共指组）',
+  'playground.pseudonymConfirmRequiredShort': '请先确认化名映射（填齐每行替换词）',
   'playground.pseudonymCsvColOriginal': '原文',
   'playground.pseudonymCsvColType': '类型',
   'playground.pseudonymCsvColReplacement': '化名',

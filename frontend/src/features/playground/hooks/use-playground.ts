@@ -233,9 +233,8 @@ export function usePlayground() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            // 完整透传实体（含 coref_id），与 execute 的后端替换语义保持一致：
-            // 后端 coref 复用优先于 custom_replacements，preview 若丢弃 coref_id，
-            // 组织别名等共指组的默认化名会与实际执行结果不一致
+            // 完整透传实体（含 coref_id）：化名模式后端已改为严格按原文分配，
+            // coref_id 仅作透传保留（结构化等模式仍按 coref 复用），保持请求契约不变
             entities: entityCtx.entities
               .filter((e) => e.selected !== false)
               .map((e) => ({ ...e, selected: true })),

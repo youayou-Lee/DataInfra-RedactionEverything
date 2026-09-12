@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { showToast } from '@/components/Toast';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { useAuth } from '@/features/auth/auth-context';
 import { t } from '@/i18n';
 import { useServiceHealth, type ServicesHealth } from '@/hooks/use-service-health';
 import {
@@ -45,6 +46,9 @@ function serviceLabel(health: ServicesHealth, key: ServiceKey) {
 }
 
 export function usePlayground() {
+  const { status } = useAuth();
+  const ownerKey =
+    status?.authenticated && status.username ? status.username.toLowerCase() : 'anonymous';
   const recognition = usePlaygroundRecognition();
   const { health, checking: healthChecking } = useServiceHealth();
   const { setProcessingMode: setRecognitionProcessingMode } = recognition;
@@ -553,8 +557,8 @@ export function usePlayground() {
     imageCtx.imageHistory.reset();
     setVersionHistory([]);
     setVersionHistoryOpen(false);
-    removeStorageItem(scopedStorageKey(STORAGE_KEYS.PLAYGROUND_DRAFT));
-  }, [entityCtx, fileCtx, imageCtx, setRecognitionProcessingMode]);
+    removeStorageItem(scopedStorageKey(STORAGE_KEYS.PLAYGROUND_DRAFT, ownerKey));
+  }, [entityCtx, fileCtx, imageCtx, ownerKey, setRecognitionProcessingMode]);
 
   // 会话草稿（Issue #33）：有活动文件时防抖落盘；显式重置时清除。
   // 上传新文件后本 effect 随 fileInfo 变化自然覆盖旧草稿。
@@ -578,7 +582,7 @@ export function usePlayground() {
       });
       const json = serializeDraft(snapshot);
       if (json === null) return; // 超限：放弃持久化，内存会话不受影响
-      setScopedStorageItem(STORAGE_KEYS.PLAYGROUND_DRAFT, json);
+      setScopedStorageItem(STORAGE_KEYS.PLAYGROUND_DRAFT, json, ownerKey);
     }, 400);
     return () => clearTimeout(timer);
   }, [
@@ -595,6 +599,7 @@ export function usePlayground() {
     confirmedPseudonymMap,
     entityMap,
     redactedCount,
+    ownerKey,
   ]);
 
   // 把草稿快照整体恢复为当前会话（挂载恢复与历史页「回到现场」共用）。
@@ -638,7 +643,7 @@ export function usePlayground() {
     if (draftRestoreDoneRef.current) return;
     draftRestoreDoneRef.current = true;
     const snapshot = parseDraft(
-      getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null),
+      getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null, ownerKey),
     );
     if (!snapshot) return;
     applyDraftSnapshot(snapshot);
@@ -650,7 +655,7 @@ export function usePlayground() {
   const resumeFromFile = useCallback(
     async (targetFileId: string) => {
       const snapshot = parseDraft(
-        getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null),
+        getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null, ownerKey),
       );
       const decision = planResume({ targetFileId, snapshot });
       if (decision.mode === 'unavailable') return;
@@ -664,7 +669,7 @@ export function usePlayground() {
       showToast(t('playground.restoreRerunning'), 'info');
       await fileCtx.loadExistingFile(decision.fileId);
     },
-    [applyDraftSnapshot, fileCtx, performReset],
+    [applyDraftSnapshot, fileCtx, ownerKey, performReset],
   );
 
   const handleReset = useCallback(() => {

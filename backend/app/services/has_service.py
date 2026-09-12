@@ -32,6 +32,18 @@ _NER_TOKENS_PER_TYPE = 8
 # Tracy: 128 太小，预算按 8k 级跑）
 _NER_MIN_TARGET_TOKENS = 1024
 
+# Issue #23 轴A：类型语义分组映射（canonical type id -> 组标签）。
+# G1 人员/组织、G2 标识号码（数字保真一票否决区）、G3 时空描述。
+# 设计依据 docs/issue-23-ner-batch-inference.md §2.1：语义聚类保留组内
+# 消歧上下文 + 输出 token 均衡（整页 9 类 200~300 token -> 每组 60~100）。
+# 未命中的类型（自定义/扩展勾选）一律落入兜底批，不与固定组混合。
+_NER_SEMANTIC_TYPE_GROUPS: dict[str, str] = {
+    "PERSON": "g1", "INSTITUTION_NAME": "g1",
+    "ID_CARD": "g2", "PASSPORT": "g2", "PHONE": "g2", "BANK_CARD": "g2", "EMAIL": "g2",
+    "ADDRESS": "g3", "DATE": "g3",
+}
+_NER_SEMANTIC_GROUP_ORDER = ("g1", "g2", "g3")
+
 
 class HaSService:
     """HaS NER 服务 - 用于混合 NER 架构"""
@@ -108,6 +120,57 @@ class HaSService:
                 })
         return guidance
 
+    def _semantic_type_batches(
+        self,
+        ordered_types: list[EntityTypeConfig],
+    ) -> list[list[EntityTypeConfig]] | None:
+        """Issue #23 轴A：按语义组聚类拆批（G1/G2/G3），未映射类型入兜底批。
+
+        返回 None 表示勾选类型无一命中映射（分组不适用），调用方回退现状分批；
+        组内类型数超过 HAS_NER_MAX_TYPES_PER_REQUEST 时组内退化为自适应分桶
+        （用户勾选大量扩展类型时的防呆），兜底批沿用 builtin/custom 分别打包的现状逻辑。
+        """
+        from app.core.config import settings
+
+        grouped: dict[str, list[EntityTypeConfig]] = {}
+        leftover_builtin: list[EntityTypeConfig] = []
+        leftover_custom: list[EntityTypeConfig] = []
+        for entity_type in ordered_types:
+            raw_type_id = str(getattr(entity_type, "id", "") or "").strip()
+            group = _NER_SEMANTIC_TYPE_GROUPS.get(canonical_type_id(raw_type_id))
+            if group:
+                grouped.setdefault(group, []).append(entity_type)
+            elif self._is_custom_type_id(raw_type_id) or self._is_custom_type_id(canonical_type_id(raw_type_id)):
+                leftover_custom.append(entity_type)
+            else:
+                leftover_builtin.append(entity_type)
+
+        if not grouped:
+            return None
+
+        max_types = max(1, int(settings.HAS_NER_MAX_TYPES_PER_REQUEST))
+        target_tokens = int(settings.HAS_NER_TYPE_BATCH_TARGET_TOKENS)
+        batches: list[list[EntityTypeConfig]] = []
+        for group in _NER_SEMANTIC_GROUP_ORDER:
+            members = grouped.get(group)
+            if not members:
+                continue
+            if len(members) <= max_types:
+                batches.append(members)
+            else:
+                batches.extend(self._pack_ner_type_batches(
+                    members, max_types=max_types, target_tokens=target_tokens,
+                ))
+        batches.extend(self._pack_ner_type_batches(
+            leftover_builtin, max_types=max_types, target_tokens=target_tokens,
+        ))
+        batches.extend(self._pack_ner_type_batches(
+            leftover_custom,
+            max_types=max(1, int(settings.HAS_NER_CUSTOM_MAX_TYPES_PER_REQUEST)),
+            target_tokens=target_tokens,
+        ))
+        return batches
+
     def _iter_ner_type_batches(
         self,
         entity_types: list[EntityTypeConfig],
@@ -138,6 +201,16 @@ class HaSService:
 
         if not ordered_types:
             return []
+
+        if str(settings.HAS_NER_TYPE_GROUPING).strip().lower() == "semantic":
+            semantic_batches = self._semantic_type_batches(ordered_types)
+            if semantic_batches is not None:
+                logger.info(
+                    "HaS NER semantic grouping: %d types -> %d batches",
+                    len(ordered_types),
+                    len(semantic_batches),
+                )
+                return semantic_batches
 
         if self._ner_type_batch_cost(ordered_types) <= int(settings.HAS_NER_TYPE_BATCH_TARGET_TOKENS) and len(ordered_types) <= settings.HAS_NER_SINGLE_PASS_MAX_TYPES:
             return [ordered_types]
@@ -323,9 +396,15 @@ class HaSService:
                 *(run_batch(batch) for batch in batches),
                 return_exceptions=True,
             )
-            for batch_result in batch_results:
+            for batch, batch_result in zip(batches, batch_results, strict=False):
                 if isinstance(batch_result, Exception):
-                    logger.warning("HaS NER batch failed: %s", batch_result)
+                    # Issue #23：容忍语义与现状一致（跳过失败批，靠 retry/熔断/正则兜底），
+                    # 但必须列出该批丢失的类型清单——G2 数字组丢失无人知晓就是漏脱敏。
+                    lost_types = self._convert_entity_types_to_chinese(batch)
+                    logger.warning(
+                        "HaS NER batch failed (lost types: %s): %s",
+                        lost_types, batch_result,
+                    )
                     continue
                 for result_type, values in batch_result.items():
                     if not isinstance(values, list):

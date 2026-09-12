@@ -18,6 +18,7 @@ import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
 from app.core.config import settings
 from app.core.errors import error_response
 

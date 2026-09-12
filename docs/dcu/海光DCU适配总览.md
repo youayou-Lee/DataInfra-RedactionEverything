@@ -181,5 +181,5 @@ venv 只绑 Python 小版本（3.10）不绑镜像——快照/卷在任意 py3.
 ## 11. 相关文档
 
 - `docs/SCNet-K100_AI-DCU-DTK26.04-部署教程.md`（PR #10，DTK26.04 时代教程）
-- 运维原件（工作区，含真实凭据，不入库）：`Paddle-DCU-部署验证记录.md`、`DCU极速部署指南.md`、`多卡DCU部署记录-2x16g.md`、`云实例依赖配齐手册.md`
+- 运维原件（工作区 `docs/deploy/`，含真实凭据，不入库）：`SSH-云实例信息.md`、`云实例依赖配齐手册.md`、`DCU极速部署指南.md`、`多卡DCU部署记录-2x16g.md`、`Paddle-DCU-部署验证记录.md`、`SCNet K100_AI DCU DTK26.04 部署教程.md`
 - 脚本：`cloud-deploy/respawn_ocr_gpu_dcu.sh`（OCR GPU）、`cloud-deploy/vllm_ner_25042.sh`（vLLM）、`cloud-deploy/paddle_conv_probe.sh`（paddle 判别器）、`cloud-deploy/e2e_real_cases.py` + `audit_scan_output.py`（真实案卷 E2E 与泄漏审计）

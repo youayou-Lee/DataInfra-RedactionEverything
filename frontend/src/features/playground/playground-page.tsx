@@ -14,7 +14,6 @@ import { PlaygroundLoading } from './components/playground-loading';
 import { PlaygroundTextSelectionPopover } from './components/playground-text-selection-popover';
 import { PlaygroundEntityPopover } from './components/playground-entity-popover';
 import {
-  PlaygroundProvider,
   usePlaygroundContext,
   usePlaygroundUIContext,
 } from './playground-context';
@@ -429,12 +428,5 @@ const PlaygroundInner: FC = () => {
   );
 };
 
-/**
- * Playground page — wrapped in PlaygroundProvider so child components
- * can access the playground context directly without prop drilling.
- */
-export const Playground: FC = () => (
-  <PlaygroundProvider>
-    <PlaygroundInner />
-  </PlaygroundProvider>
-);
+/** Playground 页面——Provider 已提升到 Layout 层，切页不再丢失会话状态。 */
+export const Playground: FC = () => <PlaygroundInner />;

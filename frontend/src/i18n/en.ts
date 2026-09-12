@@ -1100,6 +1100,8 @@ const enOverrides: Record<string, string> = {
   'playground.recognitionPausedModelServices':
     'Recognition is paused because required model services are unavailable: {services}. Start the services, then run recognition again.',
   'playground.redactFailed': 'Redaction failed.',
+  'playground.restored': 'Last single-file session restored',
+  'playground.restoreFileGone': 'Original file no longer exists; last session cannot be restored',
   'playground.loading.vision': 'Running vision detection...',
   'playground.loading.visionOcr': 'Running vision detection (OCR text)...',
   'playground.loading.visionImage': 'Running vision detection (image features)...',

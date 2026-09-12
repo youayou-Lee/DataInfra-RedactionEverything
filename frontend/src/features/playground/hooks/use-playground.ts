@@ -5,11 +5,21 @@ import { showToast } from '@/components/Toast';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { t } from '@/i18n';
 import { useServiceHealth, type ServicesHealth } from '@/hooks/use-service-health';
-import { removeStorageItem, scopedStorageKey, setScopedStorageItem } from '@/lib/storage';
+import {
+  getScopedStorageItem,
+  removeStorageItem,
+  scopedStorageKey,
+  setScopedStorageItem,
+} from '@/lib/storage';
 import { authFetch, downloadFile } from '@/services/api-client';
 import type { VersionHistoryEntry } from '@/types';
 import { localizeErrorMessage } from '@/utils/localizeError';
-import { buildDraftSnapshot, serializeDraft } from '../lib/playground-draft';
+import {
+  buildDraftSnapshot,
+  parseDraft,
+  serializeDraft,
+  type PlaygroundDraftSnapshot,
+} from '../lib/playground-draft';
 import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
@@ -585,6 +595,52 @@ export function usePlayground() {
     entityMap,
     redactedCount,
   ]);
+
+  // 把草稿快照整体恢复为当前会话（挂载恢复与历史页「回到现场」共用）。
+  // 恢复是幂等的：undo 栈重置、dialog 态一律回到关闭，epoch 前进使在途异步结果失效。
+  const applyDraftSnapshot = useCallback(
+    (snapshot: PlaygroundDraftSnapshot) => {
+      asyncResultEpochRef.current += 1;
+      latestFileIdRef.current = snapshot.fileInfo.file_id;
+      redactionAbortRef.current?.abort();
+      redactionInFlightRef.current = false;
+      fileCtx.setFileInfo(snapshot.fileInfo);
+      fileCtx.setContent(snapshot.content);
+      fileCtx.setStage(snapshot.stage);
+      entityCtx.setEntities(snapshot.entities);
+      entityCtx.entityHistory.reset();
+      imageCtx.setBoundingBoxes(snapshot.boundingBoxes);
+      imageCtx.imageHistory.reset();
+      imageCtx.setCurrentPage(snapshot.currentPage);
+      setEntityMap(snapshot.entityMap);
+      setRedactedCount(snapshot.redactedCount);
+      setRedactionVersion((version) => version + 1); // 触发 result 阶段脱敏预览图重取
+      setPseudonymMap(snapshot.pseudonymMap);
+      setPseudonymMapLoading(false);
+      setPseudonymMapError(null);
+      setConfirmedPseudonymMap(snapshot.confirmedPseudonymMap);
+      recognition.setProcessingMode(snapshot.processingMode);
+      recognition.setReplacementMode(snapshot.replacementMode);
+      recognition.setWatermarkText(snapshot.watermarkText);
+      setResetConfirmOpen(false);
+      setReportOpen(false);
+      setVersionHistoryOpen(false);
+    },
+    [entityCtx, fileCtx, imageCtx, recognition],
+  );
+
+  // 挂载恢复（R1）：每个应用生命周期只做一次；幂等，StrictMode 双挂载无害。
+  const draftRestoreDoneRef = useRef(false);
+  useEffect(() => {
+    if (draftRestoreDoneRef.current) return;
+    draftRestoreDoneRef.current = true;
+    const snapshot = parseDraft(
+      getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null),
+    );
+    if (!snapshot) return;
+    applyDraftSnapshot(snapshot);
+    showToast(t('playground.restored'), 'info');
+  }, [applyDraftSnapshot]);
 
   const handleReset = useCallback(() => {
     if (hasResetRisk) {

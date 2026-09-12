@@ -1003,6 +1003,8 @@ const zhOverrides: Record<string, string> = {
   'playground.cancelled': '\u5df2\u53d6\u6d88\u5f53\u524d\u5904\u7406\u3002',
   'playground.recognizeFailed': '识别失败。',
   'playground.redactFailed': '匿名化失败。',
+  'playground.restored': '已恢复上次单文件处理现场',
+  'playground.restoreFileGone': '原文件已不存在，无法恢复上次现场',
   'playground.loading.vision': '正在进行图像识别...',
   'playground.loading.visionOcr': '正在进行图像识别（图片文字）...',
   'playground.loading.visionImage': '正在进行图像识别（图像特征）...',

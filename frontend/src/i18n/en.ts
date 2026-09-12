@@ -409,6 +409,7 @@ const enBase: Record<string, string> = {
   'history.col.status': 'Status',
   'history.compareActionHeader': 'Compare',
   'history.continueReview': 'Continue review',
+  'history.resumeSession': 'Resume session',
   'history.viewCompare': 'View comparison',
   'history.deleteFileTitle': 'Delete File',
   'history.deleteFileMsg': 'Delete this file from the server? This action cannot be undone.',

@@ -344,6 +344,7 @@ const zhBase: Record<string, string> = {
   'history.col.status': '状态',
   'history.compareActionHeader': '对比',
   'history.continueReview': '继续审阅',
+  'history.resumeSession': '回到处理现场',
   'history.viewCompare': '查看对比',
   'history.deleteFileTitle': '删除文件',
   'history.deleteFileMsg': '确定从服务器删除该文件？此操作不可撤销。',

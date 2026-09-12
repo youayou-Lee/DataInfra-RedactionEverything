@@ -1,0 +1,102 @@
+import { describe, expect, it } from 'vitest';
+import {
+  PLAYGROUND_DRAFT_MAX_JSON_LENGTH,
+  PLAYGROUND_DRAFT_VERSION,
+  buildDraftSnapshot,
+  needsSwitchConfirm,
+  parseDraft,
+  planResume,
+  serializeDraft,
+} from './playground-draft';
+import type { DraftSnapshotInput } from './playground-draft';
+
+const baseInput: DraftSnapshotInput = {
+  stage: 'preview',
+  fileInfo: { file_id: 'f1', filename: 'a.pdf', file_size: 123, file_type: 'pdf', is_scanned: false, page_count: 2, pages: ['张三于2024年借款。', '第二页'] },
+  content: '张三于2024年借款。第二页',
+  entities: [
+    { id: 'e1', text: '张三', type: 'person', start: 0, end: 2, selected: true, source: 'llm' },
+    { id: 'e2', text: '李四', type: 'person', start: 10, end: 12, selected: false, source: 'manual' },
+  ],
+  boundingBoxes: [],
+  processingMode: 'replace',
+  replacementMode: 'structured',
+  watermarkText: '',
+  pseudonymMap: { 张三: '化名一' },
+  confirmedPseudonymMap: null,
+  entityMap: {},
+  redactedCount: 0,
+  currentPage: 1,
+};
+
+describe('buildDraftSnapshot + serializeDraft + parseDraft', () => {
+  it('roundtrip：序列化后解析得到等价快照', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    expect(snapshot.version).toBe(PLAYGROUND_DRAFT_VERSION);
+    const parsed = parseDraft(serializeDraft(snapshot));
+    expect(parsed).toEqual(snapshot);
+  });
+
+  it('版本不匹配的快照被拒绝', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    const raw = JSON.stringify({ ...snapshot, version: PLAYGROUND_DRAFT_VERSION + 1 });
+    expect(parseDraft(raw)).toBeNull();
+  });
+
+  it('损坏的 JSON 被拒绝', () => {
+    expect(parseDraft('not-json{')).toBeNull();
+    expect(parseDraft(null)).toBeNull();
+    expect(parseDraft(undefined)).toBeNull();
+  });
+
+  it('缺关键字段（file_id/entities/boundingBoxes）被拒绝', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    expect(parseDraft(JSON.stringify({ ...snapshot, fileInfo: { filename: 'x' } }))).toBeNull();
+    expect(parseDraft(JSON.stringify({ ...snapshot, entities: 'no' }))).toBeNull();
+    expect(parseDraft(JSON.stringify({ ...snapshot, boundingBoxes: undefined }))).toBeNull();
+    expect(parseDraft(JSON.stringify({ ...snapshot, stage: 'upload' }))).toBeNull();
+  });
+
+  it('文本型 preview 快照必须有非空 content；扫描件/图片/result 不要求', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    expect(parseDraft(JSON.stringify({ ...snapshot, content: '' }))).toBeNull();
+
+    const scanned = buildDraftSnapshot({ ...baseInput, fileInfo: { ...baseInput.fileInfo, is_scanned: true }, content: '' });
+    expect(parseDraft(JSON.stringify(scanned))).not.toBeNull();
+
+    const result = buildDraftSnapshot({ ...baseInput, stage: 'result', content: '' });
+    expect(parseDraft(JSON.stringify(result))).not.toBeNull();
+  });
+
+  it('超过大小上限时 serializeDraft 返回 null（放弃持久化）', () => {
+    const huge = buildDraftSnapshot({ ...baseInput, content: 'x'.repeat(PLAYGROUND_DRAFT_MAX_JSON_LENGTH) });
+    expect(serializeDraft(huge)).toBeNull();
+  });
+});
+
+describe('planResume', () => {
+  it('草稿命中：file_id 一致 → draft', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    expect(planResume({ targetFileId: 'f1', snapshot })).toEqual({ mode: 'draft', snapshot });
+  });
+
+  it('草稿属于其他文件或缺失 → rerun', () => {
+    const snapshot = buildDraftSnapshot(baseInput);
+    expect(planResume({ targetFileId: 'f2', snapshot })).toEqual({ mode: 'rerun', fileId: 'f2' });
+    expect(planResume({ targetFileId: 'f2', snapshot: null })).toEqual({ mode: 'rerun', fileId: 'f2' });
+  });
+
+  it('空 file_id → unavailable', () => {
+    expect(planResume({ targetFileId: '', snapshot: null })).toEqual({ mode: 'unavailable' });
+  });
+});
+
+describe('needsSwitchConfirm', () => {
+  it('无当前会话或同文件 → 不确认', () => {
+    expect(needsSwitchConfirm(null, 'f1')).toBe(false);
+    expect(needsSwitchConfirm('f1', 'f1')).toBe(false);
+  });
+  it('不同文件 → 确认', () => {
+    expect(needsSwitchConfirm('f1', 'f2')).toBe(true);
+  });
+});

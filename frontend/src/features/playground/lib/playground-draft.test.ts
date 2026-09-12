@@ -6,6 +6,7 @@ import {
   needsSwitchConfirm,
   parseDraft,
   planResume,
+  planServerCachedResume,
   serializeDraft,
 } from './playground-draft';
 import type { DraftSnapshotInput } from './playground-draft';
@@ -98,5 +99,39 @@ describe('needsSwitchConfirm', () => {
   });
   it('不同文件 → 确认', () => {
     expect(needsSwitchConfirm('f1', 'f2')).toBe(true);
+  });
+});
+
+describe('planServerCachedResume', () => {
+  it('服务端有实体 → cached，透传实体与当时的类型配置', () => {
+    const info = {
+      entities: [{ text: '张三', type: 'person', start: 0, end: 2 }],
+      recognition_config: { entity_type_ids: ['person', 'phone'] },
+    };
+    expect(planServerCachedResume(info)).toEqual({
+      mode: 'cached',
+      entities: info.entities,
+      entityTypeIds: ['person', 'phone'],
+    });
+  });
+
+  it('实体为空（未识别过/扫描件）→ rerun', () => {
+    expect(planServerCachedResume({ entities: [] })).toEqual({ mode: 'rerun' });
+    expect(planServerCachedResume({})).toEqual({ mode: 'rerun' });
+    expect(planServerCachedResume({ entities: 'bad' })).toEqual({ mode: 'rerun' });
+  });
+
+  it('无识别配置 → cached 且 entityTypeIds=null（前端保持当前选择）', () => {
+    expect(planServerCachedResume({ entities: [{ id: 'e1' }] })).toEqual({
+      mode: 'cached',
+      entities: [{ id: 'e1' }],
+      entityTypeIds: null,
+    });
+    expect(
+      planServerCachedResume({ entities: [{ id: 'e1' }], recognition_config: null }),
+    ).toEqual({ mode: 'cached', entities: [{ id: 'e1' }], entityTypeIds: null });
+    expect(
+      planServerCachedResume({ entities: [{ id: 'e1' }], recognition_config: { entity_type_ids: null } }),
+    ).toEqual({ mode: 'cached', entities: [{ id: 'e1' }], entityTypeIds: null });
   });
 });

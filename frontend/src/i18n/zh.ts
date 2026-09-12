@@ -1005,6 +1005,7 @@ const zhOverrides: Record<string, string> = {
   'playground.recognizeFailed': '识别失败。',
   'playground.redactFailed': '匿名化失败。',
   'playground.restored': '已恢复上次单文件处理现场',
+  'playground.restoredFromServer': '已从服务端恢复上次识别结果',
   'playground.restoreFileGone': '原文件已不存在，无法恢复上次现场',
   'playground.switchSessionTitle': '切换处理文件？',
   'playground.switchSessionMessage': '当前单文件处理现场将被替换，尚未执行的编辑不会保留。',

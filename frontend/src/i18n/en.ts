@@ -1102,6 +1102,7 @@ const enOverrides: Record<string, string> = {
     'Recognition is paused because required model services are unavailable: {services}. Start the services, then run recognition again.',
   'playground.redactFailed': 'Redaction failed.',
   'playground.restored': 'Last single-file session restored',
+  'playground.restoredFromServer': 'Restored last recognition from server',
   'playground.restoreFileGone': 'Original file no longer exists; last session cannot be restored',
   'playground.switchSessionTitle': 'Switch file?',
   'playground.switchSessionMessage': 'The current single-file session will be replaced; unexecuted edits will be lost.',

@@ -122,6 +122,7 @@ export function usePlayground() {
     resetEntityHistory: entityCtx.entityHistory.reset,
     resetImageHistory: () => imageCtx.imageHistory.reset(),
     setEntities: entityCtx.setEntities,
+    setSelectedTypes: recognition.setSelectedTypes,
     setBoundingBoxes: (val) => imageCtx.setBoundingBoxes(val),
     getRecognitionBlocker,
   });

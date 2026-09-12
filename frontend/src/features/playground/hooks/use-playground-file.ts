@@ -8,6 +8,7 @@ import { t } from '@/i18n';
 import { localizeErrorMessage } from '@/utils/localizeError';
 import { ACCEPTED_UPLOAD_FILE_TYPES } from '@/utils/fileUploadAccept';
 import { safeJson, runVisionDetectionPages } from '../utils';
+import { planServerCachedResume } from '../lib/playground-draft';
 import type {
   FileInfo,
   Entity,
@@ -52,6 +53,8 @@ export interface UsePlaygroundFileOptions {
   resetImageHistory: () => void;
   /** Set entities from recognition result */
   setEntities: React.Dispatch<React.SetStateAction<Entity[]>>;
+  /** Restore the entity-type selection that produced the cached result (server resume) */
+  setSelectedTypes: (ids: string[]) => void;
   /** Set bounding boxes from recognition result */
   setBoundingBoxes: React.Dispatch<React.SetStateAction<BoundingBox[]>>;
   /** Return a user-facing reason when automatic recognition should not run yet */
@@ -204,7 +207,8 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
   }, []);
 
   // 从服务端按 file_id 重建会话（历史页「回到现场」且无草稿时的 R2 路径）：
-  // 不上传新文件，parse 后走与上传后完全相同的自动识别管线。
+  // 后端识别成功后会把 entities + 当时的识别配置写进文件记录，先取缓存直接
+  // 恢复「当时的现场」；从未识别过（实体为空，含扫描件）才 parse + 重新识别。
   const loadExistingFile = useCallback(async (fileId: string) => {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -226,7 +230,7 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
       if (signal.aborted) return;
       if (!infoRes.ok) throw new Error(await responseErrorMessage(infoRes, 'playground.parseFailed'));
       if (!parseRes.ok) throw new Error(await responseErrorMessage(parseRes, 'playground.parseFailed'));
-      const info = await safeJson<{ original_filename?: string; file_size?: number }>(infoRes);
+      const info = await safeJson<Record<string, unknown>>(infoRes);
       const parseData = await safeJson<ParseResponse>(parseRes);
       if (signal.aborted) return;
 
@@ -238,8 +242,8 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
 
       setFileInfo({
         file_id: fileId,
-        filename: info.original_filename || fileId,
-        file_size: info.file_size || 0,
+        filename: (info.original_filename as string | undefined) || fileId,
+        file_size: (info.file_size as number | undefined) || 0,
         file_type: parsedFileType,
         is_scanned: isScanned,
         page_count: pageCount,
@@ -248,6 +252,27 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
       setContent(parsedContent);
       opts.setBoundingBoxes([]);
       opts.resetImageHistory();
+
+      const cached = planServerCachedResume(info);
+      if (cached.mode === 'cached') {
+        // 命中服务端识别缓存：恢复当时的实体与识别项配置，跳过重新识别
+        opts.setEntities(
+          cached.entities.map((e, idx) => ({
+            ...e,
+            id: (e.id as string | undefined) || `entity_${idx}`,
+            selected: (e.selected as boolean | undefined) ?? true,
+            source: (e.source as Entity['source'] | undefined) || 'llm',
+          })) as Entity[],
+        );
+        opts.resetEntityHistory();
+        if (cached.entityTypeIds) opts.setSelectedTypes(cached.entityTypeIds);
+        setStage('preview');
+        setIsLoading(false);
+        setLoadingMessage('');
+        showToast(t('playground.restoredFromServer'), 'info');
+        return;
+      }
+
       opts.setEntities([]);
       setPendingFile({
         fileId,

@@ -77,3 +77,28 @@ export function planResume(input: { targetFileId: string; snapshot: PlaygroundDr
 export function needsSwitchConfirm(currentFileId: string | null, targetFileId: string): boolean {
   return Boolean(currentFileId) && currentFileId !== targetFileId;
 }
+
+// ---------------------------------------------------------------------------
+// 服务端识别缓存（R2 秒回）：后端每次 NER 成功都会把 entities + 当时的识别配置
+// 写进文件记录（GET /files/{id} 可取）。命中则直接恢复「当时的现场」，
+// 未识别过（实体为空，含扫描件恒空）才重跑。
+// ---------------------------------------------------------------------------
+
+export type ServerResumeInfo = {
+  entities?: unknown;
+  recognition_config?: { entity_type_ids?: string[] | null } | null;
+};
+
+export type ServerCachedResumeDecision =
+  | { mode: 'cached'; entities: Record<string, unknown>[]; entityTypeIds: string[] | null }
+  | { mode: 'rerun' };
+
+export function planServerCachedResume(info: ServerResumeInfo): ServerCachedResumeDecision {
+  if (!Array.isArray(info.entities) || info.entities.length === 0) return { mode: 'rerun' };
+  const ids = info.recognition_config?.entity_type_ids;
+  return {
+    mode: 'cached',
+    entities: info.entities as Record<string, unknown>[],
+    entityTypeIds: Array.isArray(ids) ? ids : null,
+  };
+}

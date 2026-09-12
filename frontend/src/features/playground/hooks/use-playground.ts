@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { showToast } from '@/components/Toast';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { t } from '@/i18n';
 import { useServiceHealth, type ServicesHealth } from '@/hooks/use-service-health';
+import { removeStorageItem, scopedStorageKey, setScopedStorageItem } from '@/lib/storage';
 import { authFetch, downloadFile } from '@/services/api-client';
 import type { VersionHistoryEntry } from '@/types';
 import { localizeErrorMessage } from '@/utils/localizeError';
+import { buildDraftSnapshot, serializeDraft } from '../lib/playground-draft';
 import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
@@ -539,7 +542,49 @@ export function usePlayground() {
     imageCtx.imageHistory.reset();
     setVersionHistory([]);
     setVersionHistoryOpen(false);
+    removeStorageItem(scopedStorageKey(STORAGE_KEYS.PLAYGROUND_DRAFT));
   }, [entityCtx, fileCtx, imageCtx, setRecognitionProcessingMode]);
+
+  // 会话草稿（Issue #33）：有活动文件时防抖落盘；显式重置时清除。
+  // 上传新文件后本 effect 随 fileInfo 变化自然覆盖旧草稿。
+  useEffect(() => {
+    if (!fileCtx.fileInfo) return;
+    const timer = setTimeout(() => {
+      const snapshot = buildDraftSnapshot({
+        stage: fileCtx.stage,
+        fileInfo: fileCtx.fileInfo!,
+        content: fileCtx.content,
+        entities: entityCtx.entities,
+        boundingBoxes: imageCtx.boundingBoxes,
+        processingMode: recognition.processingMode,
+        replacementMode: recognition.replacementMode,
+        watermarkText: recognition.watermarkText,
+        pseudonymMap,
+        confirmedPseudonymMap,
+        entityMap,
+        redactedCount,
+        currentPage: imageCtx.currentPage,
+      });
+      const json = serializeDraft(snapshot);
+      if (json === null) return; // 超限：放弃持久化，内存会话不受影响
+      setScopedStorageItem(STORAGE_KEYS.PLAYGROUND_DRAFT, json);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    fileCtx.fileInfo,
+    fileCtx.stage,
+    fileCtx.content,
+    entityCtx.entities,
+    imageCtx.boundingBoxes,
+    imageCtx.currentPage,
+    recognition.processingMode,
+    recognition.replacementMode,
+    recognition.watermarkText,
+    pseudonymMap,
+    confirmedPseudonymMap,
+    entityMap,
+    redactedCount,
+  ]);
 
   const handleReset = useCallback(() => {
     if (hasResetRisk) {

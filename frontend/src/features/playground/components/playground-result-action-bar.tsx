@@ -150,6 +150,21 @@ export const RedactionReportSection: FC<{
     confidenceLabel(key, t),
   );
   const redactionMode = String(report.redaction_mode || '');
+  // 报告里的模式值是后端原始枚举，必须本地化；标签复用「处理方式」，避免再造一个并列术语
+  const redactionModeText = (() => {
+    switch (redactionMode) {
+      case 'structured':
+        return t('mode.structured');
+      case 'smart':
+        return t('mode.smart');
+      case 'mask':
+        return t('mode.mask');
+      case 'pseudonym':
+        return t('playground.processingModeReplace');
+      default:
+        return redactionMode;
+    }
+  })();
 
   return (
     <div className="mb-3 flex-shrink-0">
@@ -185,9 +200,9 @@ export const RedactionReportSection: FC<{
             {redactionMode && (
               <div className="rounded-xl border border-border/70 bg-muted/25 px-3 py-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('playground.reportMode')}
+                  {t('playground.processingMode')}
                 </span>
-                <p className="mt-1 text-sm font-medium text-foreground">{redactionMode}</p>
+                <p className="mt-1 text-sm font-medium text-foreground">{redactionModeText}</p>
               </div>
             )}
           </CardContent>

@@ -25,6 +25,8 @@ export interface PlaygroundEntityPanelProps {
   isLoading: boolean;
   recognitionIssue?: string | null;
   entities: Entity[];
+  /** 化名映射区用全量实体（跨页）：执行门槛按全文档判定，映射行必须同源，否则多页文档会出现"看不见的被阻塞" */
+  mappingEntities?: Entity[];
   entityTypes?: Array<{ id: string; name: string }>;
   visionTypes?: Array<{ id: string; name: string }>;
   visibleBoxes: BoundingBox[];
@@ -62,6 +64,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     isLoading,
     recognitionIssue,
     entities,
+    mappingEntities,
     entityTypes = [],
     visionTypes = [],
     visibleBoxes,
@@ -117,11 +120,11 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
         ? recognitionIssue
         : totalCount === 0
           ? t('playground.redactDisabledNoResults')
-            : shownSelectedCount === 0
-              ? t('playground.redactDisabledNoSelection')
-              : replaceUnready
-                ? t('playground.pseudonymConfirmRequiredShort')
-                : '';
+          : shownSelectedCount === 0
+            ? t('playground.redactDisabledNoSelection')
+            : replaceUnready
+              ? t('playground.pseudonymConfirmRequiredShort')
+              : '';
 
     return (
       <div
@@ -216,7 +219,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                 />
               ) : (
                 <PseudonymMapSection
-                  entities={entities}
+                  entities={mappingEntities ?? entities}
                   pseudonymMap={pseudonymMap}
                   onPseudonymChange={onPseudonymChange}
                   loading={pseudonymMapLoading}
@@ -357,10 +360,7 @@ const ModeOptionCardClasses = (selected: boolean, disabled = false) =>
   );
 
 const ModeOptionLabelClasses = (selected: boolean) =>
-  cn(
-    'truncate text-xs',
-    selected ? 'font-semibold text-primary' : 'font-medium text-foreground',
-  );
+  cn('truncate text-xs', selected ? 'font-semibold text-primary' : 'font-medium text-foreground');
 
 const ModeRadioDot: FC<{ active: boolean; disabled?: boolean }> = ({ active, disabled }) => (
   <span
@@ -474,12 +474,16 @@ const MaskModeSelector: FC<{
       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {t('playground.redactMode')}
       </label>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        {t('playground.redactModeHint')}
+      </p>
       <div className="grid grid-cols-3 gap-1.5">
         {modes.map((item) => {
           const selected = mode === item.value;
           return (
             <label
               key={item.value}
+              title={getModePreview(item.value, sampleEntity)}
               className={ModeOptionCardClasses(selected)}
             >
               <div className="flex items-center gap-1.5">

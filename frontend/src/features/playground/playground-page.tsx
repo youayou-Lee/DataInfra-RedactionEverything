@@ -341,6 +341,7 @@ const PlaygroundInner: FC = () => {
               isLoading={isLoading}
               recognitionIssue={recognitionIssue}
               entities={pageFilteredEntities}
+              mappingEntities={entities}
               entityTypes={entityTypes}
               visionTypes={visionTypes}
               visibleBoxes={visibleBoxes}

@@ -133,3 +133,7 @@ AUDIT_2026-07-12_findings.json
 *.bak-/
 deploy/offline/
 .omc/
+
+# 符号链接形式的 node_modules 不被 node_modules/ 规则匹配，显式忽略
+frontend/node_modules
+node_modules

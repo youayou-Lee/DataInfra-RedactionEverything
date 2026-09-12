@@ -16,6 +16,8 @@ export interface PlaygroundResultActionBarProps {
   onBackToEdit: () => void;
   onReset: () => void;
   onDownload: () => void | Promise<void>;
+  /** 替换（化名）模式执行成功后提供，下载化名对照表 csv */
+  onDownloadPseudonymCsv?: () => void;
 }
 
 export const PlaygroundResultActionBar: FC<PlaygroundResultActionBarProps> = ({
@@ -26,6 +28,7 @@ export const PlaygroundResultActionBar: FC<PlaygroundResultActionBarProps> = ({
   onBackToEdit,
   onReset,
   onDownload,
+  onDownloadPseudonymCsv,
 }) => {
   const t = useT();
   const locale = useI18n((state) => state.locale);
@@ -55,7 +58,9 @@ export const PlaygroundResultActionBar: FC<PlaygroundResultActionBarProps> = ({
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold">
-                {resultReady ? t('playground.redactComplete') : t('playground.redactedPreviewPreparing')}
+                {resultReady
+                  ? t('playground.redactComplete')
+                  : t('playground.redactedPreviewPreparing')}
               </p>
               <p className="truncate text-xs text-background/70">{flowCopy.countLabel}</p>
               <div className="mt-1.5 hidden items-center gap-1.5 lg:flex">
@@ -95,6 +100,17 @@ export const PlaygroundResultActionBar: FC<PlaygroundResultActionBarProps> = ({
             >
               {t('playground.newFile')}
             </Button>
+            {onDownloadPseudonymCsv && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onDownloadPseudonymCsv}
+                data-testid="playground-download-pseudonym-csv"
+                className="h-9 whitespace-nowrap px-3"
+              >
+                {t('playground.downloadPseudonymCsv')}
+              </Button>
+            )}
             {fileInfo && canDownload && (
               <Button
                 size="sm"
@@ -134,6 +150,21 @@ export const RedactionReportSection: FC<{
     confidenceLabel(key, t),
   );
   const redactionMode = String(report.redaction_mode || '');
+  // 报告里的模式值是后端原始枚举，必须本地化；标签复用「处理方式」，避免再造一个并列术语
+  const redactionModeText = (() => {
+    switch (redactionMode) {
+      case 'structured':
+        return t('mode.structured');
+      case 'smart':
+        return t('mode.smart');
+      case 'mask':
+        return t('mode.mask');
+      case 'pseudonym':
+        return t('playground.processingModeReplace');
+      default:
+        return redactionMode;
+    }
+  })();
 
   return (
     <div className="mb-3 flex-shrink-0">
@@ -169,9 +200,9 @@ export const RedactionReportSection: FC<{
             {redactionMode && (
               <div className="rounded-xl border border-border/70 bg-muted/25 px-3 py-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('playground.reportMode')}
+                  {t('playground.processingMode')}
                 </span>
-                <p className="mt-1 text-sm font-medium text-foreground">{redactionMode}</p>
+                <p className="mt-1 text-sm font-medium text-foreground">{redactionModeText}</p>
               </div>
             )}
           </CardContent>
@@ -183,7 +214,9 @@ export const RedactionReportSection: FC<{
 
 const ReportMetric: FC<{ label: string; value: string | number }> = ({ label, value }) => (
   <div className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2">
-    <span className="block truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+    <span className="block truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {label}
+    </span>
     <span className="mt-1 block text-lg font-bold tabular-nums">{String(value)}</span>
   </div>
 );
@@ -193,7 +226,9 @@ const DistributionBlock: FC<{ title: string; rows: Array<[string, number]> }> = 
   rows,
 }) => (
   <div className="min-w-0 rounded-xl border border-border/70 px-3 py-2">
-    <span className="block truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+    <span className="block truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {title}
+    </span>
     <div className="mt-2 space-y-1.5">
       {rows.length > 0 ? (
         rows.map(([label, count]) => (

@@ -62,7 +62,11 @@ function resolveVisionSelectionsFromStorage(pipelines: PipelineConfig[], ownerId
   const defaultVisualFeatureTypeIds = buildDefaultPipelineTypeIds(pipelines, 'visual_features');
 
   const visionSelectionSignature = buildVisionSelectionSignature(pipelines);
-  const savedOcrHasTypes = getScopedStorageItem<string[] | null>(STORAGE_KEYS.OCR_HAS_TYPES, null, ownerId);
+  const savedOcrHasTypes = getScopedStorageItem<string[] | null>(
+    STORAGE_KEYS.OCR_HAS_TYPES,
+    null,
+    ownerId,
+  );
   const savedVisualFeatureTypes = getScopedStorageItem<string[] | null>(
     STORAGE_KEYS.VISUAL_FEATURE_TYPES,
     null,
@@ -75,25 +79,27 @@ function resolveVisionSelectionsFromStorage(pipelines: PipelineConfig[], ownerId
   );
   const canUseSavedVisionSelection = savedVisionSelectionSignature === visionSelectionSignature;
 
-  const ocrHasTypes = canUseSavedVisionSelection && Array.isArray(savedOcrHasTypes)
-    ? (() => {
-        const filtered = savedOcrHasTypes.filter((id: string) => ocrHasTypeIds.includes(id));
-        return filtered.length > 0 || savedOcrHasTypes.length === 0
-          ? filtered
-          : defaultOcrHasTypeIds;
-      })()
-    : defaultOcrHasTypeIds;
+  const ocrHasTypes =
+    canUseSavedVisionSelection && Array.isArray(savedOcrHasTypes)
+      ? (() => {
+          const filtered = savedOcrHasTypes.filter((id: string) => ocrHasTypeIds.includes(id));
+          return filtered.length > 0 || savedOcrHasTypes.length === 0
+            ? filtered
+            : defaultOcrHasTypeIds;
+        })()
+      : defaultOcrHasTypeIds;
 
-  const visualFeatureTypes = canUseSavedVisionSelection && Array.isArray(savedVisualFeatureTypes)
-    ? (() => {
-        const filtered = uniqueIds(savedVisualFeatureTypes).filter((id: string) =>
-          visualFeatureTypeIds.includes(id),
-        );
-        return filtered.length > 0 || savedVisualFeatureTypes.length === 0
-          ? filtered
-          : defaultVisualFeatureTypeIds;
-      })()
-    : defaultVisualFeatureTypeIds;
+  const visualFeatureTypes =
+    canUseSavedVisionSelection && Array.isArray(savedVisualFeatureTypes)
+      ? (() => {
+          const filtered = uniqueIds(savedVisualFeatureTypes).filter((id: string) =>
+            visualFeatureTypeIds.includes(id),
+          );
+          return filtered.length > 0 || savedVisualFeatureTypes.length === 0
+            ? filtered
+            : defaultVisualFeatureTypeIds;
+        })()
+      : defaultVisualFeatureTypeIds;
 
   return {
     ocrHasTypes,
@@ -105,7 +111,8 @@ function resolveVisionSelectionsFromStorage(pipelines: PipelineConfig[], ownerId
 export function usePlaygroundRecognition() {
   const locale = useI18n((state) => state.locale);
   const { status } = useAuth();
-  const ownerKey = status?.authenticated && status.username ? status.username.toLowerCase() : 'anonymous';
+  const ownerKey =
+    status?.authenticated && status.username ? status.username.toLowerCase() : 'anonymous';
   const presetsQuery = usePresets();
   const invalidatePresets = useInvalidatePresets();
 
@@ -117,7 +124,9 @@ export function usePlaygroundRecognition() {
   const cachedVisionSelections = resolveVisionSelectionsFromStorage(cachedPipelines, ownerKey);
 
   const [entityTypes, setEntityTypes] = useState<EntityTypeConfig[]>(cachedEntityTypes);
-  const [textConfigState, setTextConfigState] = useState<ConfigLoadState>(cachedEntityTypes.length > 0 ? 'ready' : 'loading');
+  const [textConfigState, setTextConfigState] = useState<ConfigLoadState>(
+    cachedEntityTypes.length > 0 ? 'ready' : 'loading',
+  );
   const entityConfigLoadedRef = useRef(cachedEntityTypes.length > 0);
   const initialSelectedTypes = buildDefaultTextTypeIds(cachedEntityTypes);
   const [selectedTypes, setSelectedTypesState] = useState<string[]>(initialSelectedTypes);
@@ -128,7 +137,9 @@ export function usePlaygroundRecognition() {
     selectedTypesRef.current = resolved;
     setSelectedTypesState(resolved);
   }, []);
-  const [visionTypes, setVisionTypes] = useState<VisionTypeConfig[]>(() => flattenVisionTypes(cachedPipelines));
+  const [visionTypes, setVisionTypes] = useState<VisionTypeConfig[]>(() =>
+    flattenVisionTypes(cachedPipelines),
+  );
   const [visionConfigState, setVisionConfigState] = useState<ConfigLoadState>(
     cachedPipelines.length > 0 ? 'ready' : 'loading',
   );
@@ -143,9 +154,28 @@ export function usePlaygroundRecognition() {
   const selectedVisualFeatureTypesRef = useRef(selectedVisualFeatureTypes);
   const [pipelines, setPipelines] = useState<PipelineConfig[]>(cachedPipelines);
   const [typeTab, setTypeTab] = useState<'text' | 'vision'>('text');
-  const [replacementMode, setReplacementMode] = useState<
+  // 处理方式上层二选一：打码（默认，走 replacementMode 三选一）/ 替换（化名映射确认）
+  const [processingMode, setProcessingMode] = useState<'mask' | 'replace'>('mask');
+  const [replacementMode, setReplacementModeState] = useState<
     'structured' | 'smart' | 'mask' | 'pseudonym'
   >('structured');
+  // 统一入口：pseudonym 归入替换分支；其余三值落在打码分支作为子模式。
+  // 预设应用（含 pseudonym）也走这里，自动映射到对应分支。
+  const setReplacementMode = useCallback((mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => {
+    if (mode === 'pseudonym') {
+      setProcessingMode('replace');
+      return;
+    }
+    setProcessingMode('mask');
+    setReplacementModeState(mode);
+  }, []);
+  // 切回「打码」时清掉残留的 pseudonym 子模式（预设带入），保证打码分支
+  // 永远以三种打码方式之一执行，不会以 pseudonym 模式产出化名成品
+  const setProcessingModeGuarded = useCallback((mode: 'mask' | 'replace') => {
+    setProcessingMode(mode);
+    if (mode === 'mask')
+      setReplacementModeState((current) => (current === 'pseudonym' ? 'structured' : current));
+  }, []);
   // 成品水印文案（W2-1）：只作用于最终执行输出，预览不加
   const [watermarkText, setWatermarkText] = useState('');
   const [playgroundPresets, setPlaygroundPresets] = useState<RecognitionPreset[]>([]);
@@ -160,16 +190,13 @@ export function usePlaygroundRecognition() {
     selectedTypesRef.current = selectedTypes;
   }, [selectedTypes]);
 
-  const localizedPlaygroundPresets = useMemo(
-    () => {
-      void locale;
-      return playgroundPresets.map((preset) => ({
-        ...preset,
-        name: localizePresetName(preset, t),
-      }));
-    },
-    [playgroundPresets, locale],
-  );
+  const localizedPlaygroundPresets = useMemo(() => {
+    void locale;
+    return playgroundPresets.map((preset) => ({
+      ...preset,
+      name: localizePresetName(preset, t),
+    }));
+  }, [playgroundPresets, locale]);
 
   const textPresetsPg = useMemo(
     () => localizedPlaygroundPresets.filter(presetAppliesText),
@@ -193,18 +220,24 @@ export function usePlaygroundRecognition() {
     [pipelines],
   );
 
-  const updateOcrHasTypes = useCallback((types: string[]) => {
-    selectedOcrHasTypesRef.current = types;
-    setSelectedOcrHasTypes(types);
-    setScopedStorageItem(STORAGE_KEYS.OCR_HAS_TYPES, types, ownerKey);
-  }, [ownerKey]);
+  const updateOcrHasTypes = useCallback(
+    (types: string[]) => {
+      selectedOcrHasTypesRef.current = types;
+      setSelectedOcrHasTypes(types);
+      setScopedStorageItem(STORAGE_KEYS.OCR_HAS_TYPES, types, ownerKey);
+    },
+    [ownerKey],
+  );
 
-  const updateVisualFeatureTypes = useCallback((types: string[]) => {
-    const uniqueTypes = uniqueIds(types);
-    selectedVisualFeatureTypesRef.current = uniqueTypes;
-    setSelectedVisualFeatureTypes(uniqueTypes);
-    setScopedStorageItem(STORAGE_KEYS.VISUAL_FEATURE_TYPES, uniqueTypes, ownerKey);
-  }, [ownerKey]);
+  const updateVisualFeatureTypes = useCallback(
+    (types: string[]) => {
+      const uniqueTypes = uniqueIds(types);
+      selectedVisualFeatureTypesRef.current = uniqueTypes;
+      setSelectedVisualFeatureTypes(uniqueTypes);
+      setScopedStorageItem(STORAGE_KEYS.VISUAL_FEATURE_TYPES, uniqueTypes, ownerKey);
+    },
+    [ownerKey],
+  );
 
   const clearPlaygroundTextPresetTracking = useCallback(() => {
     setPlaygroundPresetTextId(null);
@@ -230,7 +263,7 @@ export function usePlaygroundRecognition() {
       setActivePresetTextId(preset.id);
       setPresetApplySeq((s) => s + 1);
     },
-    [entityTypes, setSelectedTypes],
+    [entityTypes, setSelectedTypes, setReplacementMode],
   );
 
   const applyVisionPresetToPlayground = useCallback(
@@ -279,7 +312,13 @@ export function usePlaygroundRecognition() {
       const preset = playgroundPresets.find((item) => item.id === id);
       if (preset) applyTextPresetToPlayground(preset);
     },
-    [playgroundDefaultTextTypeIds, playgroundPresets, applyTextPresetToPlayground, setSelectedTypes],
+    [
+      playgroundDefaultTextTypeIds,
+      playgroundPresets,
+      applyTextPresetToPlayground,
+      setSelectedTypes,
+      setReplacementMode,
+    ],
   );
 
   const selectPlaygroundVisionPresetById = useCallback(
@@ -394,7 +433,9 @@ export function usePlaygroundRecognition() {
   const fetchEntityTypes = useCallback(
     async (preserveSelection = false) => {
       try {
-        const types = sortEntityTypes(await fetchRecognitionEntityTypes(true, RECOGNITION_FETCH_TIMEOUT_MS));
+        const types = sortEntityTypes(
+          await fetchRecognitionEntityTypes(true, RECOGNITION_FETCH_TIMEOUT_MS),
+        );
         const defaultTypeIds = buildDefaultTextTypeIds(types);
         const validTypeIds = new Set(types.map((type) => type.id));
         const hadLoaded = entityConfigLoadedRef.current;
@@ -418,59 +459,70 @@ export function usePlaygroundRecognition() {
     [ownerKey, setSelectedTypes],
   );
 
-  const fetchVisionTypes = useCallback(async (preserveSelection = false) => {
-    try {
-      const normalizedPipelines = normalizeVisionPipelines(
-        (await fetchRecognitionPipelines(RECOGNITION_FETCH_TIMEOUT_MS)) as PipelineConfig[],
-      );
-      const nextVisionTypes = flattenVisionTypes(normalizedPipelines);
-      const hadLoaded = visionConfigLoadedRef.current;
+  const fetchVisionTypes = useCallback(
+    async (preserveSelection = false) => {
+      try {
+        const normalizedPipelines = normalizeVisionPipelines(
+          (await fetchRecognitionPipelines(RECOGNITION_FETCH_TIMEOUT_MS)) as PipelineConfig[],
+        );
+        const nextVisionTypes = flattenVisionTypes(normalizedPipelines);
+        const hadLoaded = visionConfigLoadedRef.current;
 
-      setPipelines(normalizedPipelines);
-      setVisionTypes(nextVisionTypes);
-      visionConfigLoadedRef.current = normalizedPipelines.length > 0;
-      setVisionConfigState(normalizedPipelines.length > 0 ? 'ready' : 'empty');
-      if (preserveSelection && hadLoaded) {
-        // A refetch (window focus / config-changed event) must NOT clobber the
-        // user's current selection (e.g. an applied preset). Mirror
-        // fetchEntityTypes: keep the live selection, only dropping ids that no
-        // longer exist in the pipelines. Re-resolving from storage here is what
-        // caused the re-recognize 13<->7 flip (a focus refetch reset an applied
-        // medical preset back to the default type set).
-        const ocrIds = new Set(
-          normalizedPipelines
-            .filter((pipeline) => pipeline.mode === 'ocr_has')
-            .flatMap((pipeline) => pipeline.types.map((type) => type.id)),
-        );
-        const imageIds = new Set(
-          normalizedPipelines
-            .filter((pipeline) => pipeline.mode === 'visual_features')
-            .flatMap((pipeline) => pipeline.types.map((type) => type.id)),
-        );
-        updateOcrHasTypes(selectedOcrHasTypesRef.current.filter((id) => ocrIds.has(id)));
-        updateVisualFeatureTypes(selectedVisualFeatureTypesRef.current.filter((id) => imageIds.has(id)));
-      } else {
-        const nextVisionSelections = resolveVisionSelectionsFromStorage(normalizedPipelines, ownerKey);
-        updateOcrHasTypes(nextVisionSelections.ocrHasTypes);
-        updateVisualFeatureTypes(nextVisionSelections.visualFeatureTypes);
-        setScopedStorageItem(
-          STORAGE_KEYS.VISION_SELECTION_SIGNATURE,
-          nextVisionSelections.visionSelectionSignature,
-          ownerKey,
-        );
+        setPipelines(normalizedPipelines);
+        setVisionTypes(nextVisionTypes);
+        visionConfigLoadedRef.current = normalizedPipelines.length > 0;
+        setVisionConfigState(normalizedPipelines.length > 0 ? 'ready' : 'empty');
+        if (preserveSelection && hadLoaded) {
+          // A refetch (window focus / config-changed event) must NOT clobber the
+          // user's current selection (e.g. an applied preset). Mirror
+          // fetchEntityTypes: keep the live selection, only dropping ids that no
+          // longer exist in the pipelines. Re-resolving from storage here is what
+          // caused the re-recognize 13<->7 flip (a focus refetch reset an applied
+          // medical preset back to the default type set).
+          const ocrIds = new Set(
+            normalizedPipelines
+              .filter((pipeline) => pipeline.mode === 'ocr_has')
+              .flatMap((pipeline) => pipeline.types.map((type) => type.id)),
+          );
+          const imageIds = new Set(
+            normalizedPipelines
+              .filter((pipeline) => pipeline.mode === 'visual_features')
+              .flatMap((pipeline) => pipeline.types.map((type) => type.id)),
+          );
+          updateOcrHasTypes(selectedOcrHasTypesRef.current.filter((id) => ocrIds.has(id)));
+          updateVisualFeatureTypes(
+            selectedVisualFeatureTypesRef.current.filter((id) => imageIds.has(id)),
+          );
+        } else {
+          const nextVisionSelections = resolveVisionSelectionsFromStorage(
+            normalizedPipelines,
+            ownerKey,
+          );
+          updateOcrHasTypes(nextVisionSelections.ocrHasTypes);
+          updateVisualFeatureTypes(nextVisionSelections.visualFeatureTypes);
+          setScopedStorageItem(
+            STORAGE_KEYS.VISION_SELECTION_SIGNATURE,
+            nextVisionSelections.visionSelectionSignature,
+            ownerKey,
+          );
+        }
+        updateRecognitionConfigCache({ pipelines: normalizedPipelines }, ownerKey);
+      } catch (error) {
+        if (import.meta.env.DEV) console.error('fetch vision pipelines failed', error);
+        if (!visionConfigLoadedRef.current) {
+          setVisionConfigState('unavailable');
+        }
       }
-      updateRecognitionConfigCache({ pipelines: normalizedPipelines }, ownerKey);
-    } catch (error) {
-      if (import.meta.env.DEV) console.error('fetch vision pipelines failed', error);
-      if (!visionConfigLoadedRef.current) {
-        setVisionConfigState('unavailable');
-      }
-    }
-  }, [ownerKey, updateOcrHasTypes, updateVisualFeatureTypes]);
+    },
+    [ownerKey, updateOcrHasTypes, updateVisualFeatureTypes],
+  );
 
   const loadRecognitionConfig = useCallback(
     async (preserveSelection = false) => {
-      await Promise.allSettled([fetchEntityTypes(preserveSelection), fetchVisionTypes(preserveSelection)]);
+      await Promise.allSettled([
+        fetchEntityTypes(preserveSelection),
+        fetchVisionTypes(preserveSelection),
+      ]);
     },
     [fetchEntityTypes, fetchVisionTypes],
   );
@@ -607,6 +659,8 @@ export function usePlaygroundRecognition() {
     pipelines,
     typeTab,
     setTypeTab,
+    processingMode,
+    setProcessingMode: setProcessingModeGuarded,
     replacementMode,
     setReplacementMode,
     watermarkText,

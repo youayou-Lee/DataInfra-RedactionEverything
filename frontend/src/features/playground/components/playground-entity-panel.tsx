@@ -16,11 +16,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
-import {
-  ENTITY_GROUPS,
-  getEntityGroupLabel,
-  getEntityTypeName,
-} from '@/config/entityTypes';
+import { ENTITY_GROUPS, getEntityGroupLabel, getEntityTypeName } from '@/config/entityTypes';
 import { computeEntityStats, getModePreview } from '../utils';
 import type { BoundingBox, Entity } from '../types';
 
@@ -29,6 +25,8 @@ export interface PlaygroundEntityPanelProps {
   isLoading: boolean;
   recognitionIssue?: string | null;
   entities: Entity[];
+  /** 化名映射区用全量实体（跨页）：执行门槛按全文档判定，映射行必须同源，否则多页文档会出现"看不见的被阻塞" */
+  mappingEntities?: Entity[];
   entityTypes?: Array<{ id: string; name: string }>;
   visionTypes?: Array<{ id: string; name: string }>;
   visibleBoxes: BoundingBox[];
@@ -38,6 +36,15 @@ export interface PlaygroundEntityPanelProps {
   displayStats?: Record<string, { total: number; selected: number }>;
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  processingMode: 'mask' | 'replace';
+  setProcessingMode: (mode: 'mask' | 'replace') => void;
+  pseudonymMap: Record<string, string>;
+  onPseudonymChange: (text: string, replacement: string) => void;
+  pseudonymMapLoading: boolean;
+  pseudonymMapError?: string | null;
+  onRetryPseudonymLoad?: () => void;
+  replaceUnready?: boolean;
+  pseudonymConflicts: Set<string>;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
@@ -56,6 +63,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     isLoading,
     recognitionIssue,
     entities,
+    mappingEntities,
     entityTypes = [],
     visionTypes = [],
     visibleBoxes,
@@ -65,6 +73,15 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     displayStats,
     replacementMode,
     setReplacementMode,
+    processingMode,
+    setProcessingMode,
+    pseudonymMap,
+    onPseudonymChange,
+    pseudonymMapLoading,
+    pseudonymMapError,
+    onRetryPseudonymLoad,
+    replaceUnready,
+    pseudonymConflicts,
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
@@ -81,7 +98,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
       () => (!isImageMode && displayStats ? displayStats : computeEntityStats(entities)),
       [displayStats, entities, isImageMode],
     );
-    const shownSelectedCount = isImageMode ? selectedCount : (displaySelectedCount ?? selectedCount);
+    const shownSelectedCount = isImageMode
+      ? selectedCount
+      : (displaySelectedCount ?? selectedCount);
     const totalCount = isImageMode ? visibleBoxes.length : (displayTotalCount ?? entities.length);
     const listTitle = isImageMode ? t('playground.regionList') : t('playground.results');
     const typeNameById = useMemo(() => {
@@ -101,7 +120,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
           ? t('playground.redactDisabledNoResults')
           : shownSelectedCount === 0
             ? t('playground.redactDisabledNoSelection')
-            : '';
+            : replaceUnready
+              ? t('playground.pseudonymConfirmRequiredShort')
+              : '';
 
     return (
       <div
@@ -174,22 +195,41 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               </Button>
             </div>
 
-            {!isImageMode && (
-              <ReplacementModeSelector
-                entities={entities}
-                mode={replacementMode}
-                onModeChange={(mode) => {
-                  clearPlaygroundTextPresetTracking();
-                  setReplacementMode(mode);
-                }}
-              />
-            )}
+            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因 */}
+            <ProcessingModeSelector
+              mode={isImageMode ? 'mask' : processingMode}
+              onModeChange={(mode) => {
+                if (isImageMode && mode !== 'mask') return;
+                clearPlaygroundTextPresetTracking();
+                setProcessingMode(mode);
+              }}
+              replaceDisabled={isImageMode}
+            />
+            {!isImageMode &&
+              (processingMode === 'mask' ? (
+                <MaskModeSelector
+                  entities={entities}
+                  mode={replacementMode === 'pseudonym' ? 'structured' : replacementMode}
+                  onModeChange={(mode) => {
+                    clearPlaygroundTextPresetTracking();
+                    setReplacementMode(mode);
+                  }}
+                />
+              ) : (
+                <PseudonymMapSection
+                  entities={mappingEntities ?? entities}
+                  pseudonymMap={pseudonymMap}
+                  onPseudonymChange={onPseudonymChange}
+                  loading={pseudonymMapLoading}
+                  error={pseudonymMapError}
+                  onRetry={onRetryPseudonymLoad}
+                  conflicts={pseudonymConflicts}
+                  typeNameById={typeNameById}
+                />
+              ))}
 
             <div className="space-y-1">
-              <Label
-                htmlFor="playground-watermark"
-                className="text-xs text-muted-foreground"
-              >
+              <Label htmlFor="playground-watermark" className="text-xs text-muted-foreground">
                 {t('playground.watermarkLabel')}
               </Label>
               <Input
@@ -201,6 +241,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                 className="h-8 text-xs"
                 data-testid="playground-watermark-input"
               />
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                {t('playground.watermarkHint')}
+              </p>
             </div>
 
             {!isImageMode && Object.keys(stats).length > 0 && (
@@ -215,7 +258,10 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                   const selected = groupedStats.reduce((sum, [, count]) => sum + count.selected, 0);
 
                   return (
-                    <div key={group.id} className="rounded-[20px] border border-border/70 bg-muted/25">
+                    <div
+                      key={group.id}
+                      className="rounded-[20px] border border-border/70 bg-muted/25"
+                    >
                       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
                         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           {getEntityGroupLabel(group.id)}
@@ -282,11 +328,11 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
         )}
         <Button
           onClick={onRedact}
-          disabled={shownSelectedCount === 0 || isLoading}
+          disabled={shownSelectedCount === 0 || isLoading || Boolean(replaceUnready)}
           aria-describedby={disabledReason ? 'playground-redact-disabled-reason' : undefined}
           className={cn(
             'h-11 shrink-0 rounded-[20px] text-sm font-semibold shadow-[var(--shadow-control)]',
-            shownSelectedCount === 0 && 'opacity-50',
+            (shownSelectedCount === 0 || Boolean(replaceUnready)) && 'opacity-50',
           )}
           data-testid="playground-redact-btn"
         >
@@ -299,22 +345,125 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
   },
 );
 
-const ReplacementModeSelector: FC<{
+// 选中态要一眼可辨：实线主色边框 + 10% 主色底 + 主色圆点，弱化态只做 hover 提示
+const ModeOptionCardClasses = (selected: boolean, disabled = false) =>
+  cn(
+    'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-center transition-colors',
+    disabled
+      ? 'cursor-not-allowed border-border/50 bg-muted/30 opacity-70'
+      : selected
+        ? 'cursor-pointer border-primary bg-primary/10'
+        : 'cursor-pointer border-border/70 bg-background hover:border-primary/40',
+  );
+
+const ModeOptionLabelClasses = (selected: boolean) =>
+  cn('truncate text-xs', selected ? 'font-semibold text-primary' : 'font-medium text-foreground');
+
+const ModeRadioDot: FC<{ active: boolean; disabled?: boolean }> = ({ active, disabled }) => (
+  <span
+    aria-hidden
+    className={cn(
+      'inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+      disabled
+        ? 'border-muted-foreground/30'
+        : active
+          ? 'border-primary'
+          : 'border-muted-foreground/40',
+    )}
+  >
+    {active && !disabled && <span className="block size-1.5 rounded-full bg-primary" />}
+  </span>
+);
+
+const ProcessingModeSelector: FC<{
+  mode: 'mask' | 'replace';
+  onModeChange: (mode: 'mask' | 'replace') => void;
+  replaceDisabled?: boolean;
+}> = ({ mode, onModeChange, replaceDisabled = false }) => {
+  const t = useT();
+  const modes: {
+    value: 'mask' | 'replace';
+    label: string;
+    desc: string;
+    disabled?: boolean;
+  }[] = [
+    {
+      value: 'mask',
+      label: t('playground.processingModeMask'),
+      desc: t('playground.processingModeMaskDesc'),
+    },
+    {
+      value: 'replace',
+      label: t('playground.processingModeReplace'),
+      desc: replaceDisabled
+        ? t('playground.processingModeReplaceUnavailable')
+        : t('playground.processingModeReplaceDesc'),
+      disabled: replaceDisabled,
+    },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('playground.processingMode')}
+      </label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {modes.map((item) => {
+          const selected = mode === item.value;
+          return (
+            <label
+              key={item.value}
+              data-testid={`playground-processing-mode-${item.value}`}
+              aria-disabled={item.disabled || undefined}
+              className={ModeOptionCardClasses(selected, item.disabled)}
+            >
+              <input
+                type="radio"
+                name="processingMode"
+                value={item.value}
+                checked={selected}
+                onChange={() => {
+                  if (!item.disabled) onModeChange(item.value);
+                }}
+                disabled={item.disabled}
+                className="sr-only"
+              />
+              <span className="flex items-center gap-1.5">
+                <ModeRadioDot active={selected} disabled={item.disabled} />
+                <span className={ModeOptionLabelClasses(selected)}>{item.label}</span>
+              </span>
+              <span className="truncate text-[10px] leading-3 text-muted-foreground">
+                {item.desc}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {replaceDisabled && (
+        <p
+          className="text-[11px] leading-4 text-muted-foreground"
+          data-testid="playground-processing-mode-scanned-notice"
+        >
+          {t('playground.processingModeScannedNotice')}
+        </p>
+      )}
+    </div>
+  );
+};
+
+const MaskModeSelector: FC<{
   entities: Entity[];
-  mode: 'structured' | 'smart' | 'mask' | 'pseudonym';
-  onModeChange: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  mode: 'structured' | 'smart' | 'mask';
+  onModeChange: (mode: 'structured' | 'smart' | 'mask') => void;
 }> = ({ entities, mode, onModeChange }) => {
   const t = useT();
-  const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
-  const modes: {
-    value: 'structured' | 'smart' | 'mask' | 'pseudonym';
-    label: string;
-    badge?: string;
-  }[] = [
+  const sampleEntity = entities.find(
+    (entity) => entity.selected !== false && entity.text && entity.text.length > 0,
+  );
+  const modes: { value: 'structured' | 'smart' | 'mask'; label: string; badge?: string }[] = [
     { value: 'structured', label: t('mode.structured'), badge: t('playground.recommended') },
     { value: 'smart', label: t('mode.smart') },
     { value: 'mask', label: t('mode.mask') },
-    { value: 'pseudonym', label: t('mode.pseudonym') },
   ];
 
   return (
@@ -322,27 +471,30 @@ const ReplacementModeSelector: FC<{
       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {t('playground.redactMode')}
       </label>
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {modes.map((item) => (
-          <label
-            key={item.value}
-            className={cn(
-              'flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center transition-colors',
-              mode === item.value
-                ? 'border-primary/50 bg-primary/5'
-                : 'border-border/70 bg-background hover:border-primary/30',
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="replacementMode"
-                value={item.value}
-                checked={mode === item.value}
-                onChange={() => onModeChange(item.value)}
-                className="sr-only"
-              />
-              <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        {t('playground.redactModeHint')}
+      </p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {modes.map((item) => {
+          const selected = mode === item.value;
+          return (
+            <label
+              key={item.value}
+              title={getModePreview(item.value, sampleEntity)}
+              className={ModeOptionCardClasses(selected)}
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="replacementMode"
+                  value={item.value}
+                  checked={selected}
+                  onChange={() => onModeChange(item.value)}
+                  className="sr-only"
+                />
+                <ModeRadioDot active={selected} />
+                <span className={ModeOptionLabelClasses(selected)}>{item.label}</span>
+              </div>
               {item.badge && (
                 <Badge
                   variant="outline"
@@ -351,12 +503,136 @@ const ReplacementModeSelector: FC<{
                   {item.badge}
                 </Badge>
               )}
-            </div>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </div>
       <p className="truncate text-[11px] text-muted-foreground">
         {getModePreview(mode, sampleEntity)}
+      </p>
+    </div>
+  );
+};
+
+const PseudonymMapSection: FC<{
+  entities: Entity[];
+  pseudonymMap: Record<string, string>;
+  onPseudonymChange: (text: string, replacement: string) => void;
+  loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  conflicts: Set<string>;
+  typeNameById: Map<string, string>;
+}> = ({
+  entities,
+  pseudonymMap,
+  onPseudonymChange,
+  loading,
+  error,
+  onRetry,
+  conflicts,
+  typeNameById,
+}) => {
+  const t = useT();
+  const rows = useMemo(() => {
+    const byText = new Map<string, { type: string; count: number }>();
+    for (const entity of entities) {
+      if (entity.selected === false || !entity.text) continue;
+      const entry = byText.get(entity.text) ?? { type: entity.type, count: 0 };
+      entry.count += 1;
+      byText.set(entity.text, entry);
+    }
+    return Array.from(byText.entries());
+  }, [entities]);
+  // 样例预览只取已勾选实体，避免展示"不会参与替换的原文"
+  const sampleEntity = entities.find(
+    (entity) => entity.selected !== false && entity.text && entity.text.length > 0,
+  );
+  const conflictList = Array.from(conflicts);
+
+  return (
+    <div className="space-y-1.5" data-testid="playground-pseudonym-map">
+      <div className="flex items-center justify-between gap-2">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t('playground.pseudonymMap')}
+        </label>
+        {loading && (
+          <span className="text-[10px] text-muted-foreground">
+            {t('playground.pseudonymLoading')}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        {t('playground.pseudonymMapDesc')}
+      </p>
+      {error && (
+        <div
+          className="flex items-center justify-between gap-2 rounded-lg border border-[var(--destructive)]/50 bg-[var(--destructive)]/5 px-2 py-1.5"
+          data-testid="playground-pseudonym-error"
+        >
+          <p className="min-w-0 truncate text-[11px] text-[var(--destructive)]">{error}</p>
+          {onRetry && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-[11px]"
+              onClick={onRetry}
+              data-testid="playground-pseudonym-retry"
+            >
+              {t('playground.pseudonymRetry')}
+            </Button>
+          )}
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">{t('playground.pseudonymNoEntities')}</p>
+      ) : (
+        <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+          {rows.map(([text, info]) => {
+            const conflicted = conflicts.has(text);
+            return (
+              <div
+                key={text}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-lg border px-2 py-1.5',
+                  conflicted
+                    ? 'border-[var(--warning)]/60 bg-[var(--warning)]/5'
+                    : 'border-border/70 bg-background',
+                )}
+                data-testid={`pseudonym-row-${text}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground" title={text}>
+                    {text}
+                  </p>
+                  <p className="truncate text-[10px] text-muted-foreground">
+                    {typeNameById.get(info.type) ?? info.type} × {info.count}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">→</span>
+                <Input
+                  value={pseudonymMap[text] ?? ''}
+                  onChange={(event) => onPseudonymChange(text, event.target.value)}
+                  placeholder={t('playground.pseudonymInputPlaceholder')}
+                  className="h-8 w-28 shrink-0 text-xs"
+                  data-testid={`pseudonym-input-${text}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {conflictList.length > 0 && (
+        <p
+          className="text-[11px] leading-4 text-[var(--warning)]"
+          data-testid="playground-pseudonym-conflict"
+        >
+          {t('playground.pseudonymConflictWarning').replace('{count}', String(conflictList.length))}
+        </p>
+      )}
+      <p className="truncate text-[11px] text-muted-foreground">
+        {getModePreview('pseudonym', sampleEntity, pseudonymMap)}
       </p>
     </div>
   );
@@ -437,9 +713,7 @@ const BoxList: FC<{
                 <Badge variant="secondary">
                   {typeNameById.get(box.type) ?? getEntityTypeName(box.type)}
                 </Badge>
-                <Badge variant="outline">
-                  {sourceLabel}
-                </Badge>
+                <Badge variant="outline">{sourceLabel}</Badge>
               </div>
               <p className="truncate text-sm text-foreground">
                 {box.text || t('playground.imageRegion')}
@@ -503,12 +777,7 @@ const EntityRow: FC<{
         }}
         aria-label={t('playground.removeAnnotation')}
       >
-        <svg
-          className="size-3.5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -533,7 +802,9 @@ const EntityList: FC<{
     return <EmptyDetectionState mode="text" />;
   }
 
-  const groupedTypeIds = new Set(ENTITY_GROUPS.flatMap((group) => group.types.map((type) => type.id)));
+  const groupedTypeIds = new Set(
+    ENTITY_GROUPS.flatMap((group) => group.types.map((type) => type.id)),
+  );
   const customEntities = entities.filter((entity) => !groupedTypeIds.has(entity.type));
 
   return (

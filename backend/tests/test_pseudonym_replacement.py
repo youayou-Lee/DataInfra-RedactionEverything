@@ -4,8 +4,6 @@
 （身份证校验位 / 手机号段 / 银行卡 Luhn）、精确映射优先级、无词池回退。
 """
 
-import pytest
-
 from app.models.common import ReplacementMode
 from app.models.entity_schemas import Entity
 from app.services.redaction.replacement_strategy import (
@@ -98,7 +96,7 @@ def test_format_fictional_valid():
         assert len(_fictional_id_card(seq)) == 18
         body, check = _fictional_id_card(seq)[:-1], _fictional_id_card(seq)[-1]
         weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
-        total = sum(int(c) * w for c, w in zip(body, weights))
+        total = sum(int(c) * w for c, w in zip(body, weights, strict=False))
         assert check == "10X98765432"[total % 11]
 
         phone = _fictional_phone(seq)
@@ -220,3 +218,83 @@ def test_attach_word_pools_normalizes_client_pools():
     _attach_word_pools(cfg, "someone")
     # 畸形结构被丢弃，回退加载租户词池（含默认）
     assert isinstance(cfg.word_pools, dict) and "PERSON" in cfg.word_pools
+
+def test_coref_grouping_does_not_merge_different_names():
+    """模型共指误组（不同人同组）不得共享化名——化名语义=同一原文同一化名。
+
+    真实案卷实测：NER 把 6 个不同人名标成同一 coref 组，旧逻辑全组共享一个
+    化名，用户看到"多个人名映射到同一个名字"。
+    """
+    pools = {"PERSON": {"words": ["张三", "李四", "王五"], "strategy": "numbered", "custom_map": {}}}
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("刘美丽", coref="coref_002"))
+    b = ctx.get_replacement(_entity("徐超凡", coref="coref_002"))
+    c = ctx.get_replacement(_entity("罗中洲", coref="coref_002"))
+    assert len({a, b, c}) == 3
+    # 同一原文仍然全文一致（含 coref 混排）
+    assert ctx.get_replacement(_entity("刘美丽")) == a
+    assert ctx.get_replacement(_entity("刘美丽", coref="coref_002")) == a
+
+
+def test_government_institution_text_uses_gov_pool():
+    """机关类机构文本落机关词池，不落公司词池（公安局→某公安局，非某公司）。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {
+            "words": ["某公安局", "某人民法院"], "strategy": "numbered", "custom_map": {},
+        },
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "某公安局"
+    assert ctx.get_replacement(_entity("某县人民法院", type_="INSTITUTION_NAME")) == "某人民法院"
+    # 非机关机构照旧落公司池
+    assert ctx.get_replacement(_entity("某科技有限公司", type_="INSTITUTION_NAME")) == "某公司"
+
+
+def test_bank_institution_text_uses_bank_pool():
+    """银行类机构文本落银行词池。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "BANK_NAME": {"words": ["某银行某支行"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("工商银行某支行", type_="INSTITUTION_NAME")) == "某银行某支行"
+
+
+def test_custom_map_reserve_uses_refined_pool_key():
+    """机关精化池的 custom_map 命中后登记占用，跨池不误伤。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某局"], "strategy": "numbered",
+                              "custom_map": {"某市公安局": "某公安局"}},
+    }
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME"))
+    b = ctx.get_replacement(_entity("某县自然资源局", type_="INSTITUTION_NAME"))
+    c = ctx.get_replacement(_entity("某科技有限公司", type_="INSTITUTION_NAME"))
+    assert a == "某公安局"          # 机关池 custom_map 精确映射（非池词）
+    assert b == "某局"              # 某公安局已被占用，机关池顺延
+    assert c == "某公司"            # 公司池不受机关池占用影响
+
+
+def test_gov_text_refinement_no_false_positive():
+    """名字含机关词但以公司后缀结尾的，留在公司池。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某司法鉴定服务有限公司", type_="INSTITUTION_NAME")) == "某公司"
+    assert ctx.get_replacement(_entity("海关咨询有限公司", type_="INSTITUTION_NAME")) == "某公司1"  # 池耗尽顺延编号，仍在公司池
+    assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局"
+
+
+def test_base_pool_custom_map_fallback_for_refined_text():
+    """精化池没有该原文的 custom_map 时，回退查基座池的存量映射（数据兼容）。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered",
+                             "custom_map": {"某市公安局": "自定义机关甲"}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "自定义机关甲"

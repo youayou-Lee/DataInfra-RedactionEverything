@@ -17,6 +17,7 @@ import { localizeErrorMessage } from '@/utils/localizeError';
 import {
   buildDraftSnapshot,
   parseDraft,
+  planResume,
   serializeDraft,
   type PlaygroundDraftSnapshot,
 } from '../lib/playground-draft';
@@ -644,6 +645,28 @@ export function usePlayground() {
     showToast(t('playground.restored'), 'info');
   }, [applyDraftSnapshot]);
 
+  // 历史页「回到现场」入口（R2 + 草稿恢复）：?file_id= 协议统一走这里。
+  // 有本文件的草稿 → 直接恢复现场；无草稿 → 重置后按当前识别配置重新识别。
+  const resumeFromFile = useCallback(
+    async (targetFileId: string) => {
+      const snapshot = parseDraft(
+        getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null),
+      );
+      const decision = planResume({ targetFileId, snapshot });
+      if (decision.mode === 'unavailable') return;
+      if (decision.mode === 'draft') {
+        applyDraftSnapshot(decision.snapshot);
+        showToast(t('playground.restored'), 'info');
+        return;
+      }
+      // R2：无草稿（或草稿属于其他文件）→ 重置后按当前配置重新识别
+      performReset();
+      showToast(t('playground.restoreRerunning'), 'info');
+      await fileCtx.loadExistingFile(decision.fileId);
+    },
+    [applyDraftSnapshot, fileCtx, performReset],
+  );
+
   const handleReset = useCallback(() => {
     if (hasResetRisk) {
       setResetConfirmOpen(true);
@@ -742,6 +765,7 @@ export function usePlayground() {
     handleRerunNer,
     handleRedact,
     cancelProcessing,
+    resumeFromFile,
     handleReset,
     resetConfirmOpen,
     confirmReset,

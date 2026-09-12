@@ -1,6 +1,7 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
-import { type FC, type ReactNode, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, type FC, type ReactNode, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useT } from '@/i18n';
 import { getEntityTypeName } from '@/config/entityTypes';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -17,6 +18,7 @@ import {
   usePlaygroundContext,
   usePlaygroundUIContext,
 } from './playground-context';
+import { needsSwitchConfirm } from './lib/playground-draft';
 import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
 
@@ -70,6 +72,7 @@ const PlaygroundInner: FC = () => {
     handleRerunNer,
     handleRedact,
     cancelProcessing,
+    resumeFromFile,
     handleReset,
     confirmReset,
     cancelReset,
@@ -94,6 +97,31 @@ const PlaygroundInner: FC = () => {
       ),
     [recognition.pipelines],
   );
+
+  // 历史页「回到现场」跳转入口（?file_id= 协议）：读到参数即恢复/重跑对应文件会话
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resumeFileId = searchParams.get('file_id');
+  const [switchConfirmTarget, setSwitchConfirmTarget] = useState<string | null>(null);
+  const resumeHandledRef = useRef<string | null>(null);
+
+  const startResume = useCallback(
+    (target: string) => {
+      resumeHandledRef.current = target;
+      void resumeFromFile(target);
+      setSearchParams({}, { replace: true }); // 清参数，防刷新/回退重复触发
+    },
+    [resumeFromFile, setSearchParams],
+  );
+
+  useEffect(() => {
+    if (!resumeFileId || resumeHandledRef.current === resumeFileId) return;
+    if (needsSwitchConfirm(fileInfo?.file_id ?? null, resumeFileId)) {
+      setSwitchConfirmTarget(resumeFileId); // 已有其他会话：先确认再覆盖
+      return;
+    }
+    startResume(resumeFileId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startResume 稳定引用由 useCallback 保证
+  }, [resumeFileId, fileInfo?.file_id]);
 
   const pagesArr = fileInfo?.pages;
   const hasTextPagination =
@@ -423,6 +451,23 @@ const PlaygroundInner: FC = () => {
         danger
         onConfirm={confirmReset}
         onCancel={cancelReset}
+      />
+
+      <ConfirmDialog
+        open={switchConfirmTarget !== null}
+        title={t('playground.switchSessionTitle')}
+        message={t('playground.switchSessionMessage')}
+        confirmText={t('playground.switchSessionConfirm')}
+        danger
+        onConfirm={() => {
+          const target = switchConfirmTarget;
+          setSwitchConfirmTarget(null);
+          if (target) startResume(target);
+        }}
+        onCancel={() => {
+          setSwitchConfirmTarget(null);
+          setSearchParams({}, { replace: true });
+        }}
       />
     </div>
   );

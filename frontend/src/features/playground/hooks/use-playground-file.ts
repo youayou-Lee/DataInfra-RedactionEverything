@@ -203,6 +203,71 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
     }
   }, []);
 
+  // 从服务端按 file_id 重建会话（历史页「回到现场」且无草稿时的 R2 路径）：
+  // 不上传新文件，parse 后走与上传后完全相同的自动识别管线。
+  const loadExistingFile = useCallback(async (fileId: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
+    setIsLoading(true);
+    setStage('upload');
+    setUploadIssue(null);
+    setRecognitionIssue(null);
+
+    const opts = optionsRef.current;
+    try {
+      setLoadingMessage(t('playground.parsing'));
+      const [infoRes, parseRes] = await Promise.all([
+        authFetch(`/api/v1/files/${fileId}`, { signal }),
+        authFetch(`/api/v1/files/${fileId}/parse`, { signal }),
+      ]);
+      if (signal.aborted) return;
+      if (!infoRes.ok) throw new Error(await responseErrorMessage(infoRes, 'playground.parseFailed'));
+      if (!parseRes.ok) throw new Error(await responseErrorMessage(parseRes, 'playground.parseFailed'));
+      const info = await safeJson<{ original_filename?: string; file_size?: number }>(infoRes);
+      const parseData = await safeJson<ParseResponse>(parseRes);
+      if (signal.aborted) return;
+
+      const isScanned = parseData.is_scanned || false;
+      const pageCount = Math.max(1, Number(parseData.page_count || 1));
+      const parsedFileType = parseData.file_type || 'pdf';
+      const parsedContent = parseData.content || '';
+      const parsedPages = Array.isArray(parseData.pages) ? parseData.pages : undefined;
+
+      setFileInfo({
+        file_id: fileId,
+        filename: info.original_filename || fileId,
+        file_size: info.file_size || 0,
+        file_type: parsedFileType,
+        is_scanned: isScanned,
+        page_count: pageCount,
+        pages: parsedPages,
+      });
+      setContent(parsedContent);
+      opts.setBoundingBoxes([]);
+      opts.resetImageHistory();
+      opts.setEntities([]);
+      setPendingFile({
+        fileId,
+        fileType: parsedFileType,
+        isScanned,
+        pageCount,
+        content: parsedContent,
+      });
+    } catch (err) {
+      if (signal.aborted) return;
+      showToast(localizeErrorMessage(err, 'playground.restoreFileGone'), 'error');
+      setIsLoading(false);
+      setLoadingMessage('');
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+    }
+  }, []);
+
   // --- Auto-recognition after upload ---
   useEffect(() => {
     if (!pendingFile) return;
@@ -347,6 +412,7 @@ export function usePlaygroundFile(options: UsePlaygroundFileOptions) {
     loadingMessage,
     setLoadingMessage,
     cancelProcessing,
+    loadExistingFile,
     uploadIssue,
     recognitionIssue,
     setRecognitionIssue,

@@ -619,8 +619,10 @@ export function usePlayground() {
       setPseudonymMapLoading(false);
       setPseudonymMapError(null);
       setConfirmedPseudonymMap(snapshot.confirmedPseudonymMap);
-      recognition.setProcessingMode(snapshot.processingMode);
+      // 顺序约束：setReplacementMode 对非 'pseudonym' 值会连带置 processingMode='mask'，
+      // 故必须先调它、最后调 setProcessingMode，否则替换模式会话会被恢复成打码模式。
       recognition.setReplacementMode(snapshot.replacementMode);
+      recognition.setProcessingMode(snapshot.processingMode);
       recognition.setWatermarkText(snapshot.watermarkText);
       setResetConfirmOpen(false);
       setReportOpen(false);

@@ -194,39 +194,39 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               </Button>
             </div>
 
-            {!isImageMode && (
-              <>
-                <ProcessingModeSelector
-                  mode={processingMode}
+            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因 */}
+            <ProcessingModeSelector
+              mode={isImageMode ? 'mask' : processingMode}
+              onModeChange={(mode) => {
+                if (isImageMode && mode !== 'mask') return;
+                clearPlaygroundTextPresetTracking();
+                setProcessingMode(mode);
+              }}
+              replaceDisabled={isImageMode}
+            />
+            {!isImageMode &&
+              (processingMode === 'mask' ? (
+                <MaskModeSelector
+                  entities={entities}
+                  mode={replacementMode === 'pseudonym' ? 'structured' : replacementMode}
                   onModeChange={(mode) => {
                     clearPlaygroundTextPresetTracking();
-                    setProcessingMode(mode);
+                    setReplacementMode(mode);
                   }}
                 />
-                {processingMode === 'mask' ? (
-                  <MaskModeSelector
-                    entities={entities}
-                    mode={replacementMode === 'pseudonym' ? 'structured' : replacementMode}
-                    onModeChange={(mode) => {
-                      clearPlaygroundTextPresetTracking();
-                      setReplacementMode(mode);
-                    }}
-                  />
-                ) : (
-                  <PseudonymMapSection
-                    entities={entities}
-                    pseudonymMap={pseudonymMap}
-                    onPseudonymChange={onPseudonymChange}
-                    loading={pseudonymMapLoading}
-                    error={pseudonymMapError}
-                    onRetry={onRetryPseudonymLoad}
-                    conflicts={pseudonymConflicts}
-                    corefConflicts={pseudonymCorefConflicts}
-                    typeNameById={typeNameById}
-                  />
-                )}
-              </>
-            )}
+              ) : (
+                <PseudonymMapSection
+                  entities={entities}
+                  pseudonymMap={pseudonymMap}
+                  onPseudonymChange={onPseudonymChange}
+                  loading={pseudonymMapLoading}
+                  error={pseudonymMapError}
+                  onRetry={onRetryPseudonymLoad}
+                  conflicts={pseudonymConflicts}
+                  corefConflicts={pseudonymCorefConflicts}
+                  typeNameById={typeNameById}
+                />
+              ))}
 
             <div className="space-y-1">
               <Label htmlFor="playground-watermark" className="text-xs text-muted-foreground">
@@ -241,6 +241,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                 className="h-8 text-xs"
                 data-testid="playground-watermark-input"
               />
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                {t('playground.watermarkHint')}
+              </p>
             </div>
 
             {!isImageMode && Object.keys(stats).length > 0 && (
@@ -342,12 +345,51 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
   },
 );
 
+// 选中态要一眼可辨：实线主色边框 + 10% 主色底 + 主色圆点，弱化态只做 hover 提示
+const ModeOptionCardClasses = (selected: boolean, disabled = false) =>
+  cn(
+    'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-center transition-colors',
+    disabled
+      ? 'cursor-not-allowed border-border/50 bg-muted/30 opacity-70'
+      : selected
+        ? 'cursor-pointer border-primary bg-primary/10'
+        : 'cursor-pointer border-border/70 bg-background hover:border-primary/40',
+  );
+
+const ModeOptionLabelClasses = (selected: boolean) =>
+  cn(
+    'truncate text-xs',
+    selected ? 'font-semibold text-primary' : 'font-medium text-foreground',
+  );
+
+const ModeRadioDot: FC<{ active: boolean; disabled?: boolean }> = ({ active, disabled }) => (
+  <span
+    aria-hidden
+    className={cn(
+      'inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+      disabled
+        ? 'border-muted-foreground/30'
+        : active
+          ? 'border-primary'
+          : 'border-muted-foreground/40',
+    )}
+  >
+    {active && !disabled && <span className="block size-1.5 rounded-full bg-primary" />}
+  </span>
+);
+
 const ProcessingModeSelector: FC<{
   mode: 'mask' | 'replace';
   onModeChange: (mode: 'mask' | 'replace') => void;
-}> = ({ mode, onModeChange }) => {
+  replaceDisabled?: boolean;
+}> = ({ mode, onModeChange, replaceDisabled = false }) => {
   const t = useT();
-  const modes: { value: 'mask' | 'replace'; label: string; desc: string }[] = [
+  const modes: {
+    value: 'mask' | 'replace';
+    label: string;
+    desc: string;
+    disabled?: boolean;
+  }[] = [
     {
       value: 'mask',
       label: t('playground.processingModeMask'),
@@ -356,7 +398,10 @@ const ProcessingModeSelector: FC<{
     {
       value: 'replace',
       label: t('playground.processingModeReplace'),
-      desc: t('playground.processingModeReplaceDesc'),
+      desc: replaceDisabled
+        ? t('playground.processingModeReplaceUnavailable')
+        : t('playground.processingModeReplaceDesc'),
+      disabled: replaceDisabled,
     },
   ];
 
@@ -366,32 +411,45 @@ const ProcessingModeSelector: FC<{
         {t('playground.processingMode')}
       </label>
       <div className="grid grid-cols-2 gap-1.5">
-        {modes.map((item) => (
-          <label
-            key={item.value}
-            data-testid={`playground-processing-mode-${item.value}`}
-            className={cn(
-              'flex min-w-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-colors',
-              mode === item.value
-                ? 'border-primary/50 bg-primary/5'
-                : 'border-border/70 bg-background hover:border-primary/30',
-            )}
-          >
-            <input
-              type="radio"
-              name="processingMode"
-              value={item.value}
-              checked={mode === item.value}
-              onChange={() => onModeChange(item.value)}
-              className="sr-only"
-            />
-            <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
-            <span className="truncate text-[10px] leading-3 text-muted-foreground">
-              {item.desc}
-            </span>
-          </label>
-        ))}
+        {modes.map((item) => {
+          const selected = mode === item.value;
+          return (
+            <label
+              key={item.value}
+              data-testid={`playground-processing-mode-${item.value}`}
+              aria-disabled={item.disabled || undefined}
+              className={ModeOptionCardClasses(selected, item.disabled)}
+            >
+              <input
+                type="radio"
+                name="processingMode"
+                value={item.value}
+                checked={selected}
+                onChange={() => {
+                  if (!item.disabled) onModeChange(item.value);
+                }}
+                disabled={item.disabled}
+                className="sr-only"
+              />
+              <span className="flex items-center gap-1.5">
+                <ModeRadioDot active={selected} disabled={item.disabled} />
+                <span className={ModeOptionLabelClasses(selected)}>{item.label}</span>
+              </span>
+              <span className="truncate text-[10px] leading-3 text-muted-foreground">
+                {item.desc}
+              </span>
+            </label>
+          );
+        })}
       </div>
+      {replaceDisabled && (
+        <p
+          className="text-[11px] leading-4 text-muted-foreground"
+          data-testid="playground-processing-mode-scanned-notice"
+        >
+          {t('playground.processingModeScannedNotice')}
+        </p>
+      )}
     </div>
   );
 };
@@ -417,26 +475,25 @@ const MaskModeSelector: FC<{
         {t('playground.redactMode')}
       </label>
       <div className="grid grid-cols-3 gap-1.5">
-        {modes.map((item) => (
-          <label
-            key={item.value}
-            className={cn(
-              'flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center transition-colors',
-              mode === item.value
-                ? 'border-primary/50 bg-primary/5'
-                : 'border-border/70 bg-background hover:border-primary/30',
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="replacementMode"
-                value={item.value}
-                checked={mode === item.value}
-                onChange={() => onModeChange(item.value)}
-                className="sr-only"
-              />
-              <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
+        {modes.map((item) => {
+          const selected = mode === item.value;
+          return (
+            <label
+              key={item.value}
+              className={ModeOptionCardClasses(selected)}
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="replacementMode"
+                  value={item.value}
+                  checked={selected}
+                  onChange={() => onModeChange(item.value)}
+                  className="sr-only"
+                />
+                <ModeRadioDot active={selected} />
+                <span className={ModeOptionLabelClasses(selected)}>{item.label}</span>
+              </div>
               {item.badge && (
                 <Badge
                   variant="outline"
@@ -445,9 +502,9 @@ const MaskModeSelector: FC<{
                   {item.badge}
                 </Badge>
               )}
-            </div>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </div>
       <p className="truncate text-[11px] text-muted-foreground">
         {getModePreview(mode, sampleEntity)}

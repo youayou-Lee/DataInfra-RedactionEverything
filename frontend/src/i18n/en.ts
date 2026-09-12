@@ -100,6 +100,8 @@ const enBase: Record<string, string> = {
   'playground.processingModeMaskDesc': 'Cover sensitive content',
   'playground.processingModeReplace': 'Replace (Pseudonym)',
   'playground.processingModeReplaceDesc': 'Fictional words, still readable',
+  'playground.processingModeReplaceUnavailable': 'Not yet available',
+  'playground.processingModeScannedNotice': 'Not yet available for scanned PDFs / images: replacement (pseudonym) is coming in a later release; only masking is supported for now.',
   'playground.pseudonymMap': 'Pseudonym Mapping',
   'playground.pseudonymMapDesc':
     'Confirm the replacement for each item before running; the output is exactly what you see. A mapping table is available for download.',
@@ -1106,7 +1108,7 @@ const enOverrides: Record<string, string> = {
   'playground.loading.text': 'Recognizing sensitive text...',
   'playground.startRedact': 'Start redaction',
   'playground.recommended': 'Recommended',
-  'playground.redactMode': 'Redaction style',
+  'playground.redactMode': 'Masking style',
   'playground.noResultsTitle': 'No redaction-ready results',
   'playground.noResultsDescText':
     'Run recognition again, adjust text recognition items, or select text in the document to add a manual annotation.',
@@ -2064,6 +2066,7 @@ Object.assign(enOverrides, {
   'entityGroup.visual_mark': 'Visual marks & layout',
   'batchWizard.step1.watermarkPlaceholder': 'e.g. For Project X use only; empty = none',
   'playground.watermarkPlaceholder': 'e.g. For Project X use only; empty = none',
+  'playground.watermarkHint': 'Adds a semi-transparent tiled watermark to exported PDF / image files only. Leave empty for none.',
   'structured.files.notice.uploadFailed': 'Upload failed - check the file format',
   'structured.files.deleteDataset': 'Delete this dataset',
   'structured.files.deleteConfirmTitle': 'Delete dataset',

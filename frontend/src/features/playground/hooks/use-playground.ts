@@ -644,11 +644,13 @@ export function usePlayground() {
       setResetConfirmOpen(false);
       setReportOpen(false);
       setVersionHistoryOpen(false);
-      // result 阶段恢复时报告/版本历史不入草稿，需要重取（与 handleRedact 的
-      // loadAsyncResult 同语义：epoch 守卫 + 失败静默回落）。
+      // result 阶段恢复时报告/版本历史不入草稿，需要重取（失败静默回落）。
+      // 守卫用 latestFileIdRef 而非 canApplyAsyncResult：file_id effect
+      // （[fileCtx.fileInfo?.file_id]）在恢复时必然再 bump epoch，epoch 守卫
+      // 恒 false 会击穿应用；改判「本会话仍是这个文件」——恢复时 ref 已指向
+      // 目标文件，响应返回即应用；用户又切走则 ref 已变 → 丢弃陈旧响应。
       if (snapshot.stage === 'result') {
         const resultFileId = snapshot.fileInfo.file_id;
-        const resultEpoch = asyncResultEpochRef.current;
         const applyResult = async <T,>(
           url: string,
           apply: (data: T) => void,
@@ -658,9 +660,9 @@ export function usePlayground() {
             const res = await authFetch(url);
             if (!res.ok) throw new Error(String(res.status));
             const data = await safeJson<T>(res);
-            if (canApplyAsyncResult(resultFileId, resultEpoch)) apply(data);
+            if (latestFileIdRef.current === resultFileId) apply(data);
           } catch {
-            if (canApplyAsyncResult(resultFileId, resultEpoch)) fallback();
+            if (latestFileIdRef.current === resultFileId) fallback();
           }
         };
         void applyResult<Record<string, unknown>>(
@@ -675,7 +677,7 @@ export function usePlayground() {
         );
       }
     },
-    [canApplyAsyncResult, entityCtx, fileCtx, imageCtx, recognition],
+    [entityCtx, fileCtx, imageCtx, recognition],
   );
 
   // 挂载恢复（R1）：每个应用生命周期只做一次；幂等，StrictMode 双挂载无害。

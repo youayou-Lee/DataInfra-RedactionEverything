@@ -490,8 +490,10 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
           'success',
         );
       } catch (err) {
-        setBoundingBoxes(previousBoxes);
+        // 取消（含恢复/重置路径触发的 cancelRerunNerImage abort）时直接返回：
+        // 不得把旧会话的 previousBoxes 回写覆盖刚恢复/重置的新会话 boxes。
         if (controller.signal.aborted) return;
+        setBoundingBoxes(previousBoxes);
         showToast(localizeErrorMessage(err, 'playground.recognizeFailed'), 'error');
       } finally {
         if (visionAbortRef.current === controller) {

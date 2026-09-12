@@ -536,6 +536,11 @@ export function usePlayground() {
     redactionAbortRef.current?.abort();
     redactionAbortRef.current = null;
     redactionInFlightRef.current = false;
+    // 与 applyDraftSnapshot 同享防护：取消在途识别，防止 R2（重置后重跑）
+    // 与手动重置路径被旧文件识别回调污染。
+    fileCtx.cancelProcessing(false);
+    entityCtx.cancelRerunNerText();
+    imageCtx.cancelRerunNerImage();
     setResetConfirmOpen(false);
     fileCtx.setStage('upload');
     fileCtx.setFileInfo(null);
@@ -610,6 +615,12 @@ export function usePlayground() {
       latestFileIdRef.current = snapshot.fileInfo.file_id;
       redactionAbortRef.current?.abort();
       redactionInFlightRef.current = false;
+      // 取消在途识别（Provider 全局化后可跨页在途）：否则旧文件的
+      // pendingFile 识别/重跑/图片检测完成后会无条件 setEntities+setStage，
+      // 把旧文件实体灌进新恢复的会话（跨文件串染）。
+      fileCtx.cancelProcessing(false);
+      entityCtx.cancelRerunNerText();
+      imageCtx.cancelRerunNerImage();
       fileCtx.setFileInfo(snapshot.fileInfo);
       fileCtx.setContent(snapshot.content);
       fileCtx.setStage(snapshot.stage);
@@ -633,8 +644,38 @@ export function usePlayground() {
       setResetConfirmOpen(false);
       setReportOpen(false);
       setVersionHistoryOpen(false);
+      // result 阶段恢复时报告/版本历史不入草稿，需要重取（与 handleRedact 的
+      // loadAsyncResult 同语义：epoch 守卫 + 失败静默回落）。
+      if (snapshot.stage === 'result') {
+        const resultFileId = snapshot.fileInfo.file_id;
+        const resultEpoch = asyncResultEpochRef.current;
+        const applyResult = async <T,>(
+          url: string,
+          apply: (data: T) => void,
+          fallback: () => void,
+        ) => {
+          try {
+            const res = await authFetch(url);
+            if (!res.ok) throw new Error(String(res.status));
+            const data = await safeJson<T>(res);
+            if (canApplyAsyncResult(resultFileId, resultEpoch)) apply(data);
+          } catch {
+            if (canApplyAsyncResult(resultFileId, resultEpoch)) fallback();
+          }
+        };
+        void applyResult<Record<string, unknown>>(
+          `/api/v1/redaction/${resultFileId}/report`,
+          setRedactionReport,
+          () => setRedactionReport(null),
+        );
+        void applyResult<{ versions?: VersionHistoryEntry[] }>(
+          `/api/v1/redaction/${resultFileId}/versions`,
+          (data) => setVersionHistory(data.versions || []),
+          () => setVersionHistory([]),
+        );
+      }
     },
-    [entityCtx, fileCtx, imageCtx, recognition],
+    [canApplyAsyncResult, entityCtx, fileCtx, imageCtx, recognition],
   );
 
   // 挂载恢复（R1）：每个应用生命周期只做一次；幂等，StrictMode 双挂载无害。

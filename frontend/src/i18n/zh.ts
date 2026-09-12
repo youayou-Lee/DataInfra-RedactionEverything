@@ -1010,7 +1010,6 @@ const zhOverrides: Record<string, string> = {
   'playground.switchSessionTitle': '切换处理文件？',
   'playground.switchSessionMessage': '当前单文件处理现场将被替换，尚未执行的编辑不会保留。',
   'playground.switchSessionConfirm': '继续切换',
-  'playground.restoreRerunning': '未找到上次现场，正在按当前识别配置重新识别',
   'playground.loading.vision': '正在进行图像识别...',
   'playground.loading.visionOcr': '正在进行图像识别（图片文字）...',
   'playground.loading.visionImage': '正在进行图像识别（图像特征）...',

@@ -682,17 +682,20 @@ export function usePlayground() {
   );
 
   // 挂载恢复（R1）：每个应用生命周期只做一次；幂等，StrictMode 双挂载无害。
+  // URL 带 ?file_id=（历史页「回到现场」的明确意图）时跳过：避免先展示旧草稿现场
+  // 再弹「切换处理文件」确认框——用户点 A 却先看到 B，观感即「跳错文件」。
   const draftRestoreDoneRef = useRef(false);
   useEffect(() => {
     if (draftRestoreDoneRef.current) return;
     draftRestoreDoneRef.current = true;
+    if (new URLSearchParams(window.location.search).get('file_id')) return;
     const snapshot = parseDraft(
       getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null, ownerKey),
     );
     if (!snapshot) return;
     applyDraftSnapshot(snapshot);
     showToast(t('playground.restored'), 'info');
-  }, [applyDraftSnapshot]);
+  }, [applyDraftSnapshot, ownerKey]);
 
   // 历史页「回到现场」入口（R2 + 草稿恢复）：?file_id= 协议统一走这里。
   // 有本文件的草稿 → 直接恢复现场；无草稿 → 重置后按当前识别配置重新识别。
@@ -708,9 +711,10 @@ export function usePlayground() {
         showToast(t('playground.restored'), 'info');
         return;
       }
-      // R2：无草稿（或草稿属于其他文件）→ 重置后按当前配置重新识别
+      // R2：无草稿（或草稿属于其他文件）→ 重置后恢复：命中服务端识别缓存则秒回
+      // （loadExistingFile 内 toast「已从服务端恢复」），未识别过才走识别 loading——
+      // 不在此处预告文案，避免「未找到现场」+「已从服务端恢复」双 toast 矛盾
       performReset();
-      showToast(t('playground.restoreRerunning'), 'info');
       await fileCtx.loadExistingFile(decision.fileId);
     },
     [applyDraftSnapshot, fileCtx, ownerKey, performReset],

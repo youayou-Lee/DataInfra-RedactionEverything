@@ -1107,7 +1107,6 @@ const enOverrides: Record<string, string> = {
   'playground.switchSessionTitle': 'Switch file?',
   'playground.switchSessionMessage': 'The current single-file session will be replaced; unexecuted edits will be lost.',
   'playground.switchSessionConfirm': 'Switch anyway',
-  'playground.restoreRerunning': 'Previous session not found; re-recognizing with current settings',
   'playground.loading.vision': 'Running vision detection...',
   'playground.loading.visionOcr': 'Running vision detection (OCR text)...',
   'playground.loading.visionImage': 'Running vision detection (image features)...',

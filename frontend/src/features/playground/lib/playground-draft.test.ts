@@ -8,6 +8,7 @@ import {
   planResume,
   planServerCachedResume,
   serializeDraft,
+  splitVirtualPages,
 } from './playground-draft';
 import type { DraftSnapshotInput } from './playground-draft';
 
@@ -133,5 +134,30 @@ describe('planServerCachedResume', () => {
     expect(
       planServerCachedResume({ entities: [{ id: 'e1' }], recognition_config: { entity_type_ids: null } }),
     ).toEqual({ mode: 'cached', entities: [{ id: 'e1' }], entityTypeIds: null });
+  });
+});
+
+describe('splitVirtualPages', () => {
+  it('不超限 → 单页原样返回', () => {
+    expect(splitVirtualPages('abc', 100)).toEqual(['abc']);
+    expect(splitVirtualPages('', 100)).toEqual(['']);
+    expect(splitVirtualPages('12345', 5)).toEqual(['12345']);
+  });
+
+  it('超限 → 均匀窗口切分，拼接无损', () => {
+    const pages = splitVirtualPages('a'.repeat(11), 5);
+    expect(pages).toEqual(['aaaaa', 'aaaaa', 'a']);
+    expect(pages.join('')).toBe('a'.repeat(11));
+    expect(pages.map((p) => p.length)).toEqual([5, 5, 1]);
+  });
+
+  it('窗口起点 = 前缀页长度之和（实体偏移映射依赖此性质）', () => {
+    const content = 'abcdefghij';
+    const pages = splitVirtualPages(content, 3);
+    let offset = 0;
+    for (const p of pages) {
+      expect(content.slice(offset, offset + p.length)).toBe(p);
+      offset += p.length;
+    }
   });
 });

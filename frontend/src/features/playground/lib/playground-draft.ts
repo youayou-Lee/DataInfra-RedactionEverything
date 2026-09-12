@@ -102,3 +102,13 @@ export function planServerCachedResume(info: ServerResumeInfo): ServerCachedResu
     entityTypeIds: Array.isArray(ids) ? ids : null,
   };
 }
+
+/** 超长单页文本的虚拟分页：按固定字符窗口切分，避免全文+全实体一次性渲染 */
+export function splitVirtualPages(content: string, limit: number): string[] {
+  if (limit <= 0 || content.length <= limit) return [content];
+  const chunks: string[] = [];
+  for (let i = 0; i < content.length; i += limit) {
+    chunks.push(content.slice(i, i + limit));
+  }
+  return chunks;
+}

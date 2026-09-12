@@ -18,9 +18,12 @@ import {
   usePlaygroundContext,
   usePlaygroundUIContext,
 } from './playground-context';
-import { needsSwitchConfirm } from './lib/playground-draft';
+import { needsSwitchConfirm, splitVirtualPages } from './lib/playground-draft';
 import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
+
+/** 超长单页文本的虚拟分页窗口大小（字符） */
+const VIRTUAL_PAGE_CHAR_LIMIT = 20_000;
 
 /** Inner component that consumes the playground context. */
 const PlaygroundInner: FC = () => {
@@ -124,15 +127,33 @@ const PlaygroundInner: FC = () => {
   }, [resumeFileId, fileInfo?.file_id]);
 
   const pagesArr = fileInfo?.pages;
+  // 虚拟分页（Issue #33 验收反馈）：MinerU 转出的 markdown 单页可达数十万字符、
+  // 上千实体，全文一次性渲染（且每次交互全量重建）会冻结主线程。超过阈值时按
+  // 字符窗口分页，复用既有分页渲染与实体偏移机制；实体按 start 落入窗口归属。
+  const virtualPages = useMemo(() => {
+    if (isImageMode || content.length <= VIRTUAL_PAGE_CHAR_LIMIT) return null;
+    return splitVirtualPages(content, VIRTUAL_PAGE_CHAR_LIMIT);
+  }, [isImageMode, content]);
+  const isVirtualPaginated = virtualPages !== null;
+  const activePages: string[] | undefined = virtualPages ?? (Array.isArray(pagesArr) ? pagesArr : undefined);
+  const activeTotalPages = isVirtualPaginated ? virtualPages.length : totalPages;
   const hasTextPagination =
-    !isImageMode && totalPages > 1 && Array.isArray(pagesArr) && pagesArr.length === totalPages;
-  const pageStartOffset = hasTextPagination
-    ? pagesArr!.slice(0, currentPage - 1).reduce((sum, page) => sum + (page?.length || 0) + 2, 0)
-    : 0;
-  const previewContent = hasTextPagination ? (pagesArr![currentPage - 1] ?? '') : content;
-  const pageFilteredEntities = hasTextPagination
-    ? entities.filter((entity) => Number(entity.page || 1) === currentPage)
-    : entities;
+    !isImageMode && activeTotalPages > 1 && activePages !== undefined && activePages.length === activeTotalPages;
+  // 草稿恢复的 currentPage 可能超过当前文件的页数（如从 18 页文件切到更短文件），钳制到有效域
+  const effectiveCurrentPage = Math.max(1, Math.min(currentPage, Math.max(1, activeTotalPages)));
+  const pageStartOffset = isVirtualPaginated
+    ? (effectiveCurrentPage - 1) * VIRTUAL_PAGE_CHAR_LIMIT
+    : hasTextPagination
+      ? activePages!.slice(0, effectiveCurrentPage - 1).reduce((sum, page) => sum + (page?.length || 0) + 2, 0)
+      : 0;
+  const previewContent = hasTextPagination ? (activePages![effectiveCurrentPage - 1] ?? '') : content;
+  const pageFilteredEntities = isVirtualPaginated
+    ? entities.filter(
+        (entity) => entity.start >= pageStartOffset && entity.start < pageStartOffset + VIRTUAL_PAGE_CHAR_LIMIT,
+      )
+    : hasTextPagination
+      ? entities.filter((entity) => Number(entity.page || 1) === effectiveCurrentPage)
+      : entities;
   const previewEntities = hasTextPagination
     ? pageFilteredEntities.map((entity) => ({
         ...entity,
@@ -340,10 +361,10 @@ const PlaygroundInner: FC = () => {
                     {hasTextPagination && (
                       <div className="flex-shrink-0 px-3 pt-2 sm:px-4">
                         <PaginationRail
-                          page={currentPage}
+                          page={effectiveCurrentPage}
                           pageSize={1}
-                          totalItems={totalPages}
-                          totalPages={totalPages}
+                          totalItems={activeTotalPages}
+                          totalPages={activeTotalPages}
                           compact
                           onPageChange={(nextPage) => setCurrentPage(nextPage)}
                         />

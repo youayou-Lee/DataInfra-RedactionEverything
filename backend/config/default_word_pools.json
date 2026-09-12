@@ -8,7 +8,7 @@
     "strategy": "numbered"
   },
   "GOVERNMENT_AGENCY": {
-    "words": ["某局", "某人民政府", "某分局", "某派出所", "某委员会", "某办公室"],
+    "words": ["某公安局", "某人民法院", "某人民检察院", "某局", "某人民政府", "某分局", "某派出所", "某委员会", "某办公室"],
     "strategy": "numbered"
   },
   "BANK_NAME": {

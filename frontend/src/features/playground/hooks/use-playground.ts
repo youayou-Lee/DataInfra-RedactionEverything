@@ -300,40 +300,20 @@ export function usePlayground() {
     return conflicted;
   }, [pseudonymMap, selectedEntityTexts]);
 
-  // 共指组（同一对象的不同写法，coref_id 相同）内替换词不一致 → 视为未确认：
-  // 后端 coref 复用以组内首个显式值为准，不一致的其余值会被静默覆盖。
-  // 按裸 coref_id 分组是后端分组的保守超集（后端对 <tag> 型 coref 跨不兼容
-  // type 时会拆组不复用，此处仍要求统一——只偏严不漏判）
-  const pseudonymCorefConflicts = useMemo(() => {
-    const groups = new Map<string, Set<string>>();
-    for (const entity of entityCtx.entities) {
-      if (entity.selected === false || !entity.text || !entity.coref_id) continue;
-      const texts = groups.get(entity.coref_id) ?? new Set<string>();
-      texts.add(entity.text);
-      groups.set(entity.coref_id, texts);
-    }
-    const conflicted = new Set<string>();
-    for (const texts of groups.values()) {
-      const values = new Set<string>();
-      for (const text of texts) {
-        const value = (pseudonymMap[text] ?? '').trim();
-        if (value) values.add(value);
-      }
-      if (values.size > 1) texts.forEach((text) => conflicted.add(text));
-    }
-    return conflicted;
-  }, [entityCtx.entities, pseudonymMap]);
+  // 注：旧版这里有「共指组内替换词不一致禁执行」门槛。后端化名分配已改为严格
+  // 按原文（不同原文即使被模型误标同组也不再共享化名，见 replacement_strategy
+  // 的 PSEUDONYM 分支），不存在静默覆盖，别名统一由用户直接在映射表填同一个词，
+  // 该门槛随之移除。
 
-  // 替换模式执行门槛：默认化名仍在生成、生成失败、有已选实体的映射被清空、
-  // 或共指组内替换词不一致时，不允许执行——避免成品与用户在 UI 确认的映射不一致
+  // 替换模式执行门槛：默认化名仍在生成、生成失败、或有已选实体的映射被清空时，
+  // 不允许执行——避免成品与用户在 UI 确认的映射不一致
   const replaceUnready = useMemo(
     () =>
       recognition.processingMode === 'replace' &&
       !fileCtx.isImageMode &&
       (pseudonymMapLoading ||
         Boolean(pseudonymMapError) ||
-        selectedEntityTexts.some((text) => !(pseudonymMap[text] ?? '').trim()) ||
-        pseudonymCorefConflicts.size > 0),
+        selectedEntityTexts.some((text) => !(pseudonymMap[text] ?? '').trim())),
     [
       recognition.processingMode,
       fileCtx.isImageMode,
@@ -341,7 +321,6 @@ export function usePlayground() {
       pseudonymMapError,
       selectedEntityTexts,
       pseudonymMap,
-      pseudonymCorefConflicts,
     ],
   );
 
@@ -639,7 +618,6 @@ export function usePlayground() {
     retryPseudonymLoad,
     replaceUnready,
     pseudonymConflicts,
-    pseudonymCorefConflicts,
     confirmedPseudonymMap,
     handleDownloadPseudonymCsv,
     redactionReport,

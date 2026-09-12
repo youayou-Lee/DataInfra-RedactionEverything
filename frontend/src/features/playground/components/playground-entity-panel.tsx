@@ -45,7 +45,6 @@ export interface PlaygroundEntityPanelProps {
   onRetryPseudonymLoad?: () => void;
   replaceUnready?: boolean;
   pseudonymConflicts: Set<string>;
-  pseudonymCorefConflicts?: Set<string>;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
@@ -83,7 +82,6 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     onRetryPseudonymLoad,
     replaceUnready,
     pseudonymConflicts,
-    pseudonymCorefConflicts,
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
@@ -226,7 +224,6 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                   error={pseudonymMapError}
                   onRetry={onRetryPseudonymLoad}
                   conflicts={pseudonymConflicts}
-                  corefConflicts={pseudonymCorefConflicts}
                   typeNameById={typeNameById}
                 />
               ))}
@@ -525,7 +522,6 @@ const PseudonymMapSection: FC<{
   error?: string | null;
   onRetry?: () => void;
   conflicts: Set<string>;
-  corefConflicts?: Set<string>;
   typeNameById: Map<string, string>;
 }> = ({
   entities,
@@ -535,7 +531,6 @@ const PseudonymMapSection: FC<{
   error,
   onRetry,
   conflicts,
-  corefConflicts,
   typeNameById,
 }) => {
   const t = useT();
@@ -554,7 +549,6 @@ const PseudonymMapSection: FC<{
     (entity) => entity.selected !== false && entity.text && entity.text.length > 0,
   );
   const conflictList = Array.from(conflicts);
-  const corefConflictCount = corefConflicts?.size ?? 0;
 
   return (
     <div className="space-y-1.5" data-testid="playground-pseudonym-map">
@@ -596,7 +590,7 @@ const PseudonymMapSection: FC<{
       ) : (
         <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
           {rows.map(([text, info]) => {
-            const conflicted = conflicts.has(text) || Boolean(corefConflicts?.has(text));
+            const conflicted = conflicts.has(text);
             return (
               <div
                 key={text}
@@ -635,17 +629,6 @@ const PseudonymMapSection: FC<{
           data-testid="playground-pseudonym-conflict"
         >
           {t('playground.pseudonymConflictWarning').replace('{count}', String(conflictList.length))}
-        </p>
-      )}
-      {corefConflictCount > 0 && (
-        <p
-          className="text-[11px] leading-4 text-[var(--warning)]"
-          data-testid="playground-pseudonym-coref-conflict"
-        >
-          {t('playground.pseudonymCorefConflictWarning').replace(
-            '{count}',
-            String(corefConflictCount),
-          )}
         </p>
       )}
       <p className="truncate text-[11px] text-muted-foreground">

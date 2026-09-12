@@ -44,7 +44,6 @@ export interface PlaygroundDataContextValue {
   pseudonymMapError: PlaygroundContextValue['pseudonymMapError'];
   replaceUnready: PlaygroundContextValue['replaceUnready'];
   pseudonymConflicts: PlaygroundContextValue['pseudonymConflicts'];
-  pseudonymCorefConflicts: PlaygroundContextValue['pseudonymCorefConflicts'];
   confirmedPseudonymMap: PlaygroundContextValue['confirmedPseudonymMap'];
 }
 
@@ -133,7 +132,6 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       pseudonymMapError: ctx.pseudonymMapError,
       replaceUnready: ctx.replaceUnready,
       pseudonymConflicts: ctx.pseudonymConflicts,
-      pseudonymCorefConflicts: ctx.pseudonymCorefConflicts,
       confirmedPseudonymMap: ctx.confirmedPseudonymMap,
     }),
     [
@@ -173,7 +171,6 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.pseudonymMapError,
       ctx.replaceUnready,
       ctx.pseudonymConflicts,
-      ctx.pseudonymCorefConflicts,
       ctx.confirmedPseudonymMap,
     ],
   );

@@ -4,6 +4,7 @@
 维护实体映射关系，确保同一实体在文档中的一致性
 """
 import logging
+import re
 
 from app.models.schemas import (
     Entity,
@@ -25,6 +26,14 @@ MASK_MIN_LEN_PERSON = 2  # 人名：保留姓
 MASK_MIN_LEN_PHONE = 11  # 电话：保留前3后4
 MASK_MIN_LEN_ID_CARD = 18  # 身份证：保留前6后4
 MASK_MIN_LEN_BANK_CARD = 16  # 银行卡：保留后4
+
+# 机构名文本特征 → 词池精化：模型对机关/银行类机构的类型粒度不足（真实案卷实测
+# 公安局/法院全部标为 INSTITUTION_NAME），只按类型落池会把「某市公安局」换成
+# 「某公司」。按文本关键词精化到语义正确的词池。
+INSTITUTION_GOV_TEXT_RE = re.compile(
+    r"公安|派出所|法院|检察院|司法|人民政府|办事处|分局|监察委|税务局|海关|市场监管|局$"
+)
+INSTITUTION_BANK_TEXT_RE = re.compile(r"银行|信用社|信用合作联社")
 
 # 掩码模式：明文保留的前缀/后缀字符数
 MASK_KEEP_PREFIX_PHONE = 3  # 电话保留前3位
@@ -269,18 +278,16 @@ class RedactionContext:
         # 用户显式指定的替换（请求级）优先级最高
         explicit = self.custom_replacements.get(text)
         if explicit:
-            self._reserve_pool_word(type_key, explicit)
+            self._reserve_pool_word(type_key, explicit, text)
             return explicit
 
-        from app.services.word_pool_service import pool_type_for
-
-        pool_key = pool_type_for(type_key)
+        pool_key = self._pool_key_for(type_key, text)
         pool = pools.get(pool_key) or {}
 
         # 词池级精确映射（跨文档同套化名的载体）
         exact = (pool.get("custom_map") or {}).get(text)
         if exact:
-            self._reserve_pool_word(type_key, exact)
+            self._reserve_pool_word(type_key, exact, text)
             return exact
 
         strategy = pool.get("strategy") or "numbered"
@@ -314,13 +321,23 @@ class RedactionContext:
         assigned.append(word)
         return word
 
-    def _reserve_pool_word(self, type_key: str, word: str) -> None:
+    def _reserve_pool_word(self, type_key: str, word: str, text: str = "") -> None:
         """精确映射命中的替换词登记占用，避免词池再把同一个词分给别的实体。"""
-        from app.services.word_pool_service import pool_type_for
-
-        assigned = self._pool_assigned.setdefault(pool_type_for(type_key), [])
+        assigned = self._pool_assigned.setdefault(self._pool_key_for(type_key, text), [])
         if word not in assigned:
             assigned.append(word)
+
+    def _pool_key_for(self, type_key: str, text: str) -> str:
+        """实体类型 → 词池键：别名归并后，再按机构名文本特征精化（机关/银行）。"""
+        from app.services.word_pool_service import pool_type_for
+
+        pool_key = pool_type_for(type_key)
+        if pool_key == "INSTITUTION_NAME":
+            if INSTITUTION_GOV_TEXT_RE.search(text):
+                return "GOVERNMENT_AGENCY"
+            if INSTITUTION_BANK_TEXT_RE.search(text):
+                return "BANK_NAME"
+        return pool_key
 
     def _generate_format_fictional(self, type_key: str) -> str:
         """生成格式合法的虚构号：身份证带校验位、手机合法号段、银行卡过 Luhn。"""
@@ -339,6 +356,11 @@ class RedactionContext:
         return f"-fictional-{seq}"
 
     def _coref_key_for_entity(self, entity: Entity, type_key: str) -> str:
+        # 化名模式按「原文」取键：模型共指分组会把不同的人误并成一组（真实案卷
+        # 实测 6 个不同人名同组），隐式共享化名会张冠李戴；别名统一交由用户在
+        # 映射表手动填同一个词完成。
+        if self.mode == ReplacementMode.PSEUDONYM:
+            return (entity.text or "").strip()
         coref_id = entity.coref_id
         if not coref_id:
             return entity.text

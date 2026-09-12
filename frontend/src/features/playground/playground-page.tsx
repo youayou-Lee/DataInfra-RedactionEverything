@@ -50,7 +50,6 @@ const PlaygroundInner: FC = () => {
     retryPseudonymLoad,
     replaceUnready,
     pseudonymConflicts,
-    pseudonymCorefConflicts,
     confirmedPseudonymMap,
     handleDownloadPseudonymCsv,
     redactionReport,
@@ -362,7 +361,6 @@ const PlaygroundInner: FC = () => {
               onRetryPseudonymLoad={retryPseudonymLoad}
               replaceUnready={replaceUnready}
               pseudonymConflicts={pseudonymConflicts}
-              pseudonymCorefConflicts={pseudonymCorefConflicts}
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}

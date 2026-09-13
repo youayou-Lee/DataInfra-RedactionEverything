@@ -513,7 +513,10 @@ def render_e2e_markdown(result: dict, args: argparse.Namespace) -> str:
         summary = indicator_meta.build_e2e_summary(overall, perf_agg, len(result.get("failed") or []),
                                                    ner_baseline=None)
     else:  # 纯真实子集（速度/稳健性，无 GT）
-        summary = indicator_meta.build_real_summary(perf_agg, len(result.get("failed") or []), rejected)
+        anomalies = [fm["file"]["id"] for fm in per_file
+                     if fm.get("robustness", {}).get("outcome") not in ("ok", "rejected")]
+        summary = indicator_meta.build_real_summary(perf_agg, len(result.get("failed") or []),
+                                                    rejected, anomalies)
     lines += ["## 一、管理者摘要", "",
               "> 先看本节：状态灯 ✅⚠️❌ 与「目标/参考」列给出该指标是否健康的判断；",
               "> 每个指标的准确定义见文末「指标字典」；逐文件/逐类型明细在本节之后。", "",

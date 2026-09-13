@@ -78,8 +78,10 @@ def build_e2e_summary(overall: dict, perf_agg: dict, failed_count: int,
     return rows
 
 
-def build_real_summary(perf_agg: dict, failed_count: int, rejected: list[str]) -> list[dict]:
-    """真实子集（速度/稳健性，无 GT）的管理者摘要行。"""
+def build_real_summary(perf_agg: dict, failed_count: int, rejected: list[str],
+                       anomalies: list[str] | None = None) -> list[dict]:
+    """真实子集（速度/稳健性，无 GT）的管理者摘要行。anomalies=未被正确拒绝的边界样本。"""
+    anomalies = anomalies or []
     rows = [{
         "指标": "单页耗时 p50 / p95", "本次": f"{perf_agg['p50']:.1f}s / {perf_agg['p95']:.1f}s",
         "目标/参考": "合成集同口径对照", "状态": "—",
@@ -95,8 +97,9 @@ def build_real_summary(perf_agg: dict, failed_count: int, rejected: list[str]) -
         "目标/参考": "0 / 尽量低", "状态": "✅" if failed_count == 0 else "❌",
         "说明": "稳健性：真实数据上服务是否稳定、有无整页识别不出"})
     rows.append({
-        "指标": "加密卷拒识", "本次": f"{len(rejected)} 例", "目标/参考": "全部明确拒绝（不许挂死/静默零框）",
-        "状态": "✅" if rejected else "—", "说明": "加密文件应被明确报错拒绝；明细见稳健性小节"})
+        "指标": "加密卷拒识", "本次": f"{len(rejected)} 例拒绝 / {len(anomalies)} 例异常",
+        "目标/参考": "边界样本应全部明确拒绝", "状态": "✅" if rejected and not anomalies else "❌",
+        "说明": "加密文件应被明确报错拒绝；被正常受理（accepted_should_reject）属稳健性缺陷"})
     return rows
 
 

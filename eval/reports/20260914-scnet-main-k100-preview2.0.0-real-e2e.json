@@ -1,0 +1,302 @@
+{
+  "per_file": [
+    {
+      "file": {
+        "id": "real_cmf_judgment",
+        "carrier": "text_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 55.143
+      },
+      "perf": {
+        "pages_total": 6,
+        "warmup_pages": 1,
+        "steady_pages": 5,
+        "wall_s": {
+          "total": 55.104,
+          "mean": 7.764,
+          "p50": 6.716,
+          "p95": 10.008
+        },
+        "throughput_pages_per_min": 7.728,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "5 steady 页，空框页 1",
+        "wall_s": 55.104,
+        "empty_pages": 1
+      }
+    },
+    {
+      "file": {
+        "id": "real_cmf_evidence2_p1-5",
+        "carrier": "hybrid_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 57.355
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 57.31,
+          "mean": 11.43,
+          "p50": 10.861,
+          "p95": 17.016
+        },
+        "throughput_pages_per_min": 5.249,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 57.31,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_zqc_wenshu_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 48.814
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 48.787,
+          "mean": 9.895,
+          "p50": 8.085,
+          "p95": 15.657
+        },
+        "throughput_pages_per_min": 6.064,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 48.787,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_ck_wenshu_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 47.642
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 47.605,
+          "mean": 9.744,
+          "p50": 6.772,
+          "p95": 17.28
+        },
+        "throughput_pages_per_min": 6.157,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 47.605,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_cqy_zj1_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 47.902
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 47.877,
+          "mean": 9.049,
+          "p50": 9.442,
+          "p95": 10.967
+        },
+        "throughput_pages_per_min": 6.631,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 47.877,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_chx_zj5_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 63.996
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 63.962,
+          "mean": 12.632,
+          "p50": 13.112,
+          "p95": 14.228
+        },
+        "throughput_pages_per_min": 4.75,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 63.962,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_ck_zj6_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 682.38
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 682.322,
+          "mean": 168.465,
+          "p50": 127.743,
+          "p95": 384.799
+        },
+        "throughput_pages_per_min": 0.356,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 682.322,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_zhb_hei_p1-5",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 90.409
+      },
+      "perf": {
+        "pages_total": 5,
+        "warmup_pages": 1,
+        "steady_pages": 4,
+        "wall_s": {
+          "total": 90.376,
+          "mean": 18.133,
+          "p50": 18.033,
+          "p95": 19.545
+        },
+        "throughput_pages_per_min": 3.309,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "4 steady 页，空框页 0",
+        "wall_s": 90.376,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_chx_caiding",
+        "carrier": "scanned_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 20.887
+      },
+      "perf": {
+        "pages_total": 2,
+        "warmup_pages": 1,
+        "steady_pages": 1,
+        "wall_s": {
+          "total": 20.865,
+          "mean": 7.626,
+          "p50": 7.626,
+          "p95": 7.626
+        },
+        "throughput_pages_per_min": 7.868,
+        "duration_ms": {}
+      },
+      "robustness": {
+        "outcome": "ok",
+        "detail": "1 steady 页，空框页 0",
+        "wall_s": 20.865,
+        "empty_pages": 0
+      }
+    },
+    {
+      "file": {
+        "id": "real_encrypted_supplement",
+        "carrier": "encrypted_pdf",
+        "doc_type": "real",
+        "density": "n/a",
+        "gt_entities": 0,
+        "eval_wall_s": 0.172
+      },
+      "robustness": {
+        "outcome": "accepted_should_reject",
+        "detail": "加密卷被正常受理（未拒绝）",
+        "wall_s": 0.172
+      },
+      "perf": {
+        "pages_total": 1,
+        "warmup_pages": 0,
+        "steady_pages": 1,
+        "wall_s": {
+          "total": 0.032
+        },
+        "throughput_pages_per_min": null,
+        "duration_ms": {}
+      }
+    }
+  ],
+  "failed": [],
+  "overall": {},
+  "rejected": [],
+  "env": {
+    "env_label": "scnet-main-k100",
+    "target_label": "preview2.0.0-real",
+    "level": "e2e",
+    "suite": "real",
+    "git": "unknown",
+    "generated_at": "2026-09-14T02:44:54",
+    "with_perf": false
+  }
+}

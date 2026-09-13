@@ -52,11 +52,16 @@ def percentile(values: list[float], p: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (k - lower)
 
 
-def load_manifest(suite: str) -> list[dict]:
+def load_manifest(suite: str, only: list[str] | None = None) -> list[dict]:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     files = [f for f in manifest["files"] if "e2e" in f["levels"]]
     if suite != "all":
         files = [f for f in files if f["source"] == suite]
+    if only:
+        files = [f for f in files if f["id"] in only]
+        missing = set(only) - {f["id"] for f in files}
+        if missing:
+            raise SystemExit(f"--only 引用了不存在的条目: {sorted(missing)}")
     return files
 
 
@@ -141,8 +146,13 @@ def run_e2e_file(api: common_api.EvalApi, spec: dict, args: argparse.Namespace) 
 
     file_id = api.upload(file_path)
     try:
-        pages = common_api.iter_pages_with_timing(api, file_id, len(gt_pages),
-                                                  warmup_pages=args.warmup_pages)
+        if doc_level:  # docx/txt：vision 不支持，走 parse + hybrid NER（设计文档 D7）
+            pred_entities, wall = api.parse_and_hybrid_ner(file_id)
+            pages = [{"page": 1, "warmup": False, "wall_s": wall, "duration_ms": {},
+                      "pipeline_status": {}, "entities": pred_entities}]
+        else:
+            pages = common_api.iter_pages_with_timing(api, file_id, len(gt_pages),
+                                                      warmup_pages=args.warmup_pages)
     finally:
         api.delete_file(file_id)
 
@@ -199,7 +209,7 @@ def run_e2e_file(api: common_api.EvalApi, spec: dict, args: argparse.Namespace) 
 
 
 def run_e2e_level(args: argparse.Namespace) -> dict:
-    files = load_manifest(args.suite)
+    files = load_manifest(args.suite, [x.strip() for x in args.only.split(",")] if args.only else None)
     if not files:
         raise SystemExit(f"manifest 中无 --suite {args.suite} 的 e2e 条目")
     print(f"[e2e] suite={args.suite}，{len(files)} 个文件")
@@ -299,6 +309,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="一键评测（Issue #37）")
     parser.add_argument("--level", choices=["ner", "e2e"], required=True)
     parser.add_argument("--suite", choices=["synthetic", "pseudonymized", "all"], default="synthetic")
+    parser.add_argument("--only", default=None,
+                        help="e2e：只跑指定 id（逗号分隔，冒烟/调试用）")
     parser.add_argument("--api-base", default="http://127.0.0.1:8000")
     parser.add_argument("--api-user", default="eval_user")
     parser.add_argument("--api-pass", default="EvalUser!2026")

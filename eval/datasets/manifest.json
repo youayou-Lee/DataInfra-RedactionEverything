@@ -182,9 +182,9 @@
       "notes": "docx×类型"
     },
     {
-      "id": "syn_contract_1p_mid",
-      "path": "synthetic/syn_contract_1p_mid.txt",
-      "gt": "synthetic/syn_contract_1p_mid.gt.json",
+      "id": "syn_contract_txt_1p_mid",
+      "path": "synthetic/syn_contract_txt_1p_mid.txt",
+      "gt": "synthetic/syn_contract_txt_1p_mid.gt.json",
       "source": "synthetic",
       "carrier": "txt",
       "doc_type": "contract",
@@ -194,7 +194,7 @@
       "levels": [
         "e2e"
       ],
-      "notes": "纯文本"
+      "notes": "纯文本（走 parse+hybrid NER 链路，vision 不支持 txt——D7）"
     },
     {
       "id": "syn_statement_1p_table",
@@ -209,7 +209,7 @@
       "levels": [
         "e2e"
       ],
-      "notes": "表格密集边界"
+      "notes": "表格密集边界（同上，parse+hybrid NER）"
     },
     {
       "id": "syn_edge_3p_mixed",

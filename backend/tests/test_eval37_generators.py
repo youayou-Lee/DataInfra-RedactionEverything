@@ -167,7 +167,7 @@ def test_manifest_matches_matrix():
         if f["id"] == build_all.NER_CORPUS_ID:
             assert f["levels"] == ["ner"]
             continue
-        assert f["levels"] == ["e2e"]
+        assert f["levels"] == ["e2e"]  # txt/docx 走 parse+hybrid NER 链路（D7）
         data = REPO_ROOT / "eval" / "datasets" / f["path"]
         gt = REPO_ROOT / "eval" / "datasets" / f["gt"]
         assert data.exists() and gt.exists(), f"{f['id']} 缺产物"

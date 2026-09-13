@@ -136,6 +136,7 @@ python eval/scripts/run_eval.py --level e2e \
 - **D4 化名管线走生产 API**：识别→`preview-map`（derived 编号映射）→导出 CSV 供人工复核→`execute`（custom_replacements）→成品；GT 生成 = 在成品文本层/docx XML 中定位化名串出现位置（而非解析 entity_map，避免契约耦合）；对照表仅写 `--private-dir`（不入库目录）。
 - **D5 leak_check 双保险**：①对照表每个原文串对化名版全文做规范化 grep（归一空格/全半角）；②对化名版跑一次识别，结果与对照表原文串求交。零命中 → exit 0；任何命中即列出并 exit 1。`build_pseudonym_set.py` 末步自动调用，入库前人工再跑一次。
 - **D6 生成器 import 而非复制 make_ner_gt_corpus**：`sys.path` 注入 `backend/scripts/eval` 后 `import make_ner_gt_corpus`（有 test_eval_ner_quality 先例），模板/口径漂移由既有防漂移契约测试继续锁。
+- **D7 docx/txt 走 parse + hybrid NER 链路（云实测发现）**：backend vision 端点仅支持 pdf/图片，对 txt/docx 返回 404「Unsupported file type for vision」。docx/txt 载体在 e2e 层改走 `GET /files/{id}/parse → POST /files/{id}/ner/hybrid`（HaS+正则+共指，与 Playground 文本链路一致），指标口径不变（文档级聚合）；另 txt 条目改独立 id `syn_contract_txt_1p_mid`（修复与 scanned 条目的 id 冲突）。
 
 ## 8. 非目标（v1 明确不做）
 

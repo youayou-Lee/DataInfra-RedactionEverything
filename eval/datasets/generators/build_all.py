@@ -51,10 +51,10 @@ MATRIX: list[dict] = [
          levels=["e2e"], notes="docx 链路"),
     dict(id="syn_judgment_2p_mid", carrier="docx", doc_type="judgment", density="mid", pages=2,
          levels=["e2e"], notes="docx×类型"),
-    dict(id="syn_contract_1p_mid", carrier="txt", doc_type="contract", density="mid", pages=1,
-         levels=["e2e"], notes="纯文本"),
+    dict(id="syn_contract_txt_1p_mid", carrier="txt", doc_type="contract", density="mid", pages=1,
+         levels=["e2e"], notes="纯文本（走 parse+hybrid NER 链路，vision 不支持 txt——D7）"),
     dict(id="syn_statement_1p_table", carrier="txt", doc_type="bank_statement", density="dense", pages=1,
-         levels=["e2e"], notes="表格密集边界"),
+         levels=["e2e"], notes="表格密集边界（同上，parse+hybrid NER）"),
     dict(id="syn_edge_3p_mixed", carrier="scanned_pdf", doc_type="contract", density="mid", pages=3,
          edge=True, levels=["e2e"], notes="边界页（空页+纯表格页+正常页）"),
 ]

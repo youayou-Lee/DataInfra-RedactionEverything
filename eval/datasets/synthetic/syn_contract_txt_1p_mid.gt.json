@@ -1,7 +1,7 @@
 {
-  "file": "syn_contract_1p_mid.pdf",
+  "file": "syn_contract_txt_1p_mid.txt",
   "source": "synthetic",
-  "carrier": "scanned_pdf",
+  "carrier": "txt",
   "doc_type": "contract",
   "density": "mid",
   "seed": 0,

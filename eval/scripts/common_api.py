@@ -54,8 +54,32 @@ class EvalApi:
         r = self.client.post(f"/api/v1/redaction/{file_id}/vision",
                              params={"page": page, "force": str(force).lower(),
                                      "include_result_image": "false"})
-        r.raise_for_status()
+        if r.status_code != 200:
+            raise RuntimeError(f"vision {file_id} p{page} -> HTTP {r.status_code}: {r.text[:300]}")
         return r.json()
+
+    def parse_and_hybrid_ner(self, file_id: str) -> tuple[dict[str, list[str]], float]:
+        """docx/txt 链路（backend vision 仅支持 pdf/图片，云实测确认）：
+        GET /files/{id}/parse → POST /files/{id}/ner/hybrid（HaS + 正则 + 共指）。
+        返回 ({类型中文名: [实体串]}, 墙钟秒)。"""
+        started = time.perf_counter()
+        r = self.client.get(f"/api/v1/files/{file_id}/parse")
+        if r.status_code != 200:
+            raise RuntimeError(f"parse {file_id} -> HTTP {r.status_code}: {r.text[:200]}")
+        r = self.client.post(f"/api/v1/files/{file_id}/ner/hybrid", json={})
+        if r.status_code != 200:
+            raise RuntimeError(f"ner/hybrid {file_id} -> HTTP {r.status_code}: {r.text[:200]}")
+        body = r.json()
+        if body.get("recognition_failed"):
+            raise RuntimeError(f"ner/hybrid {file_id} recognition_failed: {str(body.get('error'))[:200]}")
+        entities: dict[str, list[str]] = {}
+        for e in body.get("entities") or []:
+            text = str(e.get("text") or "").strip()
+            if not text:
+                continue
+            type_id = str(e.get("type") or "")
+            entities.setdefault(TYPE_ID_TO_NAME.get(type_id, type_id), []).append(text)
+        return entities, round(time.perf_counter() - started, 3)
 
     def delete_file(self, file_id: str) -> bool:
         """尽力清理；后端若无该端点则跳过（合成数据无敏感信息，残留可接受）。"""

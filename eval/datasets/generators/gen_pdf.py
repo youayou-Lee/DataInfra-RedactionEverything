@@ -88,7 +88,11 @@ def build_pdf(out_path: Path, *, pages: int, carrier: str, doc_type: str = "cont
     doc.set_metadata(_FIXED_META)
     data = doc.tobytes(garbage=4, deflate=True)
     doc.close()
-    data = _PDF_ID_RE.sub(_FIXED_PDF_ID, data, count=1)
+    # 只替换 trailer 的 /ID（恒在文件尾部）。从头 sub 会偶发匹配到 deflate 内容流里的
+    # 伪 /ID 字节序列，放过真 trailer /ID → 字节不确定（全量测试偶发失败根源）。
+    id_idx = data.rfind(b"/ID")
+    if id_idx != -1:
+        data = data[:id_idx] + _PDF_ID_RE.sub(_FIXED_PDF_ID, data[id_idx:], count=1)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(data)
     return gt_pages

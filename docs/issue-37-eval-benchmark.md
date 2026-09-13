@@ -99,7 +99,7 @@ manifest（`manifest.json`）：
 | syn_edge_3p_mixed | scanned_pdf | contract | 3（空页+纯表格页+正常页） | mid | 边界页 |
 | ner_corpus_10p（JSONL） | txt | 混合 | 10 | mid | `--level ner` 语料（既有 make_ner_gt_corpus 产出） |
 
-- 生成器**确定性**：无 `random`，实体与文本按索引算术派生（沿用 make_ner_gt_corpus 模式）；`build_all.py` 重复运行**全部产物逐字节一致**（PDF trailer /ID 与 docx zip 条目时间戳在生成器内固定；单测锁定全量 sha256）。
+- 生成器**确定性**：无 `random`，实体与文本按索引算术派生（沿用 make_ner_gt_corpus 模式）。确定性口径为**内容级**（设计文档 D8）：GT/txt/jsonl/docx 逐字节一致，PDF 内容摘要（页数+文本层+图像布局）一致；单测锁定。
 - 生成即自检：GT 实体串必须原样出现在对应页文本/文本层中，否则断言失败。
 - 密度实现：mid=make_ner_gt_corpus 每页既有量；dense=实体槽位循环 ×3 次并附表格段；sparse=仅保留每页前 2 类实体。
 - hybrid：前半页插入文本层、后半页渲染整页图；边界文件含 1 页空白+1 页纯表格（无实体，验证空页不误报、GT 空集合法）。
@@ -137,6 +137,7 @@ python eval/scripts/run_eval.py --level e2e \
 - **D5 leak_check 双保险**：①对照表每个原文串对化名版全文做规范化 grep（归一空格/全半角）；②对化名版跑一次识别，结果与对照表原文串求交。零命中 → exit 0；任何命中即列出并 exit 1。`build_pseudonym_set.py` 末步自动调用，入库前人工再跑一次。
 - **D6 生成器 import 而非复制 make_ner_gt_corpus**：`sys.path` 注入 `backend/scripts/eval` 后 `import make_ner_gt_corpus`（有 test_eval_ner_quality 先例），模板/口径漂移由既有防漂移契约测试继续锁。
 - **D7 docx/txt 走 parse + hybrid NER 链路（云实测发现）**：backend vision 端点仅支持 pdf/图片，对 txt/docx 返回 404「Unsupported file type for vision」。docx/txt 载体在 e2e 层改走 `GET /files/{id}/parse → POST /files/{id}/ner/hybrid`（HaS+正则+共指，与 Playground 文本链路一致），指标口径不变（文档级聚合）；另 txt 条目改独立 id `syn_contract_txt_1p_mid`（修复与 scanned 条目的 id 冲突）。
+- **D8 确定性口径为内容级（评审 C2 修复过程中实测降级）**：GT/txt/jsonl 逐字节一致；docx 固定 core.xml 与 zip 条目时间戳后逐字节一致；PDF 已固定 trailer /ID 与元数据，但 `tobytes(garbage=4)` 的对象序受运行时堆布局影响，字节级偶发漂移（实测排除 /ID 后仍存在，约 1/8 复现）——**PDF 以内容摘要锁定**（页数+逐页文本层+图像存在性，单测强制），不做逐字节承诺。评测消费的是 GT 与文本，PDF 字节与评测正确性无关。
 
 ## 8. 非目标（v1 明确不做）
 

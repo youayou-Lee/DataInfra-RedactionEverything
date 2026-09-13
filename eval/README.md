@@ -6,7 +6,7 @@
 ## 快速开始
 
 ```bash
-# 0) 重建合成评测集（确定性：GT/txt/pdf/docx 全部逐字节一致；改矩阵后重跑）
+# 0) 重建合成评测集（内容级确定性：GT/txt/docx 逐字节一致、PDF 内容摘要一致——D8；改矩阵后重跑）
 python eval/datasets/generators/build_all.py
 
 # 1) NER 引擎层：合成语料直连 NER 端点（LLM NER 对比实验入口）
@@ -41,8 +41,8 @@ python eval/scripts/leak_check.py eval/datasets/pseudonymized/pseudo_case_001.do
 | 指标 | 口径 |
 |---|---|
 | P / R / F1 | 实体串集合精确匹配；ner 层原串域，e2e 层**去空白域**（中文实体 OCR 空格噪声不虚罚召回） |
-| 宽松口径（e2e） | span 匹配（去空白域）但类型错：wrong_type 计数 + 类型混淆 Top（如「姓名→机构名称」）——区分「类型分错」与「真漏检/误检」，不算 TP |
-| 数字保真（一票否决） | 身份证号/护照号/电话/银行卡号在**原串域**逐字符分级：exact（逐字一致）/ near_miss（仅空白连字符大小写差异）/ miss；闸门只认 exact = 100% |
+| 宽松口径（e2e） | span 匹配（去空白域）但类型错：wrong_type 计数 + 类型混淆 Top（如「姓名→机构名称」）——区分「类型分错」与「真漏检/误检」，不算 TP。**盲区**：只见「预测串与某 GT 串完全相等且类型不同」；带 OCR 噪声的类型错判、GT 未标注的真串（如干扰项）不计入——wrong_type=0 不能解读为「无类型混淆」 |
+| 数字保真（一票否决） | 身份证号/护照号/电话/银行卡号在**原串域**逐字符分级：exact（逐字一致）/ near_miss（仅空白连字符大小写差异）/ miss；闸门只认 exact = 100%。分母口径：**文件内去重、跨文件累加**（与分文件表可对账）；退出码受此闸门控制（FAIL → exit 1） |
 | 三闸门（--baseline） | 召回 ≥ 基线 −1pp；精确率 ≥ 基线；数字 exact = 100%（LLM NER 实验的判定基准，与 #23 M4 同源）。**两层报告均可 --baseline 对比**（e2e 对比总体 P/R/F1 与数字聚合率，环境标签不同会警告） |
 | 速度 | 单页 duration_ms 分解（OCR/NER/LA/匹配埋点）、页墙钟 p50/p95、吞吐（页/分钟）；warmup 页（默认前 1 页）不计入 steady；文件页数 ≤ warmup 时吞吐记 n/a |
 

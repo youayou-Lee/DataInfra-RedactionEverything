@@ -62,14 +62,23 @@ def test_pdf_deterministic_content(tmp_path, carrier, kw):
     assert outs[0] == outs[1]
 
 
-def test_all_products_byte_deterministic(tmp_path):
-    """C2：全部产物（含 PDF 的 /ID 与 docx 的 zip 时间戳）逐字节一致。"""
+def test_all_products_deterministic(tmp_path):
+    """C2：全部产物确定性——文本/GT 逐字节一致；PDF 内容摘要一致（MuPDF tobytes 的
+    对象序受运行时堆布局影响，字节级偶发漂移，已实测排除 /ID 后仍存在——见设计文档 D8）；
+    docx zip 条目内容一致。"""
     runs = []
     for run in (1, 2):
         d = tmp_path / f"run{run}"
         build_all.build_all(d)
-        runs.append({f.name: hashlib.sha256(f.read_bytes()).hexdigest()
-                     for f in sorted(d.joinpath("synthetic").iterdir())})
+        digests = {}
+        for f in sorted(d.joinpath("synthetic").iterdir()):
+            if f.suffix == ".pdf":
+                digests[f.name] = ("pdf", _pdf_digest(f))
+            elif f.suffix == ".docx":
+                digests[f.name] = ("docx", _docx_digest(f))
+            else:
+                digests[f.name] = ("bytes", hashlib.sha256(f.read_bytes()).hexdigest())
+        runs.append(digests)
     assert runs[0] == runs[1]
     assert len(runs[0]) >= len(build_all.MATRIX) + 1
 

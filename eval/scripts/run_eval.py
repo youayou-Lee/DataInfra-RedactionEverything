@@ -114,6 +114,8 @@ async def run_ner_level(args: argparse.Namespace) -> dict:
                          "corpus": str(corpus_path), "label": args.target_label}
     if args.baseline:
         baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        if "per_file" in baseline:  # 层间误用（e2e 报告喂 ner 层）给明确报错而非裸栈
+            raise SystemExit("--baseline 是 e2e 报告，ner 层需要 ner 层报告 JSON")
         metrics["baseline_label"] = baseline.get("config", {}).get("label", args.baseline)
         metrics["comparison"] = nerq.compare_with_baseline(metrics, baseline)
     return metrics
@@ -274,22 +276,38 @@ def run_e2e_level(args: argparse.Namespace) -> dict:
     if not per_file:
         raise SystemExit("全部文件失败，无结果可报告")
 
-    all_records, gt_raw_all, pred_raw_all = [], {}, {}
+    all_records = []
     for fm in per_file:
         for rec in fm["records"]:
             all_records.append({"page_id": f"{fm['file']['id']}#{rec['page_id']}", "gt": rec["gt"],
                                 "pred": rec["pred"], "latency_sec": rec["latency_sec"]})
-        for etype, values in fm["_gt_raw"].items():
-            gt_raw_all.setdefault(etype, []).extend(values)
-        for etype, values in fm["_pred_raw"].items():
-            pred_raw_all.setdefault(etype, []).extend(values)
-    overall = e2e_core_metrics(all_records, gt_raw_all, pred_raw_all)
-    # 数字分级明细全局去重后截断（同一 near_miss 串会在多文件重复出现）
-    for s in overall["digital"].values():
-        s["near_miss_detail"] = [{"gt": g, "pred": p} for (g, p) in
-                                 dict.fromkeys((g, p) for g, p in s["near_miss_detail"])][:20]
-        s["miss_detail"] = list(dict.fromkeys(s["miss_detail"]))[:20]
+    # 总体 P/R/宽松口径：页级 records 聚合（nerq 权威口径：每页每类型去重后累加）；
+    # 数字保真：逐文件桶求和（文件内去重、跨文件累加）——与 per_file 对账一致（评审 I-B：
+    # 全局去重会折叠跨文件复用的同串，总体与分文件加总对不上，且与 nerq 分母口径分叉）。
+    overall = e2e_core_metrics(all_records, {}, {})
+    overall["digital"] = merge_file_digital(per_file)
+    gate_ok, gate_failures = nerq.digital_gate_pass(overall)
+    overall["digital_gate"] = {"pass": gate_ok, "failures": gate_failures}
     return {"per_file": per_file, "failed": failed, "overall": overall}
+
+
+def merge_file_digital(per_file: list[dict]) -> dict:
+    """总体数字保真 = 逐文件桶求和；明细（元组格式）全局去重后截断（评审 I-A/I-B）。"""
+    merged: dict[str, dict] = {}
+    for fm in per_file:
+        for etype, s in fm["digital"].items():
+            bucket = merged.setdefault(
+                etype, {"total_gt": 0, "exact": 0, "near_miss": 0, "miss": 0,
+                        "near_miss_detail": [], "miss_detail": []})
+            for key in ("total_gt", "exact", "near_miss", "miss"):
+                bucket[key] += s[key]
+            bucket["near_miss_detail"] += s["near_miss_detail"]
+            bucket["miss_detail"] += s["miss_detail"]
+    for s in merged.values():
+        s["exact_rate"] = s["exact"] / s["total_gt"] if s["total_gt"] else 1.0
+        s["near_miss_detail"] = list(dict.fromkeys(s["near_miss_detail"]))[:20]  # 元组可哈希
+        s["miss_detail"] = list(dict.fromkeys(s["miss_detail"]))[:20]
+    return merged
 
 
 def build_e2e_baseline_comparison(metrics: dict, args: argparse.Namespace) -> dict:
@@ -372,7 +390,12 @@ def main() -> int:
     (out_dir / f"{stem}.md").write_text(md, encoding="utf-8")
     print(f"OK -> {out_dir}/{stem}.{{json,md}}")
 
-    gate = metrics.get("digital_gate") or (metrics.get("comparison") or {}).get("gate_pass")
+    if args.level == "e2e":  # 一票否决闸门控制退出码（评审 I-C：e2e 键在 overall 下）
+        gate = metrics["overall"]["digital_gate"]["pass"]
+    elif metrics.get("comparison"):  # ner 层带基线：三闸门判定
+        gate = metrics["comparison"]["gate_pass"]
+    else:  # ner 层无基线：至少单测数字闸门
+        gate = nerq.digital_gate_pass(metrics)[0]
     if gate is False:
         print("❌ 数字保真闸门不通过（见报告）", file=sys.stderr)
         return 1

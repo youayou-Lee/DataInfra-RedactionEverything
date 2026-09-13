@@ -7,11 +7,11 @@
       --api-base http://127.0.0.1:8000 --private-dir /root/private_data/eval37 \
       --dataset-id pseudo_case_001
 
-  # 2) 人工复核 CSV（改「化名」列；漏检实体补行：原文+类型+自拟化名——补漏即 GT 修正）
-  #    注意：补行实体不在识别结果中，执行不会替换它；若原文仍在成品中会被 leak_check 拦下。
+  # 2) 人工复核 CSV（改「化名」列；漏检实体补行：原文+类型+自拟化名——补行即 GT 补漏，
+  #    会并入执行载荷一并替换，见 build_merged_entities）
 
-  # 3) finalize：重新上传 → execute(pseudonym + custom_replacements) → 下载成品 →
-  #    GT 定位 → leak_check（grep 必跑）→ 写入 eval/datasets/pseudonymized/ + manifest
+  # 3) finalize：重新上传 → execute(pseudonym + custom_replacements，含补行) → 下载成品 →
+  #    GT 定位 → leak_check（grep + 识别复扫双保险）→ 写入 pseudonymized/ + manifest
   python eval/scripts/build_pseudonym_set.py finalize 复核后.csv \
       --source 真实样本.docx --api-base ... --private-dir ... --dataset-id pseudo_case_001
 
@@ -230,6 +230,9 @@ def main() -> int:
 
 
 def do_draft(api: common_api.EvalApi, args: argparse.Namespace) -> int:
+    if not _ID_RE.fullmatch(args.dataset_id):  # 与 finalize 对称（评审 Minor-3）
+        print(f"❌ dataset-id 只允许 [A-Za-z0-9_-]+（收到 {args.dataset_id!r}）", file=sys.stderr)
+        return 1
     file_id, entities = recognize_entities(api, Path(args.source))
     try:
         entity_map = draft_mapping(api, entities)
@@ -244,7 +247,7 @@ def do_draft(api: common_api.EvalApi, args: argparse.Namespace) -> int:
     write_mapping_csv(csv_path, rows)
     print(f"识别实体 {len(entities)} 个，默认映射 {len(rows)} 条 -> {csv_path}")
     print("下一步：人工复核（改「化名」列、为漏检实体补行），然后 finalize。")
-    print("注意：补行实体不会被执行替换；若其原文残留在成品中，leak_check 会拦截。")
+    print("补行实体（漏检原文）将并入执行载荷一并替换；其化名必须出现在成品中，否则 finalize 拦截。")
     return 0
 
 

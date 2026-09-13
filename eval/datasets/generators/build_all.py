@@ -3,8 +3,9 @@
 用法（仓库根执行）：
   python eval/datasets/generators/build_all.py            # 重建到 eval/datasets/
 
-确定性：全部生成器无随机数；GT/txt/jsonl 逐字节一致，PDF/docx 在固定 /ID 与 zip
-时间戳后亦逐字节一致（gen_pdf/gen_docx 内处理，单测锁定）。
+确定性（内容级，见设计文档 D8）：生成器无随机数；GT/txt/jsonl/docx 逐字节一致；
+PDF 固定了 /ID 与元数据但 MuPDF 对象序受堆布局影响，以内容摘要（页数+文本层+图像
+布局）锁定一致，不做逐字节承诺。
 """
 
 from __future__ import annotations

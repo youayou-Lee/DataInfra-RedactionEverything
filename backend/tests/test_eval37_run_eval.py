@@ -129,12 +129,30 @@ def test_load_manifest_suite_filter():
     assert all(f["id"] != run_eval.NER_CORPUS_ID for f in all_files)  # e2e 层不含 ner 语料
 
 
+def test_merge_file_digital_sums_and_keeps_tuple_detail():
+    """I-A/I-B：总体数字保真=逐文件桶求和（与分文件对账），明细保持元组格式可渲染。"""
+    def bucket(exact, near, miss, detail):
+        return {"total_gt": exact + near + miss, "exact": exact, "near_miss": near, "miss": miss,
+                "near_miss_detail": detail, "miss_detail": [], "exact_rate": 0.0}
+    shared = ("138 0013 8000", "13800138000")
+    per_file = [
+        {"digital": {"电话": bucket(5, 1, 1, [shared])}},
+        {"digital": {"电话": bucket(3, 1, 2, [shared, ("139 1111", "1391111")])}},
+    ]
+    merged = run_eval.merge_file_digital(per_file)
+    s = merged["电话"]
+    assert (s["exact"], s["near_miss"], s["miss"], s["total_gt"]) == (8, 2, 3, 13)  # 求和对账
+    assert s["exact_rate"] == 8 / 13
+    assert s["near_miss_detail"] == [shared, ("139 1111", "1391111")]  # 元组去重，非 dict
+
+
 def test_render_e2e_markdown_smoke():
     result = {
         "overall": {"overall": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1},
                     "per_type": {"姓名": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1}},
-                    "digital": {"电话": {"exact": 1, "near_miss": 0, "miss": 0, "exact_rate": 1.0,
-                                        "near_miss_detail": [], "miss_detail": []}},
+                    "digital": {"电话": {"exact": 1, "near_miss": 1, "miss": 0, "exact_rate": 0.5,
+                                        "near_miss_detail": [("138 0013 8000", "13800138000")],
+                                        "miss_detail": []}},
                     "digital_gate": {"pass": True, "failures": []},
                     "loose": {"wrong_type": 2, "type_confusion_top": {"姓名→机构名称": 2}}},
         "per_file": [{
@@ -155,3 +173,4 @@ def test_render_e2e_markdown_smoke():
     assert "宽松口径" in md and "姓名→机构名称×2" in md
     assert "n/a" in md  # steady 空时吞吐渲染 n/a（M3）
     assert "y" in md  # 失败文件单列（M5）
+    assert "GT='138 0013 8000' PRED='13800138000'" in md  # I-A：元组明细正常渲染非 'gt'/'pred'

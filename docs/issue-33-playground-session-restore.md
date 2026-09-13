@@ -948,7 +948,7 @@ Expected: 通过。
 - Modify: fork 仓库 Issue #33（评论，`--body-file`）
 
 **Interfaces:**
-- Consumes: Task 3-7 的全部产物；云实例部署流程（WORKFLOW.md，实例 scnet-bw，前端 10800）。
+- Consumes: Task 3-7 的全部产物；云实例部署流程（WORKFLOW.md，实例 scnet-main，前端 10800）。
 
 - [ ] **Step 1: 全量本地门禁**
 

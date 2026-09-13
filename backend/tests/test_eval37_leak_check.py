@@ -66,10 +66,19 @@ def test_docx_supported(tmp_path):
     assert any(f["原文"] == "王建国" for f in result["findings"])
 
 
+def test_hyphenated_and_case_leak_detected(tmp_path):
+    """I3：归一化不弱于评测口径——连字符变体与大小写形态都要被抓。"""
+    target = tmp_path / "leak4.txt"
+    target.write_text("历史记录：王-建国 / USER69.CHEN@EXAMPLE-CORP4.CN 两个账户已冻结。", encoding="utf-8")
+    result = leak_check.run_check(target, ROWS + [
+        {"原文": "user69.chen@example-corp4.cn", "类型": "邮箱", "化名": "user1@example.cn"}])
+    assert any(f["原文"] == "王建国" for f in result["findings"])
+    assert any(f["原文"].lower().startswith("user69") for f in result["findings"])
+
+
 def test_csv_roundtrip(tmp_path):
-    csv_path = tmp_path / "m.csv"
-    leak_check  # noqa: B018 — 与本文件无关，占位避免误删 import
     import csv
+    csv_path = tmp_path / "m.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["原文", "类型", "化名"])
         writer.writeheader()

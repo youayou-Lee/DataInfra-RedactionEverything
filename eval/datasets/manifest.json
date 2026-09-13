@@ -107,9 +107,9 @@
       "notes": "文本层链路"
     },
     {
-      "id": "syn_judgment_3p_mid",
-      "path": "synthetic/syn_judgment_3p_mid.pdf",
-      "gt": "synthetic/syn_judgment_3p_mid.gt.json",
+      "id": "syn_judgment_txt_3p_mid",
+      "path": "synthetic/syn_judgment_txt_3p_mid.pdf",
+      "gt": "synthetic/syn_judgment_txt_3p_mid.gt.json",
       "source": "synthetic",
       "carrier": "text_pdf",
       "doc_type": "judgment",

@@ -10,6 +10,7 @@ carrier：
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -26,6 +27,8 @@ _FIXED_META = {
     "title": "synthetic eval document", "author": "eval-gen", "subject": "issue-37 benchmark",
     "creator": "gen_pdf.py", "producer": "PyMuPDF",
 }
+_FIXED_PDF_ID = b"/ID [<4f42373030316b73><4f42373030316b73>]"  # trailer /ID 固定（PyMuPDF 每次随机生成）
+_PDF_ID_RE = re.compile(rb"/ID\s*\[<?[0-9A-Fa-f\s]+>?\s*<?[0-9A-Fa-f\s]+>?\]")
 
 
 def _insert_lines(page: fitz.Page, lines: list[str], title: str, page_no: int, total: int) -> None:
@@ -83,7 +86,9 @@ def build_pdf(out_path: Path, *, pages: int, carrier: str, doc_type: str = "cont
             page = doc.new_page(width=PAGE_W, height=PAGE_H)
             page.insert_image(page.rect, pixmap=pix)
     doc.set_metadata(_FIXED_META)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(out_path), garbage=4, deflate=True)
+    data = doc.tobytes(garbage=4, deflate=True)
     doc.close()
+    data = _PDF_ID_RE.sub(_FIXED_PDF_ID, data, count=1)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(data)
     return gt_pages

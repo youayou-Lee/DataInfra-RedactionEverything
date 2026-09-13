@@ -62,16 +62,16 @@ def test_pdf_deterministic_content(tmp_path, carrier, kw):
     assert outs[0] == outs[1]
 
 
-def test_txt_and_gt_byte_deterministic(tmp_path):
-    first, second = [], []
+def test_all_products_byte_deterministic(tmp_path):
+    """C2：全部产物（含 PDF 的 /ID 与 docx 的 zip 时间戳）逐字节一致。"""
+    runs = []
     for run in (1, 2):
         d = tmp_path / f"run{run}"
         build_all.build_all(d)
-        for f in sorted(d.joinpath("synthetic").iterdir()):
-            if f.suffix in (".json", ".jsonl", ".txt", ".gt.json"):
-                first.append((f.name, hashlib.sha256(f.read_bytes()).hexdigest())) if run == 1 \
-                    else second.append((f.name, hashlib.sha256(f.read_bytes()).hexdigest()))
-    assert first == second
+        runs.append({f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+                     for f in sorted(d.joinpath("synthetic").iterdir())})
+    assert runs[0] == runs[1]
+    assert len(runs[0]) >= len(build_all.MATRIX) + 1
 
 
 def test_docx_deterministic(tmp_path):
@@ -163,6 +163,11 @@ def test_manifest_matches_matrix():
     manifest = json.loads((REPO_ROOT / "eval" / "datasets" / "manifest.json").read_text(encoding="utf-8"))
     files = manifest["files"]
     assert len(files) == len(build_all.MATRIX) + 1  # + ner_corpus
+    # C1：id 与 path 必须唯一（曾因重名导致扫描档被文本档静默覆盖）
+    ids = [f["id"] for f in files]
+    paths = [f["path"] for f in files]
+    assert len(ids) == len(set(ids)), f"manifest id 重复: {[i for i in ids if ids.count(i) > 1]}"
+    assert len(paths) == len(set(paths)), f"manifest path 重复: {[p for p in paths if paths.count(p) > 1]}"
     for f in files:
         if f["id"] == build_all.NER_CORPUS_ID:
             assert f["levels"] == ["ner"]

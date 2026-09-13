@@ -2,9 +2,9 @@
 
 用法（仓库根执行）：
   python eval/datasets/generators/build_all.py            # 重建到 eval/datasets/
-  python eval/datasets/generators/build_all.py --check    # 只校验现有产物与配置一致
 
-确定性：全部生成器无随机数；重复运行产物一致（GT 逐字节一致，PDF/docx 内容一致）。
+确定性：全部生成器无随机数；GT/txt/jsonl 逐字节一致，PDF/docx 在固定 /ID 与 zip
+时间戳后亦逐字节一致（gen_pdf/gen_docx 内处理，单测锁定）。
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ MATRIX: list[dict] = [
          levels=["e2e"], notes="低密度档"),
     dict(id="syn_contract_3p_mid", carrier="text_pdf", doc_type="contract", density="mid", pages=3,
          levels=["e2e"], notes="文本层链路"),
-    dict(id="syn_judgment_3p_mid", carrier="text_pdf", doc_type="judgment", density="mid", pages=3,
+    dict(id="syn_judgment_txt_3p_mid", carrier="text_pdf", doc_type="judgment", density="mid", pages=3,
          levels=["e2e"], notes="文本层×类型"),
     dict(id="syn_warrant_1p_mid", carrier="text_pdf", doc_type="warrant", density="mid", pages=1,
          levels=["e2e"], notes="最小文件"),

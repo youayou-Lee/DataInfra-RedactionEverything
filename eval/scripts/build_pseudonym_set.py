@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -33,8 +34,7 @@ import leak_check  # noqa: E402
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASETS_DIR = _REPO_ROOT / "eval" / "datasets"
 MAPPING_COLUMNS = ["原文", "类型", "化名"]
-# 与 backend/config/preset_entity_types.json 对齐的 9 类（名称→英文 ID，execute entities 需要）
-_NAME_TO_ID = {name: tid for tid, name in common_api.TYPE_ID_TO_NAME.items()}
+_ID_RE = re.compile(r"[A-Za-z0-9_-]+")  # dataset-id 白名单（防路径写穿，评审 M8）
 
 
 def recognize_entities(api: common_api.EvalApi, path: Path) -> tuple[str, list[dict]]:
@@ -106,12 +106,29 @@ def read_mapping_csv(path: Path) -> list[dict]:
     return cleaned
 
 
+def build_merged_entities(entities: list[dict], mapping_rows: list[dict]) -> list[dict]:
+    """识别实体 + 人工补行（原文不在识别结果中）合并为执行载荷（评审 I1）。
+
+    补行不并入则 execute 不会替换它 → finalize 必然失败，「补行=GT 补漏」成为死路。
+    """
+    known = {e["text"] for e in entities}
+    name_to_id = {name: tid for tid, name in common_api.TYPE_ID_TO_NAME.items()}
+    merged = list(entities)
+    for row in mapping_rows:
+        if row["原文"] not in known:
+            merged.append({"id": f"eval37-manual-{len(merged) + 1}", "text": row["原文"],
+                           "type": name_to_id.get(row["类型"], row["类型"]), "start": 0,
+                           "end": len(row["原文"]), "page": 1, "manual": True})
+    return merged
+
+
 def execute_pseudonym(api: common_api.EvalApi, file_id: str, entities: list[dict],
                       mapping_rows: list[dict]) -> dict:
     custom = {row["原文"]: row["化名"] for row in mapping_rows}
+    merged = build_merged_entities(entities, mapping_rows)
     config = {"replacement_mode": "pseudonym", "custom_replacements": custom}
     r = api.client.post("/api/v1/redaction/execute",
-                        json={"file_id": file_id, "entities": entities, "bounding_boxes": [],
+                        json={"file_id": file_id, "entities": merged, "bounding_boxes": [],
                               "config": config},
                         headers={"X-Idempotency-Key": f"eval37-{file_id}"})
     r.raise_for_status()
@@ -232,6 +249,9 @@ def do_draft(api: common_api.EvalApi, args: argparse.Namespace) -> int:
 
 
 def do_finalize(api: common_api.EvalApi, args: argparse.Namespace) -> int:
+    if not _ID_RE.fullmatch(args.dataset_id):
+        print(f"❌ dataset-id 只允许 [A-Za-z0-9_-]+（收到 {args.dataset_id!r}）", file=sys.stderr)
+        return 1
     rows = read_mapping_csv(args.mapping)
     source = Path(args.source)
     file_id, entities = recognize_entities(api, source)
@@ -258,8 +278,10 @@ def do_finalize(api: common_api.EvalApi, args: argparse.Namespace) -> int:
     gt_path.write_text(json.dumps(gt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     check = leak_check.run_check(product, rows)
-    if not check["clean"]:
-        print(f"❌ leak_check 发现残留，禁止入库：{check['findings'][:5]}", file=sys.stderr)
+    rescan = leak_check.run_rescan(api, product, rows)  # 双保险②：入库前必跑（评审 I2）
+    if not check["clean"] or not rescan["clean"]:
+        findings = check["findings"] + rescan["findings"]
+        print(f"❌ leak_check 发现残留，禁止入库：{findings[:5]}", file=sys.stderr)
         product.unlink(missing_ok=True)
         gt_path.unlink(missing_ok=True)
         return 1

@@ -6,7 +6,7 @@
 ## 快速开始
 
 ```bash
-# 0) 重建合成评测集（确定性，产物入库；改矩阵后重跑）
+# 0) 重建合成评测集（确定性：GT/txt/pdf/docx 全部逐字节一致；改矩阵后重跑）
 python eval/datasets/generators/build_all.py
 
 # 1) NER 引擎层：合成语料直连 NER 端点（LLM NER 对比实验入口）
@@ -14,10 +14,13 @@ python eval/scripts/run_eval.py --level ner \
     --ner-base http://127.0.0.1:8080/v1 --grouping off \
     --target-label has-baseline --env-label <你的环境标签>
 
-# 2) 端到端层：走 backend 公开 API（login→upload→逐页识别）
+# 2) 端到端层：走 backend 公开 API（pdf 逐页 vision；docx/txt 走 parse+hybrid NER）
 python eval/scripts/run_eval.py --level e2e --suite synthetic \
     --api-base http://127.0.0.1:8000 \
     --target-label preview2.0.0 --env-label <你的环境标签>
+#    与上一版对比 / 只跑指定文件 / 保留逐页明细：
+python eval/scripts/run_eval.py --level e2e --suite synthetic \
+    --baseline eval/reports/<上一版>.json --only syn_contract_1p_mid --with-perf ...
 
 # 3) 化名子集构建（真实非扫描样本，两段式，中间人工复核）
 python eval/scripts/build_pseudonym_set.py draft 真实样本.docx \
@@ -38,9 +41,10 @@ python eval/scripts/leak_check.py eval/datasets/pseudonymized/pseudo_case_001.do
 | 指标 | 口径 |
 |---|---|
 | P / R / F1 | 实体串集合精确匹配；ner 层原串域，e2e 层**去空白域**（中文实体 OCR 空格噪声不虚罚召回） |
+| 宽松口径（e2e） | span 匹配（去空白域）但类型错：wrong_type 计数 + 类型混淆 Top（如「姓名→机构名称」）——区分「类型分错」与「真漏检/误检」，不算 TP |
 | 数字保真（一票否决） | 身份证号/护照号/电话/银行卡号在**原串域**逐字符分级：exact（逐字一致）/ near_miss（仅空白连字符大小写差异）/ miss；闸门只认 exact = 100% |
-| 三闸门（--baseline） | 召回 ≥ 基线 −1pp；精确率 ≥ 基线；数字 exact = 100%（LLM NER 实验的判定基准，与 #23 M4 同源） |
-| 速度 | 单页 duration_ms 分解（OCR/NER/LA/匹配埋点）、页墙钟 p50/p95、吞吐（页/分钟）；warmup 页（默认前 1 页）不计入 steady |
+| 三闸门（--baseline） | 召回 ≥ 基线 −1pp；精确率 ≥ 基线；数字 exact = 100%（LLM NER 实验的判定基准，与 #23 M4 同源）。**两层报告均可 --baseline 对比**（e2e 对比总体 P/R/F1 与数字聚合率，环境标签不同会警告） |
+| 速度 | 单页 duration_ms 分解（OCR/NER/LA/匹配埋点）、页墙钟 p50/p95、吞吐（页/分钟）；warmup 页（默认前 1 页）不计入 steady；文件页数 ≤ warmup 时吞吐记 n/a |
 
 e2e−ner 的差值 = OCR/路由链路引入的质量损失（最有诊断价值的对比）。
 
@@ -70,6 +74,6 @@ e2e−ner 的差值 = OCR/路由链路引入的质量损失（最有诊断价值
 | 名词 | 含义 |
 |---|---|
 | carrier | 载体：scanned_pdf / text_pdf / hybrid_pdf / docx / txt |
-| density | 实体密度：sparse（~2/页）/ mid（~13/页）/ dense（~40/页） |
+| density | 实体密度：sparse（仅 contract 档生效，~2/页）/ mid（~13/页）/ dense（~40/页） |
 | steady 页 | 排除 warmup 后的页（速度统计口径） |
 | squash 域 | 去全部空白后的实体串（e2e P/R 对齐域） |

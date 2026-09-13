@@ -25,12 +25,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common_api  # noqa: E402
 
-_FT_RE = re.compile(r"[，。、；：？！“”‘’（）【】《》\s,.;:?!\"'()\[\]<>]")
+_FT_RE = re.compile(r"[，。、；：？！“”‘’（）【】《》\s,.;:?!\"'()\[\]<>\-—_·]")
 
 
 def _norm(text: str) -> str:
-    """强归一：去空白 + 去常见标点（残留常以『王 某 -』『王某。』形态出现）。"""
-    return _FT_RE.sub("", str(text or ""))
+    """强归一：去空白 + 去常见标点 + 连字符/下划线 + 大小写折叠。
+
+    覆盖面不得弱于评测口径 nerq._normalize（去 [\\s\\-—_] + upper）——检测闸门比指标
+    更宽松等于放行（评审 I3）。
+    """
+    return _FT_RE.sub("", str(text or "")).upper()
 
 
 def extract_text(path: Path) -> str:
@@ -77,27 +81,37 @@ def run_check(target: Path, mapping_rows: list[dict]) -> dict:
 
 
 def run_rescan(api: common_api.EvalApi, target: Path, mapping_rows: list[dict]) -> dict:
-    """保险②：识别化名版，预测实体与原文串求交（归一域）。"""
+    """保险②：识别化名版，预测实体与原文串求交（归一域）。
+
+    pdf 走逐页 vision；docx/txt 走 parse + hybrid NER（D7：vision 不支持该类载体）。
+    """
     file_id = api.upload(target)
     try:
         suffix = target.suffix.lower()
-        pages = 1
+        page_entities: list[dict[str, list[str]]] = []
         if suffix == ".pdf":
             import fitz
             with fitz.open(str(target)) as doc:
                 pages = doc.page_count
+            for page in range(1, pages + 1):
+                page_entities.append(common_api.extract_page_entities(api.vision(file_id, page)))
+        elif suffix in (".docx", ".txt"):
+            entities, _ = api.parse_and_hybrid_ner(file_id)
+            page_entities.append(entities)
+            pages = 1
+        else:
+            raise ValueError(f"不支持: {target}")
         findings = []
         originals = {(row.get("原文") or "").strip(): row for row in mapping_rows
                      if (row.get("原文") or "").strip()}
-        for page in range(1, pages + 1):
-            resp = api.vision(file_id, page)
-            for etype, values in common_api.extract_page_entities(resp).items():
+        for page_no, entities in enumerate(page_entities, start=1):
+            for etype, values in entities.items():
                 for value in values:
                     hit = originals.get(value) or next(
                         (o for o in originals if _norm(o) == _norm(value)), None)
                     if hit:
                         findings.append({"原文": hit["原文"], "类型": etype, "how": "rescan",
-                                         "page": page, "识别为": value})
+                                         "page": page_no, "识别为": value})
         return {"pages": pages, "findings": findings, "clean": not findings}
     finally:
         api.delete_file(file_id)

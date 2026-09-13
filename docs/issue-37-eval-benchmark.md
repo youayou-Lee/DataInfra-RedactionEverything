@@ -89,17 +89,17 @@ manifest（`manifest.json`）：
 | syn_contract_10p_dense | scanned_pdf | contract | 10 | dense（~40/页） | 高密度召回压力 |
 | syn_contract_10p_sparse | scanned_pdf | contract | 10 | sparse（~5/页） | 低召回压力 |
 | syn_contract_3p_mid | text_pdf | contract | 3 | mid | 文本层链路 |
-| syn_judgment_3p_mid | text_pdf | judgment | 3 | mid | 文本层×类型 |
+| syn_judgment_txt_3p_mid | text_pdf | judgment | 3 | mid | 文本层×类型 |
 | syn_warrant_1p_mid | text_pdf | warrant | 1 | mid | 最小文件 |
 | syn_hybrid_4p_mid | hybrid_pdf | contract | 4（2 文本层+2 扫描） | mid | 混合载体路由 |
 | syn_contract_2p_mid.docx | docx | contract | 2 | mid | docx 链路 |
 | syn_judgment_2p_mid.docx | docx | judgment | 2 | mid | docx×类型 |
-| syn_contract_1p_mid.txt | txt | contract | 1 | mid | 纯文本 |
+| syn_contract_txt_1p_mid | txt | contract | 1 | mid | 纯文本 |
 | syn_statement_1p_table | txt | bank_statement | 1 | dense 表格 | 表格密集边界 |
 | syn_edge_3p_mixed | scanned_pdf | contract | 3（空页+纯表格页+正常页） | mid | 边界页 |
 | ner_corpus_10p（JSONL） | txt | 混合 | 10 | mid | `--level ner` 语料（既有 make_ner_gt_corpus 产出） |
 
-- 生成器**确定性**：无 `random`，实体与文本按索引算术派生（沿用 make_ner_gt_corpus 模式）；`build_all.py` 重复运行产物逐字节一致（单测锁定）。
+- 生成器**确定性**：无 `random`，实体与文本按索引算术派生（沿用 make_ner_gt_corpus 模式）；`build_all.py` 重复运行**全部产物逐字节一致**（PDF trailer /ID 与 docx zip 条目时间戳在生成器内固定；单测锁定全量 sha256）。
 - 生成即自检：GT 实体串必须原样出现在对应页文本/文本层中，否则断言失败。
 - 密度实现：mid=make_ner_gt_corpus 每页既有量；dense=实体槽位循环 ×3 次并附表格段；sparse=仅保留每页前 2 类实体。
 - hybrid：前半页插入文本层、后半页渲染整页图；边界文件含 1 页空白+1 页纯表格（无实体，验证空页不误报、GT 空集合法）。

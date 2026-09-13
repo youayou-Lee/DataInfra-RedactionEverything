@@ -66,6 +66,51 @@ def test_digital_gate_respects_original_domain():
     assert metrics["digital"]["电话"]["near_miss"] == 1
 
 
+def test_e2e_core_metrics_domain_separation():
+    """I6：直接测组装路径——records(squash 域) 算 P/R，数字分级在原串域，空格差异落 near_miss。"""
+    records = [{"page_id": 0,
+                "gt": {"电话": ["13800138000"]},
+                "pred": {"电话": ["13800138000"]},  # squash 域一致
+                "latency_sec": 0.1}]
+    gt_raw = {"电话": ["13800138000"]}
+    pred_raw = {"电话": ["138 0013 8000"]}  # 原串域带空格
+    metrics = run_eval.e2e_core_metrics(records, gt_raw, pred_raw)
+    assert metrics["overall"]["recall"] == 1.0  # squash 域 P/R 不受空格影响
+    assert metrics["digital"]["电话"]["exact"] == 0
+    assert metrics["digital"]["电话"]["near_miss"] == 1
+    assert metrics["digital_gate"]["pass"] is False  # 闸门在原串域，被空格差异拦下
+
+
+def test_loose_span_metrics():
+    """I4：span 对但类型错计入 wrong_type 与混淆矩阵。"""
+    records = [{"page_id": 0,
+                "gt": {"姓名": ["王建国"], "机构名称": []},
+                "pred": {"机构名称": ["王建国"]},
+                "latency_sec": 0.1}]
+    loose = run_eval.loose_span_metrics(records)
+    assert loose["wrong_type"] == 1
+    assert loose["type_confusion_top"] == {"姓名→机构名称": 1}
+
+
+def test_build_e2e_baseline_comparison(tmp_path):
+    """I5：e2e 层基线对比 + 环境不匹配警告。"""
+    baseline = {"env": {"env_label": "old-env", "target_label": "old-target"},
+                "overall": {"overall": {"precision": 0.8, "recall": 0.7, "f1": 0.75, "tp": 1, "fp": 0, "fn": 1},
+                            "digital": {"电话": {"total_gt": 10, "exact": 9}}}}
+    p = tmp_path / "base.json"
+    p.write_text(json.dumps(baseline), encoding="utf-8")
+
+    class Args:
+        baseline = str(p)
+        env_label = "new-env"
+    metrics = {"overall": {"overall": {"precision": 0.9, "recall": 0.7, "f1": 0.8, "tp": 2, "fp": 0, "fn": 1},
+                           "digital": {"电话": {"total_gt": 10, "exact": 10}}}}
+    cmp = run_eval.build_e2e_baseline_comparison(metrics, Args())
+    assert cmp["env_mismatch"] is True
+    assert cmp["rows"]["P"] == {"baseline": 0.8, "current": 0.9}
+    assert cmp["rows"]["数字exact率"]["current"] == 1.0
+
+
 def test_percentile():
     assert run_eval.percentile([], 95) == 0.0
     assert run_eval.percentile([1.0, 2.0, 3.0, 4.0], 50) == 2.5  # 线性插值
@@ -88,14 +133,17 @@ def test_render_e2e_markdown_smoke():
     result = {
         "overall": {"overall": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1},
                     "per_type": {"姓名": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1}},
-                    "digital": {"电话": {"exact": 1, "near_miss": 0, "miss": 0, "exact_rate": 1.0}},
-                    "digital_gate": {"pass": True, "failures": []}},
+                    "digital": {"电话": {"exact": 1, "near_miss": 0, "miss": 0, "exact_rate": 1.0,
+                                        "near_miss_detail": [], "miss_detail": []}},
+                    "digital_gate": {"pass": True, "failures": []},
+                    "loose": {"wrong_type": 2, "type_confusion_top": {"姓名→机构名称": 2}}},
         "per_file": [{
             "file": {"id": "x", "carrier": "txt", "gt_entities": 2},
             "overall": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1},
             "digital_gate": {"pass": True, "failures": []},
-            "perf": {"wall_s": {"total": 1.0}, "throughput_pages_per_min": 60,
+            "perf": {"wall_s": {"total": 1.0}, "throughput_pages_per_min": None,
                      "duration_ms": {"ocr": {"mean": 100.0, "p95": 120.0}}}}],
+        "failed": [{"id": "y", "error": "RuntimeError: demo"}],
     }
 
     class Args:
@@ -104,3 +152,6 @@ def test_render_e2e_markdown_smoke():
         api_base = "http://x"
     md = run_eval.render_e2e_markdown(result, Args())
     assert "t-env" in md and "数字保真闸门" in md and "| x | txt |" in md
+    assert "宽松口径" in md and "姓名→机构名称×2" in md
+    assert "n/a" in md  # steady 空时吞吐渲染 n/a（M3）
+    assert "y" in md  # 失败文件单列（M5）

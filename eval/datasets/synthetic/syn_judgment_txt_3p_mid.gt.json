@@ -1,7 +1,7 @@
 {
-  "file": "syn_judgment_3p_mid.pdf",
+  "file": "syn_judgment_txt_3p_mid.pdf",
   "source": "synthetic",
-  "carrier": "scanned_pdf",
+  "carrier": "text_pdf",
   "doc_type": "judgment",
   "density": "mid",
   "seed": 0,

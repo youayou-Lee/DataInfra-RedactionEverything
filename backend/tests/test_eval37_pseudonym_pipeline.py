@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "eval" / "scripts"
 
@@ -36,11 +38,19 @@ def test_mapping_csv_roundtrip(tmp_path):
 def test_read_mapping_rejects_duplicate_pseudonym(tmp_path):
     csv_path = tmp_path / "dup.csv"
     bps.write_mapping_csv(csv_path, ROWS + [{"原文": "李四", "类型": "姓名", "化名": "王某1"}])
-    try:
+    with pytest.raises(ValueError, match="重复化名"):
         bps.read_mapping_csv(csv_path)
-        raise AssertionError("重复化名应被拒绝")
-    except ValueError as exc:
-        assert "重复化名" in str(exc)
+
+
+def test_build_merged_entities_includes_manual_rows():
+    """I1：补行（原文不在识别结果中）并入执行载荷，附 manual 标记。"""
+    entities = [{"id": "eval37-1", "text": "王建国", "type": "PERSON", "start": 0, "end": 3, "page": 1}]
+    rows = [{"原文": "王建国", "类型": "姓名", "化名": "王某1"},
+            {"原文": "李四", "类型": "姓名", "化名": "李某1"}]  # 补行：漏检实体
+    merged = bps.build_merged_entities(entities, rows)
+    assert len(merged) == 2
+    manual = next(e for e in merged if e.get("manual"))
+    assert manual["text"] == "李四" and manual["type"] == "PERSON"  # 中文名反查英文 ID
 
 
 def test_read_mapping_skips_empty_rows(tmp_path):

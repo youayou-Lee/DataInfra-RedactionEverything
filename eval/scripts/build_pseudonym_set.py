@@ -38,13 +38,26 @@ _NAME_TO_ID = {name: tid for tid, name in common_api.TYPE_ID_TO_NAME.items()}
 
 
 def recognize_entities(api: common_api.EvalApi, path: Path) -> tuple[str, list[dict]]:
-    """上传并逐页识别，返回 (file_id, entities[Entity dict])。"""
+    """上传并识别，返回 (file_id, entities[Entity dict])。
+
+    pdf 走逐页 vision；docx/txt 走 parse + hybrid NER（D7：vision 不支持该类载体）。
+    """
     file_id = api.upload(path)
+    suffix = path.suffix.lower()
+    if suffix in (".docx", ".txt"):
+        entities_map, _ = api.parse_and_hybrid_ner(file_id)
+        name_to_id = {name: tid for tid, name in common_api.TYPE_ID_TO_NAME.items()}
+        entities: list[dict] = []
+        for etype, values in entities_map.items():
+            for value in values:
+                entities.append({"id": f"eval37-{len(entities) + 1}", "text": value,
+                                 "type": name_to_id.get(etype, etype), "start": 0,
+                                 "end": len(value), "page": 1})
+        return file_id, entities
     pages = 1
-    if path.suffix.lower() == ".pdf":
-        import fitz
-        with fitz.open(str(path)) as doc:
-            pages = doc.page_count
+    import fitz
+    with fitz.open(str(path)) as doc:
+        pages = doc.page_count
     entities: list[dict] = []
     seq = 0
     for page in range(1, pages + 1):

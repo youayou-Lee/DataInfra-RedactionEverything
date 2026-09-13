@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "id": "syn_contract_1p_mid",
+      "path": "synthetic/syn_contract_1p_mid.pdf",
+      "gt": "synthetic/syn_contract_1p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 1,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='mid', pages=1)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "单页延迟档"
+    },
+    {
+      "id": "syn_contract_10p_mid",
+      "path": "synthetic/syn_contract_10p_mid.pdf",
+      "gt": "synthetic/syn_contract_10p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 10,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='mid', pages=10)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "速度主力档（对齐 perf_bench 语料规模）"
+    },
+    {
+      "id": "syn_contract_50p_mid",
+      "path": "synthetic/syn_contract_50p_mid.pdf",
+      "gt": "synthetic/syn_contract_50p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 50,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='mid', pages=50)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "吞吐/批量档"
+    },
+    {
+      "id": "syn_judgment_3p_mid",
+      "path": "synthetic/syn_judgment_3p_mid.pdf",
+      "gt": "synthetic/syn_judgment_3p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "judgment",
+      "density": "mid",
+      "pages": 3,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='judgment', density='mid', pages=3)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "文档类型多样性"
+    },
+    {
+      "id": "syn_contract_10p_dense",
+      "path": "synthetic/syn_contract_10p_dense.pdf",
+      "gt": "synthetic/syn_contract_10p_dense.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "dense",
+      "pages": 10,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='dense', pages=10)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "高密度召回压力"
+    },
+    {
+      "id": "syn_contract_10p_sparse",
+      "path": "synthetic/syn_contract_10p_sparse.pdf",
+      "gt": "synthetic/syn_contract_10p_sparse.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "sparse",
+      "pages": 10,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='sparse', pages=10)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "低密度档"
+    },
+    {
+      "id": "syn_contract_3p_mid",
+      "path": "synthetic/syn_contract_3p_mid.pdf",
+      "gt": "synthetic/syn_contract_3p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "text_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 3,
+      "generator": "gen_pdf.build_pdf(carrier='text', doc_type='contract', density='mid', pages=3)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "文本层链路"
+    },
+    {
+      "id": "syn_judgment_txt_3p_mid",
+      "path": "synthetic/syn_judgment_txt_3p_mid.pdf",
+      "gt": "synthetic/syn_judgment_txt_3p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "text_pdf",
+      "doc_type": "judgment",
+      "density": "mid",
+      "pages": 3,
+      "generator": "gen_pdf.build_pdf(carrier='text', doc_type='judgment', density='mid', pages=3)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "文本层×类型"
+    },
+    {
+      "id": "syn_warrant_1p_mid",
+      "path": "synthetic/syn_warrant_1p_mid.pdf",
+      "gt": "synthetic/syn_warrant_1p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "text_pdf",
+      "doc_type": "warrant",
+      "density": "mid",
+      "pages": 1,
+      "generator": "gen_pdf.build_pdf(carrier='text', doc_type='warrant', density='mid', pages=1)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "最小文件"
+    },
+    {
+      "id": "syn_hybrid_4p_mid",
+      "path": "synthetic/syn_hybrid_4p_mid.pdf",
+      "gt": "synthetic/syn_hybrid_4p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "hybrid_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 4,
+      "generator": "gen_pdf.build_pdf(carrier='hybrid', doc_type='contract', density='mid', pages=4)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "混合载体（2 文本层+2 扫描）"
+    },
+    {
+      "id": "syn_contract_2p_mid",
+      "path": "synthetic/syn_contract_2p_mid.docx",
+      "gt": "synthetic/syn_contract_2p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "docx",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 2,
+      "generator": "gen_pdf.build_pdf(carrier='docx', doc_type='contract', density='mid', pages=2)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "docx 链路"
+    },
+    {
+      "id": "syn_judgment_2p_mid",
+      "path": "synthetic/syn_judgment_2p_mid.docx",
+      "gt": "synthetic/syn_judgment_2p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "docx",
+      "doc_type": "judgment",
+      "density": "mid",
+      "pages": 2,
+      "generator": "gen_pdf.build_pdf(carrier='docx', doc_type='judgment', density='mid', pages=2)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "docx×类型"
+    },
+    {
+      "id": "syn_contract_txt_1p_mid",
+      "path": "synthetic/syn_contract_txt_1p_mid.txt",
+      "gt": "synthetic/syn_contract_txt_1p_mid.gt.json",
+      "source": "synthetic",
+      "carrier": "txt",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 1,
+      "generator": "gen_text.build_page(doc_type='contract', density='mid')",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "纯文本（走 parse+hybrid NER 链路，vision 不支持 txt——D7）"
+    },
+    {
+      "id": "syn_statement_1p_table",
+      "path": "synthetic/syn_statement_1p_table.txt",
+      "gt": "synthetic/syn_statement_1p_table.gt.json",
+      "source": "synthetic",
+      "carrier": "txt",
+      "doc_type": "bank_statement",
+      "density": "dense",
+      "pages": 1,
+      "generator": "gen_text.build_page(doc_type='bank_statement', density='dense')",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "表格密集边界（同上，parse+hybrid NER）"
+    },
+    {
+      "id": "syn_edge_3p_mixed",
+      "path": "synthetic/syn_edge_3p_mixed.pdf",
+      "gt": "synthetic/syn_edge_3p_mixed.gt.json",
+      "source": "synthetic",
+      "carrier": "scanned_pdf",
+      "doc_type": "contract",
+      "density": "mid",
+      "pages": 3,
+      "generator": "gen_pdf.build_pdf(carrier='scanned', doc_type='contract', density='mid', pages=3, edge=True)",
+      "levels": [
+        "e2e"
+      ],
+      "notes": "边界页（空页+纯表格页+正常页）"
+    },
+    {
+      "id": "ner_corpus_10p",
+      "path": "synthetic/ner_corpus_10p.jsonl",
+      "gt": "synthetic/ner_corpus_10p.jsonl",
+      "source": "synthetic",
+      "carrier": "txt",
+      "doc_type": "mixed",
+      "density": "mid",
+      "pages": 10,
+      "generator": "make_ner_gt_corpus.py（复用 #23 M4，零漂移）",
+      "levels": [
+        "ner"
+      ],
+      "notes": "NER 引擎层语料（JSONL，GT 内嵌）"
+    }
+  ]
+}

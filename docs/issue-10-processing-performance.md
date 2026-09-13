@@ -1,3 +1,6 @@
+> [!tip] 相关文档
+> [[WORKFLOW]] · [[scnet-main-环境清单]] · 后续: [[issue-23-ner-batch-inference]]
+
 # [Perf] 端到端处理速度慢：各阶段瓶颈分析与调优方向
 
 ## 现象

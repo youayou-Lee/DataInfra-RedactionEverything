@@ -1,3 +1,6 @@
+> [!tip] 相关文档
+> [[scnet-main-环境清单]] · [[SSH-云实例信息]]
+
 # 海光 DCU 适配总览（SCNet 云实例）
 
 > 分支：`feat/dcu-adaptation` ｜ 定位：海光 DCU 平台适配的**唯一权威文档**

@@ -1,3 +1,6 @@
+> [!tip] 相关文档
+> [[issue-10-processing-performance]] · [[WORKFLOW]]
+
 # Issue #23 设计：NER 拆请求 + batch 推理（单页 NER 31s → 5s 级）
 
 > 分支：`perf/issue23-ner-batch`（基于 main）。

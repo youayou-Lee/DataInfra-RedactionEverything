@@ -3,9 +3,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyTextPresetFields,
+  defaultConfig,
   deriveReviewConfirmed,
   isJobConfigLockedError,
   mapBackendStatus,
+  mergeJobConfigIntoWizardCfg,
+  sanitizeBatchReplacementMode,
 } from './use-batch-wizard-utils';
 
 describe('mapBackendStatus', () => {
@@ -59,5 +63,38 @@ describe('isJobConfigLockedError', () => {
     expect(isJobConfigLockedError(null)).toBe(false);
     expect(isJobConfigLockedError('locked')).toBe(false);
     expect(isJobConfigLockedError({ status: 500, message: 'boom' })).toBe(false);
+  });
+});
+
+describe('sanitizeBatchReplacementMode（批量×化名门控）', () => {
+  it('keeps non-pseudonym modes and defaults everything else to structured', () => {
+    expect(sanitizeBatchReplacementMode('smart')).toBe('smart');
+    expect(sanitizeBatchReplacementMode('mask')).toBe('mask');
+    expect(sanitizeBatchReplacementMode('structured')).toBe('structured');
+    expect(sanitizeBatchReplacementMode('pseudonym')).toBe('structured');
+    expect(sanitizeBatchReplacementMode('garbage')).toBe('structured');
+    expect(sanitizeBatchReplacementMode(null)).toBe('structured');
+    expect(sanitizeBatchReplacementMode(undefined)).toBe('structured');
+  });
+});
+
+describe('批量×化名门控的配置恢复路径', () => {
+  it('mergeJobConfigIntoWizardCfg drops pseudonym from job config and keeps other modes', () => {
+    const base = defaultConfig();
+    expect(mergeJobConfigIntoWizardCfg(base, { replacement_mode: 'pseudonym' }).replacementMode).toBe(
+      'structured',
+    );
+    expect(mergeJobConfigIntoWizardCfg(base, { replacement_mode: 'mask' }).replacementMode).toBe('mask');
+    expect(mergeJobConfigIntoWizardCfg(base, { replacement_mode: 'garbage' }).replacementMode).toBe(
+      'structured',
+    );
+  });
+
+  it('applyTextPresetFields sanitizes preset replacement mode', () => {
+    const fields = applyTextPresetFields(
+      { kind: 'full', replacementMode: 'pseudonym', selectedEntityTypeIds: ['PERSON'] } as never,
+      [],
+    );
+    expect(fields.replacementMode).toBe('structured');
   });
 });

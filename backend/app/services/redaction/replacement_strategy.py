@@ -33,9 +33,14 @@ MASK_MIN_LEN_BANK_CARD = 16  # 银行卡：保留后4
 # 词形取「名称后缀」口径，避免「司法鉴定服务有限公司」「海关咨询有限公司」这类
 # 名字里恰好含机关词的公司名被误入机关池（公司名永远不会以下列后缀结尾）。
 INSTITUTION_GOV_TEXT_RE = re.compile(
-    r"(公安局|派出所|法院|检察院|人民政府|司法局|监察委|税务局|海关|市场监管|分局|局)$"
+    r"(公安局|派出所|人民法院|人民检察院|法院|检察院|人民政府|司法局|监察委|税务局|海关|市场监管|分局|局)$"
 )
 INSTITUTION_BANK_TEXT_RE = re.compile(r"(银行|支行|分行|信用社|信用合作联社)$")
+
+# derived 派生专用机关关键词（不进 INSTITUTION_GOV_TEXT_RE——那是存量池精化的共享正则，
+# 扩它会改变存量 numbered/cycle 词池的落池与编号；委员会结尾的机构池键仍归公司池，
+# 仅派生基名按委员会取，零存量行为变化）
+DERIVED_GOV_EXTRA_RE = re.compile(r"(委员会)$")
 
 # 掩码模式：明文保留的前缀/后缀字符数
 MASK_KEEP_PREFIX_PHONE = 3  # 电话保留前3位
@@ -43,6 +48,9 @@ MASK_KEEP_SUFFIX_PHONE = 4  # 电话保留后4位
 MASK_KEEP_PREFIX_ID_CARD = 6  # 身份证保留前6位
 MASK_KEEP_SUFFIX_ID_CARD = 4  # 身份证保留后4位
 MASK_KEEP_SUFFIX_BANK_CARD = 4  # 银行卡保留后4位
+
+# derived 策略：派生基名可用的首字符范围（中文姓氏/机关名开头）
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
 def _raw_entity_type_id(entity_type: object) -> str:
@@ -76,6 +84,8 @@ class RedactionContext:
         # 词池已分配词（pool_type → 有序列表）：同类型不同实体分到不同词，
         # 且跳过与实体原文相同的词（避免“张三→张三”的原样替换）
         self._pool_assigned: dict[str, list[str]] = {}
+        # derived 策略的基名序号（seq_key → 已发最大序号）：陈某1/陈某2、某公司1/某公司2
+        self._derived_seq: dict[str, int] = {}
         self._generated_seq = 0
 
     def set_word_pools(self, pools: dict | None) -> None:
@@ -300,6 +310,13 @@ class RedactionContext:
         strategy = pool.get("strategy") or "numbered"
         words = pool.get("words") or []
 
+        # 司法编号式派生（张某1/某公司1）：基名从原文派生（姓氏/机关后缀关键词），
+        # 序号按基名独立累计；派生不支持的池键/文本回退词池顺序分配
+        if strategy == "derived":
+            derived = self._generate_derived_replacement(pool_key, text)
+            if derived:
+                return derived
+
         if type_key in self.FORMAT_GENERATED_TYPES and (strategy == "generated" or not words):
             return self._generate_format_fictional(type_key)
 
@@ -333,6 +350,44 @@ class RedactionContext:
         assigned = self._pool_assigned.setdefault(self._pool_key_for(type_key, text), [])
         if word not in assigned:
             assigned.append(word)
+
+    def _generate_derived_replacement(self, pool_key: str, text: str) -> str | None:
+        """编号派生：基名+序号（陈某1/某公司1），序号按基名独立累计且不与已占用词撞车。"""
+        base = self._derived_base(pool_key, text)
+        if not base:
+            return None
+        assigned = self._pool_assigned.setdefault(pool_key, [])
+        taken = set(assigned) | {text}
+        seq = self._derived_seq.get(base, 0)
+        while True:
+            seq += 1
+            word = f"{base}{seq}"
+            if word not in taken:
+                break
+        self._derived_seq[base] = seq
+        assigned.append(word)
+        return word
+
+    @staticmethod
+    def _derived_base(pool_key: str, text: str) -> str | None:
+        """池键 + 原文 → 派生基名。人名取姓氏，机关按名称后缀关键词，其余统一基名。"""
+        text = text or ""
+        if pool_key == "PERSON":
+            if _CJK_RE.match(text[:1]):
+                return f"{text[0]}某"
+            return "某人"
+        if pool_key == "INSTITUTION_NAME":
+            if DERIVED_GOV_EXTRA_RE.search(text):
+                return "某委员会"
+            return "某公司"
+        if pool_key == "GOVERNMENT_AGENCY":
+            m = INSTITUTION_GOV_TEXT_RE.search(text)
+            if m:
+                return f"某{m.group(1)}"
+            return "某单位"
+        if pool_key == "BANK_NAME":
+            return "某银行"
+        return None
 
     def _pool_key_for(self, type_key: str, text: str) -> str:
         """实体类型 → 词池键：别名归并后，再按机构名文本特征精化（机关/银行）。"""

@@ -148,9 +148,9 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     from app.services import word_pool_service
 
     monkeypatch.setattr(settings, "WORD_POOL_STORE_PATH", str(tmp_path / "wp.json"))
-    # 默认词池可读
+    # 默认词池可读（出厂 derived 策略）
     merged = word_pool_service.load_word_pools()
-    assert "张三" in merged["PERSON"]["words"]
+    assert merged["PERSON"]["strategy"] == "derived"
     # 租户覆盖 + 回退
     svc = word_pool_service
     svc.update_word_pool("PERSON", svc.WordPoolUpdate(
@@ -159,7 +159,7 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     assert view["merged"]["PERSON"]["words"] == ["赵大", "钱二"]
     assert svc.load_word_pools(owner_id="u1")["PERSON"]["custom_map"]["老王"] == "老李"
     # 其它租户不受影响
-    assert "张三" in svc.load_word_pools(owner_id="u2")["PERSON"]["words"]
+    assert svc.load_word_pools(owner_id="u2")["PERSON"]["strategy"] == "derived"
     # 导入导出
     exported = svc.export_word_pools(owner_id="u1")
     count = svc.import_word_pools(exported, owner_id="u3")
@@ -167,7 +167,7 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     assert svc.load_word_pools(owner_id="u3")["PERSON"]["custom_map"]["老王"] == "老李"
     # 删除覆盖回退默认
     assert svc.delete_word_pool("PERSON", owner_id="u1") is True
-    assert "张三" in svc.load_word_pools(owner_id="u1")["PERSON"]["words"]
+    assert svc.load_word_pools(owner_id="u1")["PERSON"]["strategy"] == "derived"
 
 
 def test_pool_word_equal_to_entity_text_not_identity_replaced():
@@ -298,3 +298,93 @@ def test_base_pool_custom_map_fallback_for_refined_text():
     }
     ctx = _ctx(pools)
     assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "自定义机关甲"
+
+
+# ---------- derived 策略：司法编号式化名（张某1/某公司1，Issue #6 T2） ----------
+
+DERIVED_POOLS = {
+    "PERSON": {"words": [], "strategy": "derived", "custom_map": {}},
+    "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+    "BANK_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+}
+
+
+def test_derived_person_surname_and_per_surname_seq():
+    """人名取原文姓氏 + 某 + 同姓独立序号：陈明飞→陈某1、陈成龙→陈某2、李四光→李某1。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某1"
+    assert ctx.get_replacement(_entity("陈成龙", coref="c2")) == "陈某2"
+    assert ctx.get_replacement(_entity("李四光", coref="c3")) == "李某1"
+    # 同一原文全文一致（含 coref 混排）
+    assert ctx.get_replacement(_entity("陈明飞", coref="c9")) == "陈某1"
+
+
+def test_derived_person_non_cjk_fallback():
+    """非中文人名无法取姓氏时回退「某人N」。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("John Smith", coref="c1")) == "某人1"
+    assert ctx.get_replacement(_entity("A001", coref="c2")) == "某人2"
+
+
+def test_derived_person_text_collision_bumped():
+    """原文恰好等于将生成的编号词时顺延，不能原样替换（陈某1→陈某2）。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("陈某1", coref="c1")) == "陈某2"
+
+
+def test_derived_institution_numbered():
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("宏图贸易有限公司", "INSTITUTION_NAME", "c1")) == "某公司1"
+    assert ctx.get_replacement(_entity("星辰科技", "INSTITUTION_NAME", "c2")) == "某公司2"
+
+
+def test_derived_gov_keyword_and_seq():
+    """机关按名称后缀关键词派生基名并按关键词独立编号。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("某市公安局", "INSTITUTION_NAME", "c1")) == "某公安局1"
+    assert ctx.get_replacement(_entity("乙县公安局", "INSTITUTION_NAME", "c2")) == "某公安局2"
+    assert ctx.get_replacement(_entity("某县人民法院", "INSTITUTION_NAME", "c3")) == "某人民法院1"
+    # 委员会结尾：池键仍归公司池（存量池精化不变），仅派生基名按委员会取
+    assert ctx.get_replacement(_entity("某市监察委员会", "INSTITUTION_NAME", "c4")) == "某委员会1"
+    assert ctx.get_replacement(_entity("某区人大常务委员会", "INSTITUTION_NAME", "c5")) == "某委员会2"
+
+
+def test_derived_person_empty_and_single_char():
+    """空文本/单字人名：无法可靠取姓时回退「某人N」，单字姓氏照常派生。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("", coref="c1")) == "某人1"
+    assert ctx.get_replacement(_entity("陈", coref="c2")) == "陈某1"
+
+
+def test_derived_bank_uniform():
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("工商银行某支行", "INSTITUTION_NAME", "c1")) == "某银行1"
+    assert ctx.get_replacement(_entity("建设银行", "INSTITUTION_NAME", "c2")) == "某银行2"
+
+
+def test_derived_explicit_mapping_still_wins():
+    ctx = _ctx(DERIVED_POOLS)
+    ctx.set_custom_replacements({"陈明飞": "甲方代表"})
+    assert ctx.get_replacement(_entity("陈明飞")) == "甲方代表"
+
+
+def test_derived_avoids_reserved_word():
+    """显式映射占用的词（含已派生词形）不再发给其他实体。"""
+    pools = {"PERSON": {"words": [], "strategy": "derived", "custom_map": {}}}
+    ctx = _ctx(pools)
+    ctx.set_custom_replacements({"甲某": "陈某1"})
+    assert ctx.get_replacement(_entity("甲某")) == "陈某1"
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某2"
+
+
+def test_default_pools_ship_derived_style():
+    """默认词池出厂即 derived：无需配置即得司法编号式化名；租户覆盖仍可换回词池。"""
+    from app.services import word_pool_service as svc
+
+    merged = svc.load_word_pools()
+    for key in ("PERSON", "INSTITUTION_NAME", "GOVERNMENT_AGENCY", "BANK_NAME"):
+        assert merged[key]["strategy"] == "derived"
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=merged)
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某1"
+    assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局1"

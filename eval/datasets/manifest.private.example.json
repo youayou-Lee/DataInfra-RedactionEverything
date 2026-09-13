@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "access": "private",
+  "notice": "示例文件（真实文件 manifest.private.json 不入库）。用 eval/scripts/build_real_set.py 在本地/云实例各自生成。",
+  "files": [
+    {"id": "real_<case>_<desc>_p1-15", "path": "/abs/path/to/real_xxx.pdf", "gt": null,
+     "source": "real", "carrier": "scanned_pdf", "doc_type": "real", "density": "n/a",
+     "pages": 15, "generator": "build_real_set.py <- <源相对路径> p1-15",
+     "levels": ["e2e"], "access": "private", "why": "<选样理由>", "notes": "<选样理由>"}
+  ]
+}

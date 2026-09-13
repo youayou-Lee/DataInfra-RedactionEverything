@@ -33,8 +33,10 @@ sys.path.insert(0, str(_REPO_ROOT / "backend" / "scripts" / "eval"))
 
 import common_api  # noqa: E402
 import eval_ner_quality as nerq  # noqa: E402
+import indicator_meta  # noqa: E402
 
 MANIFEST_PATH = _REPO_ROOT / "eval" / "datasets" / "manifest.json"
+PRIVATE_MANIFEST_PATH = _REPO_ROOT / "eval" / "datasets" / "manifest.private.json"
 NER_CORPUS_ID = "ner_corpus_10p"
 DOC_LEVEL_CARRIERS = {"docx", "txt"}  # GT 单页聚合，与 vision 分页不可对齐 → 文档级
 
@@ -58,8 +60,13 @@ def percentile(values: list[float], p: float) -> float:
 
 
 def load_manifest(suite: str, only: list[str] | None = None) -> list[dict]:
-    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    files = [f for f in manifest["files"] if "e2e" in f["levels"]]
+    """公开 manifest + 私有 manifest（真实案卷，存在时合并；铁律：私有数据/清单不入 GitHub）。"""
+    files: list[dict] = []
+    for path in (MANIFEST_PATH, PRIVATE_MANIFEST_PATH):
+        if not path.exists():
+            continue
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        files += [f for f in manifest["files"] if "e2e" in f["levels"]]
     if suite != "all":
         files = [f for f in files if f["source"] == suite]
     if only:
@@ -183,13 +190,41 @@ def e2e_core_metrics(records: list[dict], gt_raw: dict[str, list[str]],
 
 
 def run_e2e_file(api: common_api.EvalApi, spec: dict, args: argparse.Namespace) -> dict:
-    file_path = _REPO_ROOT / "eval" / "datasets" / spec["path"]
-    gt_path = _REPO_ROOT / "eval" / "datasets" / spec["gt"]
-    gt = json.loads(gt_path.read_text(encoding="utf-8"))
-    gt_pages = gt["pages"]
-    doc_level = spec["carrier"] in DOC_LEVEL_CARRIERS
+    file_path = _REPO_ROOT / "eval" / "datasets" / spec["path"] if not Path(spec["path"]).is_absolute() \
+        else Path(spec["path"])
+    gt_path = _REPO_ROOT / "eval" / "datasets" / spec["gt"] if spec.get("gt") else None
+    gt = json.loads(gt_path.read_text(encoding="utf-8")) if gt_path else None
+    gt_pages = gt["pages"] if gt else [{"page": i, "entities": {}} for i in range(
+        max(spec.get("pages", 1), 1))]
+    perf_only = gt is None  # 真实私有子集 v1：无 GT → 只测速度/稳健性，不评效果（不虚构指标）
+
+    # 加密边界样本：明确报错拒绝=通过（挂死/静默零框=失败）
+    if spec["carrier"] == "encrypted_pdf":
+        import httpx as _httpx
+        started = time.perf_counter()
+        try:
+            file_id = api.upload(file_path)
+        except _httpx.HTTPStatusError as exc:
+            return {"file": {"id": spec["id"], "carrier": spec["carrier"],
+                             "doc_type": spec["doc_type"], "density": spec["density"], "gt_entities": 0},
+                    "robustness": {"outcome": "rejected",
+                                   "detail": f"HTTP {exc.response.status_code}（{exc.response.text[:80]}）",
+                                   "wall_s": round(time.perf_counter() - started, 3)},
+                    "perf": None}
+        try:  # 上传成功（不该发生）→ 视为稳健性 FAIL 样本照测
+            pages = common_api.iter_pages_with_timing(api, file_id, max(len(gt_pages), 1))
+        finally:
+            api.delete_file(file_id)
+        return {"file": {"id": spec["id"], "carrier": spec["carrier"], "doc_type": spec["doc_type"],
+                         "density": spec["density"], "gt_entities": 0},
+                "robustness": {"outcome": "accepted_should_reject", "detail": "加密卷被正常受理（未拒绝）",
+                               "wall_s": round(time.perf_counter() - started, 3)},
+                "perf": {"pages_total": len(pages), "warmup_pages": 0, "steady_pages": len(pages),
+                         "wall_s": {"total": round(sum(p["wall_s"] for p in pages), 3)},
+                         "throughput_pages_per_min": None, "duration_ms": {}, "pages_detail": pages}}
 
     file_id = api.upload(file_path)
+    doc_level = spec["carrier"] in DOC_LEVEL_CARRIERS
     try:
         if doc_level:  # docx/txt：vision 不支持，走 parse + hybrid NER（设计文档 D7）
             pred_entities, wall = api.parse_and_hybrid_ner(file_id)
@@ -200,6 +235,25 @@ def run_e2e_file(api: common_api.EvalApi, spec: dict, args: argparse.Namespace) 
                                                       warmup_pages=args.warmup_pages)
     finally:
         api.delete_file(file_id)
+
+    steady = [p for p in pages if not p["warmup"]]
+    walls = [p["wall_s"] for p in steady]
+    empty_pages = sum(1 for p in steady if not any(p["entities"].values()))
+
+    if perf_only:
+        return {"file": {"id": spec["id"], "carrier": spec["carrier"], "doc_type": spec["doc_type"],
+                         "density": spec["density"], "gt_entities": 0},
+                "perf": {"pages_total": len(pages), "warmup_pages": args.warmup_pages,
+                         "steady_pages": len(steady),
+                         "wall_s": {"total": round(sum(p["wall_s"] for p in pages), 3),
+                                    "mean": round(sum(walls) / len(walls), 3) if walls else 0,
+                                    "p50": round(percentile(walls, 50), 3),
+                                    "p95": round(percentile(walls, 95), 3)},
+                         "throughput_pages_per_min": round(len(steady) * 60 / sum(walls), 3) if walls else None,
+                         "duration_ms": {}, "pages_detail": pages},
+                "robustness": {"outcome": "ok", "detail": f"{len(steady)} steady 页，空框页 {empty_pages}",
+                               "wall_s": round(sum(p["wall_s"] for p in pages), 3),
+                               "empty_pages": empty_pages}}
 
     records, gt_raw_all, pred_raw_all = [], {}, {}
     for i, gt_page in enumerate(gt_pages):
@@ -267,28 +321,38 @@ def run_e2e_level(args: argparse.Namespace) -> dict:
                 continue
             metrics["file"]["eval_wall_s"] = round(time.perf_counter() - started, 3)
             per_file.append(metrics)
-            m = metrics["overall"]
-            print(f"  {spec['id']}: P={m['precision']:.3f} R={m['recall']:.3f} "
-                  f"F1={m['f1']:.3f} gate={'✅' if metrics['digital_gate']['pass'] else '❌'} "
-                  f"wall={metrics['perf']['wall_s']['total']}s")
+            if "overall" in metrics:
+                m = metrics["overall"]
+                print(f"  {spec['id']}: P={m['precision']:.3f} R={m['recall']:.3f} "
+                      f"F1={m['f1']:.3f} gate={'✅' if metrics['digital_gate']['pass'] else '❌'} "
+                      f"wall={metrics['perf']['wall_s']['total']}s")
+            else:  # 速度/稳健性条目（真实私有子集 gt=null）
+                r = metrics.get("robustness") or {}
+                print(f"  {spec['id']}: [{r.get('outcome', '?')}] {r.get('detail', '')[:60]}")
     finally:
         api.close()
     if not per_file:
         raise SystemExit("全部文件失败，无结果可报告")
 
-    all_records = []
-    for fm in per_file:
-        for rec in fm["records"]:
-            all_records.append({"page_id": f"{fm['file']['id']}#{rec['page_id']}", "gt": rec["gt"],
-                                "pred": rec["pred"], "latency_sec": rec["latency_sec"]})
-    # 总体 P/R/宽松口径：页级 records 聚合（nerq 权威口径：每页每类型去重后累加）；
-    # 数字保真：逐文件桶求和（文件内去重、跨文件累加）——与 per_file 对账一致（评审 I-B：
-    # 全局去重会折叠跨文件复用的同串，总体与分文件加总对不上，且与 nerq 分母口径分叉）。
-    overall = e2e_core_metrics(all_records, {}, {})
-    overall["digital"] = merge_file_digital(per_file)
-    gate_ok, gate_failures = nerq.digital_gate_pass(overall)
-    overall["digital_gate"] = {"pass": gate_ok, "failures": gate_failures}
-    return {"per_file": per_file, "failed": failed, "overall": overall}
+    quality_files = [fm for fm in per_file if "overall" in fm]
+    overall: dict = {}
+    if quality_files:
+        all_records = []
+        for fm in quality_files:
+            for rec in fm["records"]:
+                all_records.append({"page_id": f"{fm['file']['id']}#{rec['page_id']}", "gt": rec["gt"],
+                                    "pred": rec["pred"], "latency_sec": rec["latency_sec"]})
+        # 总体 P/R/宽松口径：页级 records 聚合（nerq 权威口径：每页每类型去重后累加）；
+        # 数字保真：逐文件桶求和（文件内去重、跨文件累加）——与 per_file 对账一致（评审 I-B：
+        # 全局去重会折叠跨文件复用的同串，总体与分文件加总对不上，且与 nerq 分母口径分叉）。
+        overall = e2e_core_metrics(all_records, {}, {})
+        overall["digital"] = merge_file_digital(quality_files)
+        gate_ok, gate_failures = nerq.digital_gate_pass(overall)
+        overall["digital_gate"] = {"pass": gate_ok, "failures": gate_failures}
+    result = {"per_file": per_file, "failed": failed, "overall": overall,
+              "rejected": [fm["file"]["id"] for fm in per_file
+                           if fm.get("robustness", {}).get("outcome") == "rejected"]}
+    return result
 
 
 def merge_file_digital(per_file: list[dict]) -> dict:
@@ -338,7 +402,8 @@ def build_e2e_baseline_comparison(metrics: dict, args: argparse.Namespace) -> di
 def main() -> int:
     parser = argparse.ArgumentParser(description="一键评测（Issue #37）")
     parser.add_argument("--level", choices=["ner", "e2e"], required=True)
-    parser.add_argument("--suite", choices=["synthetic", "pseudonymized", "all"], default="synthetic")
+    parser.add_argument("--suite", choices=["synthetic", "pseudonymized", "real", "all"],
+                        default="synthetic", help="real=真实案卷私有子集（manifest.private.json）")
     parser.add_argument("--only", default=None,
                         help="e2e：只跑指定 id（逗号分隔，冒烟/调试用）")
     parser.add_argument("--api-base", default="http://127.0.0.1:8000")
@@ -362,7 +427,7 @@ def main() -> int:
         metrics = asyncio.run(run_ner_level(args))
     else:
         metrics = run_e2e_level(args)
-        if args.baseline:
+        if args.baseline and metrics.get("overall"):
             metrics["baseline_comparison"] = build_e2e_baseline_comparison(metrics, args)
     metrics["env"] = {"env_label": args.env_label, "target_label": args.target_label,
                       "level": args.level, "suite": args.suite, "git": git_rev(),
@@ -378,20 +443,29 @@ def main() -> int:
         for fm in slim.get("per_file", []):
             for internal in ("_gt_raw", "_pred_raw", "records"):
                 fm.pop(internal, None)
-            if not args.with_perf:
+            if not args.with_perf and fm.get("perf"):
                 fm["perf"].pop("pages_detail", None)
-        slim["overall"].pop("records", None)
+        if slim.get("overall"):
+            slim["overall"].pop("records", None)
     (out_dir / f"{stem}.json").write_text(json.dumps(slim, ensure_ascii=False, indent=2,
                                                      default=str), encoding="utf-8")
     if args.level == "ner":
-        md = nerq.render_markdown(metrics) + "\n## 环境\n\n" + "\n".join(env_header(args)) + "\n"
+        summary_md = ("## 管理者摘要\n\n> NER 引擎层：纯模型对比（无 OCR 噪声），"
+                      "是 LLM NER 实验的判定层。\n\n"
+                      + indicator_meta.render_summary_md(indicator_meta.build_ner_summary(metrics)))
+        md = (f"# NER 引擎层评测（Issue #37）：{args.target_label}\n\n" + "\n".join(env_header(args))
+              + "\n\n" + summary_md + "\n\n" + nerq.render_markdown(metrics)
+              + "\n## 指标字典\n\n" + indicator_meta.render_dictionary_md() + "\n")
     else:
         md = render_e2e_markdown(metrics, args)
     (out_dir / f"{stem}.md").write_text(md, encoding="utf-8")
     print(f"OK -> {out_dir}/{stem}.{{json,md}}")
 
-    if args.level == "e2e":  # 一票否决闸门控制退出码（评审 I-C：e2e 键在 overall 下）
-        gate = metrics["overall"]["digital_gate"]["pass"]
+    if args.level == "e2e":
+        if metrics.get("overall"):  # 效果+速度混合运行：数字闸门仍控制退出码
+            gate = metrics["overall"]["digital_gate"]["pass"]
+        else:  # 纯真实子集（速度/稳健性，无 GT）：有失败文件才算失败
+            gate = not metrics.get("failed")
     elif metrics.get("comparison"):  # ner 层带基线：三闸门判定
         gate = metrics["comparison"]["gate_pass"]
     else:  # ner 层无基线：至少单测数字闸门
@@ -410,52 +484,107 @@ def env_header(args: argparse.Namespace) -> list[str]:
     ]
 
 
+def _perf_agg(per_file: list[dict]) -> dict:
+    """跨文件速度聚合：全稳态页墙钟池 + 空框页计数（供管理者摘要）。"""
+    walls, empty = [], 0
+    for fm in per_file:
+        for p in fm["perf"].get("pages_detail") or []:
+            if p.get("warmup"):
+                continue
+            walls.append(p["wall_s"])
+            if not any(p.get("entities") or {}):
+                empty += 1
+    total_steady = sum(fm["perf"].get("steady_pages", 0) or 0 for fm in per_file)
+    return {"pages": total_steady,
+            "p50": percentile(walls, 50), "p95": percentile(walls, 95),
+            "throughput": (total_steady * 60 / sum(walls)) if walls else 0,
+            "empty_pages": empty}
+
+
 def render_e2e_markdown(result: dict, args: argparse.Namespace) -> str:
     overall = result["overall"]
-    lines = [f"# 端到端评测（Issue #37）：{args.target_label}", ""] + env_header(args) + [
-        "",
-        "## 汇总（全部文件 micro 聚合）",
-        "",
-        f"- P={overall['overall']['precision']:.4f} R={overall['overall']['recall']:.4f} "
-        f"F1={overall['overall']['f1']:.4f}（tp {overall['overall']['tp']} / fp {overall['overall']['fp']} "
-        f"/ fn {overall['overall']['fn']}）",
-        f"- 数字保真闸门：{'✅ 通过' if overall['digital_gate']['pass'] else '❌ FAIL'}",
-        f"- 宽松口径（span 对、类型错）：{overall['loose']['wrong_type']} 条"
-        + ("" if not overall['loose']['type_confusion_top'] else
-           "，混淆 Top：" + "、".join(f"{k}×{v}" for k, v in overall['loose']['type_confusion_top'].items())),
-        "",
-        "| 类型 | P | R | F1 | tp | fp | fn |", "|---|---|---|---|---|---|---|",
-    ]
-    for etype, s in overall["per_type"].items():
-        lines.append(f"| {etype} | {s['precision']:.4f} | {s['recall']:.4f} | {s['f1']:.4f} "
-                     f"| {s['tp']} | {s['fp']} | {s['fn']} |")
-    lines += ["", "## 数字实体逐字保真（一票否决区）", "",
-              "| 类型 | exact | near_miss | miss | exact_rate |", "|---|---|---|---|---|"]
-    for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
-        s = overall["digital"].get(etype)
-        if s:
-            lines.append(f"| {etype} | {s['exact']} | {s['near_miss']} | {s['miss']} | {s['exact_rate']:.4f} |")
-            for v, w in s.get("near_miss_detail") or []:
-                lines.append(f"  - near_miss: GT={v!r} PRED={w!r}")
-            for v in s.get("miss_detail") or []:
-                lines.append(f"  - miss: {v!r}")
-    lines += ["", "## 分文件", "",
-              "| 文件 | 载体 | GT 实体 | P | R | F1 | 数字闸门 | 总耗时 s | 页/分钟 |",
-              "|---|---|---|---|---|---|---|---|---|"]
-    for fm in result["per_file"]:
-        f, m = fm["file"], fm["overall"]
-        tput = fm["perf"]["throughput_pages_per_min"]
-        lines.append(f"| {f['id']} | {f['carrier']} | {f['gt_entities']} | {m['precision']:.4f} "
-                     f"| {m['recall']:.4f} | {m['f1']:.4f} | {'✅' if fm['digital_gate']['pass'] else '❌'} "
-                     f"| {fm['perf']['wall_s']['total']} | {tput if tput is not None else 'n/a'} |")
+    per_file = result["per_file"]
+    lines = [f"# 端到端评测（Issue #37）：{args.target_label}", ""] + env_header(args) + [""]
+
+    # ---- 一、管理者摘要（先看这里：指标 + 意义 + 状态灯）----
+    perf_agg = _perf_agg([fm for fm in per_file if fm.get("perf")])
+    rejected = result.get("rejected") or []
+    if overall:
+        summary = indicator_meta.build_e2e_summary(overall, perf_agg, len(result.get("failed") or []),
+                                                   ner_baseline=None)
+    else:  # 纯真实子集（速度/稳健性，无 GT）
+        summary = indicator_meta.build_real_summary(perf_agg, len(result.get("failed") or []), rejected)
+    lines += ["## 一、管理者摘要", "",
+              "> 先看本节：状态灯 ✅⚠️❌ 与「目标/参考」列给出该指标是否健康的判断；",
+              "> 每个指标的准确定义见文末「指标字典」；逐文件/逐类型明细在本节之后。", "",
+              indicator_meta.render_summary_md(summary), ""]
+
+    # ---- 速度/稳健性专属节（真实子集或有稳健性条目时）----
+    robust_files = [fm for fm in per_file if fm.get("robustness")]
+    if robust_files:
+        lines += ["## 二、真实案卷速度与稳健性（无 GT，不评效果）", "",
+                  "| 文件 | 载体 | 页数 | 总耗时 s | p50 s | p95 s | 页/分钟 | 空框页 | 结果 |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        for fm in robust_files:
+            f, r = fm["file"], fm["robustness"]
+            pf = fm.get("perf") or {}
+            ws = pf.get("wall_s") or {}
+            lines.append(
+                f"| {f['id']} | {f['carrier']} | {pf.get('steady_pages', '-')} | {ws.get('total', '-')} "
+                f"| {ws.get('p50', '-')} | {ws.get('p95', '-')} "
+                f"| {pf.get('throughput_pages_per_min') or 'n/a'} | {r.get('empty_pages', '-')} "
+                f"| {r['outcome']} |")
+        for fm in robust_files:
+            if fm["robustness"]["outcome"] != "ok":
+                lines.append(f"- ⚠️ {fm['file']['id']}: {fm['robustness']['outcome']} — "
+                             f"{fm['robustness']['detail']}")
+        lines.append("")
+
+    # ---- 效果明细（有 GT 时）----
+    if overall:
+        lines += ["## 效果汇总（全部文件 micro 聚合）", "",
+                  f"- P={overall['overall']['precision']:.4f} R={overall['overall']['recall']:.4f} "
+                  f"F1={overall['overall']['f1']:.4f}（tp {overall['overall']['tp']} / fp {overall['overall']['fp']} "
+                  f"/ fn {overall['overall']['fn']}）",
+                  f"- 数字保真闸门：{'✅ 通过' if overall['digital_gate']['pass'] else '❌ FAIL'}",
+                  f"- 宽松口径（span 对、类型错）：{overall['loose']['wrong_type']} 条"
+                  + ("" if not overall['loose']['type_confusion_top'] else
+                     "，混淆 Top：" + "、".join(f"{k}×{v}" for k, v in
+                                              overall['loose']['type_confusion_top'].items())),
+                  "", "| 类型 | P | R | F1 | tp | fp | fn |", "|---|---|---|---|---|---|---|"]
+        for etype, s in overall["per_type"].items():
+            lines.append(f"| {etype} | {s['precision']:.4f} | {s['recall']:.4f} | {s['f1']:.4f} "
+                         f"| {s['tp']} | {s['fp']} | {s['fn']} |")
+        lines += ["", "## 数字实体逐字保真明细（一票否决区：漏了哪些、错成什么样）", "",
+                  "| 类型 | exact | near_miss | miss | exact_rate |", "|---|---|---|---|---|"]
+        for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
+            s = overall["digital"].get(etype)
+            if s:
+                lines.append(f"| {etype} | {s['exact']} | {s['near_miss']} | {s['miss']} | {s['exact_rate']:.4f} |")
+                for v, w in s.get("near_miss_detail") or []:
+                    lines.append(f"  - near_miss: GT={v!r} PRED={w!r}")
+                for v in s.get("miss_detail") or []:
+                    lines.append(f"  - miss: {v!r}")
+        quality_files = [fm for fm in per_file if "overall" in fm]
+        lines += ["", "## 分文件效果", "",
+                  "| 文件 | 载体 | GT 实体 | P | R | F1 | 数字闸门 | 总耗时 s | 页/分钟 |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        for fm in quality_files:
+            f, m = fm["file"], fm["overall"]
+            tput = fm["perf"]["throughput_pages_per_min"]
+            lines.append(f"| {f['id']} | {f['carrier']} | {f['gt_entities']} | {m['precision']:.4f} "
+                         f"| {m['recall']:.4f} | {m['f1']:.4f} | {'✅' if fm['digital_gate']['pass'] else '❌'} "
+                         f"| {fm['perf']['wall_s']['total']} | {tput if tput is not None else 'n/a'} |")
     if result.get("failed"):
         lines += ["", "## 失败文件（隔离记录）", ""] + [
             f"- {x['id']}: {x['error']}" for x in result["failed"]]
-    lines += ["", "## 速度分解（steady 页，duration_ms 埋点）", "",
-              "| 文件 | 段 | mean ms | p95 ms |", "|---|---|---|---|"]
-    for fm in result["per_file"]:
-        for key, s in fm["perf"]["duration_ms"].items():
-            lines.append(f"| {fm['file']['id']} | {key} | {s['mean']} | {s['p95']} |")
+    perf_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("duration_ms")]
+    if perf_files:
+        lines += ["", "## 速度分解（steady 页，duration_ms 埋点：单页时间花在哪）", "",
+                  "| 文件 | 段 | mean ms | p95 ms |", "|---|---|---|---|"]
+        for fm in perf_files:
+            for key, s in fm["perf"]["duration_ms"].items():
+                lines.append(f"| {fm['file']['id']} | {key} | {s['mean']} | {s['p95']} |")
     comparison = result.get("baseline_comparison")
     if comparison:
         lines += ["", f"## 与基线对比（{comparison['baseline_label']}）", ""]
@@ -466,6 +595,7 @@ def render_e2e_markdown(result: dict, args: argparse.Namespace) -> str:
         for key, row in comparison["rows"].items():
             lines.append(f"| {key} | {row['baseline']:.4f} | {row['current']:.4f} | "
                          f"{row['current'] - row['baseline']:+.4f} |")
+    lines += ["", "## 指标字典（全部指标的准确定义）", "", indicator_meta.render_dictionary_md(), ""]
     return "\n".join(lines) + "\n"
 
 

@@ -138,6 +138,8 @@ python eval/scripts/run_eval.py --level e2e \
 - **D6 生成器 import 而非复制 make_ner_gt_corpus**：`sys.path` 注入 `backend/scripts/eval` 后 `import make_ner_gt_corpus`（有 test_eval_ner_quality 先例），模板/口径漂移由既有防漂移契约测试继续锁。
 - **D7 docx/txt 走 parse + hybrid NER 链路（云实测发现）**：backend vision 端点仅支持 pdf/图片，对 txt/docx 返回 404「Unsupported file type for vision」。docx/txt 载体在 e2e 层改走 `GET /files/{id}/parse → POST /files/{id}/ner/hybrid`（HaS+正则+共指，与 Playground 文本链路一致），指标口径不变（文档级聚合）；另 txt 条目改独立 id `syn_contract_txt_1p_mid`（修复与 scanned 条目的 id 冲突）。
 - **D8 确定性口径为内容级（评审 C2 修复过程中实测降级）**：GT/txt/jsonl 逐字节一致；docx 固定 core.xml 与 zip 条目时间戳后逐字节一致；PDF 已固定 trailer /ID 与元数据，但 `tobytes(garbage=4)` 的对象序受运行时堆布局影响，字节级偶发漂移（实测排除 /ID 后仍存在，约 1/8 复现）——**PDF 以内容摘要锁定**（页数+逐页文本层+图像存在性，单测强制），不做逐字节承诺。评测消费的是 GT 与文本，PDF 字节与评测正确性无关。
+- **D9 真实案卷私有子集（2026-09-14 用户要求）**：合成数据过于理想化，从本地案卷库（xbg，44G/540 PDF）按覆盖矩阵选 12 条目/约 145 页建「速度与稳健性」子集——真实扫描噪声、盖章票据、流水凭证、加密边界；大卷 pymupdf select 切 10-15 页片段（不重采样），同卷首+中两段观察漂移。**数据与 manifest.private.json 均不入 GitHub**（铁律落地：.gitignore 显式条目 + example 文件入库）。gt=null → 只测速度/稳健性不评效果（不虚构指标）；扫描件效果 GT 需人工标注留待后续，真实文本层 PDF 可走化名管线人工复核建 GT。
+- **D10 报告分「管理者摘要 + 明细」双层（2026-09-14 用户要求）**：每份报告第一节为管理者摘要（指标/本次值/目标参考/状态灯/一句话业务含义，数字保真>召回>精确>速度的优先级），末节为指标字典（全部指标定义），中间保留全部明细（分类型/分文件/数字分级/速度分解）——一眼看健康度，随手挖根因。指标元数据唯一源 `indicator_meta.py`。
 
 ## 8. 非目标（v1 明确不做）
 

@@ -22,6 +22,7 @@ def _load(name: str, path: Path):
 
 common_api = _load("common_api_under_test", SCRIPTS_DIR / "common_api.py")
 run_eval = _load("run_eval_under_test", SCRIPTS_DIR / "run_eval.py")
+indicator_meta = run_eval.indicator_meta  # run_eval 已 import（同目录 sys.path）
 nerq = sys.modules.get("eval_ner_quality") or _load(
     "eval_ner_quality_direct", REPO_ROOT / "backend" / "scripts" / "eval" / "eval_ner_quality.py")
 
@@ -127,6 +128,66 @@ def test_load_manifest_suite_filter():
     ner_only = [f for f in manifest["files"] if "ner" in f["levels"]]
     assert len(ner_only) == 1 and ner_only[0]["id"] == run_eval.NER_CORPUS_ID
     assert all(f["id"] != run_eval.NER_CORPUS_ID for f in all_files)  # e2e 层不含 ner 语料
+
+
+def test_load_manifest_merges_private(tmp_path, monkeypatch):
+    """v2：私有 manifest（真实案卷）存在时合并；suite=real 只取私有条目。"""
+    private = tmp_path / "manifest.private.json"
+    private.write_text(json.dumps({"files": [
+        {"id": "real_x", "path": "/tmp/real_x.pdf", "gt": None, "source": "real",
+         "carrier": "scanned_pdf", "levels": ["e2e"], "access": "private"}]}), encoding="utf-8")
+    monkeypatch.setattr(run_eval, "PRIVATE_MANIFEST_PATH", private)
+    real = run_eval.load_manifest("real")
+    assert [f["id"] for f in real] == ["real_x"]
+    merged = run_eval.load_manifest("all")
+    assert any(f["id"] == "real_x" for f in merged) and any(f["source"] == "synthetic" for f in merged)
+
+
+def test_indicator_meta_summary_rows():
+    """v2 管理者摘要：每行必须带指标名/本次值/目标/状态/说明五要素。"""
+    overall = {"overall": {"precision": 0.84, "recall": 0.86, "f1": 0.85, "tp": 1, "fp": 0, "fn": 1},
+               "digital": {"电话": {"total_gt": 10, "exact": 5, "near_miss": 3, "miss": 2}},
+               "loose": {"wrong_type": 1, "type_confusion_top": {}}}
+    perf = {"pages": 10, "p50": 13.0, "p95": 26.0, "throughput": 4.0, "empty_pages": 2}
+    rows = indicator_meta.build_e2e_summary(overall, perf, failed_count=1)
+    for row in rows:
+        assert all(k in row for k in ("指标", "本次", "目标/参考", "状态", "说明")), row
+    by_name = {r["指标"]: r for r in rows}
+    assert by_name["数字保真 exact 率"]["状态"] == "❌"  # 5/10 未达 100% 红线
+    assert by_name["失败文件 / 空框页"]["本次"] == "1 / 2"
+    md = indicator_meta.render_summary_md(rows)
+    assert "| 指标 |" in md and "数字保真" in md
+    assert len(indicator_meta.INDICATOR_DICTIONARY) >= 10  # 字典覆盖全部关键指标
+    real_rows = indicator_meta.build_real_summary(perf, 0, ["real_encrypted_supplement"])
+    assert any("加密卷拒识" in r["指标"] for r in real_rows)
+
+
+def test_render_e2e_markdown_real_only():
+    """v2：纯真实子集（无 overall）渲染速度/稳健性报告 + 管理者摘要，不出现效果表。"""
+    result = {
+        "overall": {}, "failed": [], "rejected": ["real_encrypted_supplement"],
+        "per_file": [
+            {"file": {"id": "real_zqc_wenshu", "carrier": "scanned_pdf", "gt_entities": 0},
+             "perf": {"pages_total": 15, "steady_pages": 14, "wall_s": {"total": 200.0, "p50": 14.0, "p95": 20.0},
+                      "throughput_pages_per_min": 4.3,
+                      "pages_detail": [{"warmup": True, "wall_s": 9.0, "entities": {"姓名": ["张"]}},
+                                       {"warmup": False, "wall_s": 14.0, "entities": {}},
+                                       {"warmup": False, "wall_s": 15.0, "entities": {"电话": ["138"]}}]},
+             "robustness": {"outcome": "ok", "detail": "14 steady 页，空框页 1", "empty_pages": 1}},
+            {"file": {"id": "real_encrypted_supplement", "carrier": "encrypted_pdf", "gt_entities": 0},
+             "perf": None,
+             "robustness": {"outcome": "rejected", "detail": "HTTP 400", "wall_s": 0.4}}],
+    }
+
+    class Args:
+        env_label = "t-env"
+        target_label = "t-real"
+        api_base = "http://x"
+    md = run_eval.render_e2e_markdown(result, Args())
+    assert "管理者摘要" in md and "指标字典" in md
+    assert "真实案卷速度与稳健性" in md and "rejected" in md
+    assert "加密卷拒识" in md  # 摘要含拒识行
+    assert "效果汇总" not in md  # 无 GT 不渲染效果表
 
 
 def test_merge_file_digital_sums_and_keeps_tuple_detail():

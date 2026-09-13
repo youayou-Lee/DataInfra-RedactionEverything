@@ -22,6 +22,13 @@ python eval/scripts/run_eval.py --level e2e --suite synthetic \
 python eval/scripts/run_eval.py --level e2e --suite synthetic \
     --baseline eval/reports/<上一版>.json --only syn_contract_1p_mid --with-perf ...
 
+# 2b) 真实案卷私有子集（速度/稳健性；数据与清单均不入 GitHub——铁律）
+#     本地/云实例各自构建（源路径不同）：
+python eval/scripts/build_real_set.py --src <案卷源目录> \
+    --out <数据目录不入库> --manifest eval/datasets/manifest.private.json
+python eval/scripts/run_eval.py --level e2e --suite real \
+    --api-base http://127.0.0.1:8000 --target-label <目标> --env-label <环境>
+
 # 3) 化名子集构建（真实非扫描样本，两段式，中间人工复核）
 python eval/scripts/build_pseudonym_set.py draft 真实样本.docx \
     --private-dir /root/private_data/eval37 --dataset-id pseudo_case_001 --api-base ...
@@ -68,6 +75,25 @@ e2e−ner 的差值 = OCR/路由链路引入的质量损失（最有诊断价值
 `build_all.py` 内 `MATRIX` 是唯一事实源（载体 × 文档类型 × 规模 × 密度 + 边界样本，
 共 15 文件 + 10 页 NER 语料）。扩展时改 MATRIX 重新生成，manifest 自动更新；
 `manifest.json` 驱动 e2e 评测的文件选择。
+
+## 指标怎么看（管理者摘要）
+
+每份报告第一节都是「管理者摘要」：指标 | 本次值 | 目标/参考 | 状态灯 | 一句话业务含义。
+优先级：数字保真（红线，必须 100%）> 召回（漏脱敏风险）> 精确（可读性）> 速度/吞吐。
+全部指标的准确定义在报告末尾「指标字典」；排查问题看其后的逐文件/逐类型明细与
+数字 near_miss/miss 分级（near_miss=空格型可自动修复，miss=真损失按层排查）。
+
+## 真实案卷私有子集（v2）
+
+- **与合成子集的分工**：合成集评「效果」（有 GT、可复现）；真实集评「速度与稳健性」
+  （真实扫描噪声/盖章/票据/流水，暂无 GT——扫描件 GT 需人工标注，后续按需建设；
+  真实文本层 PDF 可走化名管线人工复核建效果 GT）。
+- **入库红线**：真实数据与 `manifest.private.json`（含案名/路径）**永不入 GitHub**；
+  仓库只提交 `build_real_set.py` 与 `manifest.private.example.json`。
+- 选样矩阵与每条理由见 `build_real_set.py` 内 `SELECTION`（覆盖：文本层判决书/混合卷/
+  多台扫描仪的纯扫描卷/流水密集卷/最小文件/加密卷边界样本；大卷切 10-15 页片段，
+  同卷首+中两段观察质量漂移）。
+- 加密卷是**稳健性边界样本**：预期系统明确报错拒绝（挂死或静默零框=失败），不参与其他指标。
 
 ## 命名与缩写
 

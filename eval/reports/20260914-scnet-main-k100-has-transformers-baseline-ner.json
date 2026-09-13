@@ -854,8 +854,8 @@
     "target_label": "has-transformers-baseline",
     "level": "ner",
     "suite": "synthetic",
-    "git": "13cc5a2",
-    "generated_at": "2026-09-14T03:08:43",
+    "git": "705870d",
+    "generated_at": "2026-09-14T03:24:32",
     "with_perf": false
   }
 }

@@ -185,11 +185,11 @@ def test_render_e2e_markdown_real_only():
         target_label = "t-real"
         api_base = "http://x"
     md = run_eval.render_e2e_markdown(result, Args())
-    assert md.startswith("---") and "一句话结论" in md
-    assert "[!bug]" in md and "加密 PDF 未被拒绝" in md  # 稳健性缺陷重点展示
-    assert "全部文件一览" in md and "accepted_should_reject" in md
-    assert "分类型效果" not in md  # 无 GT 不渲染效果明细
-    assert "指标字典" in md
+    assert md.startswith("---") and "一句话诊断" in md
+    assert "稳健性（真实案卷，无标注不评效果）" in md  # 真实子集专节
+    assert "accepted_should_reject" in md and "应明确拒绝却被受理" in md  # 缺陷进行动项
+    assert "分类型 P/R/F1" not in md  # 无 GT 不渲染效果明细
+    assert "结论与行动" in md
 
 
 def test_merge_file_digital_sums_and_keeps_tuple_detail():
@@ -236,9 +236,10 @@ def test_render_e2e_markdown_smoke():
         api_base = "http://x"
     md = run_eval.render_e2e_markdown(result, Args())
     assert md.startswith("---") and "tags:" in md  # Obsidian frontmatter
-    assert "一句话结论" in md and "每 2 个敏感实体漏 1 个" in md  # 通俗话术
-    assert "[!danger]" in md or "[!warning]" in md  # 重点发现用状态 callout
-    assert "[!example]-" in md and "指标字典" in md  # 明细折叠 + 字典
-    assert "GT='138 0013 8000' → PRED='13800138000'" in md  # near_miss 真值渲染
+    assert "一句话诊断" in md and "发布冻结" in md  # 诊断结论先行（含决策）
+    assert "健康度速览" in md and "四信号" in md  # 管理者四信号
+    assert "[!danger]" in md and "预算消耗" in md  # SLO 预算隐喻
+    assert "指标翻译" in md and "结论与行动" in md  # 通俗翻译 + 行动项
+    assert "[!example]-" in md  # 明细折叠
 
 

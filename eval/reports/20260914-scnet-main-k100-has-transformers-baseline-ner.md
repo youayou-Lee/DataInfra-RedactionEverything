@@ -7,7 +7,7 @@ tags:
   - ner
 env: scnet-main-k100
 target: has-transformers-baseline
-git: 13cc5a2
+git: 705870d
 ---
 
 # NER 引擎层评测：has-transformers-baseline
@@ -16,6 +16,7 @@ git: 13cc5a2
 > 漏检：基本无漏检；误检 7%。
 > 数字保真：全部 55 个数字逐字符正确（红线达标）。
 > 单次识别约 7.1 秒。
+
 > [!success] 漏检：基本无漏检
 > 引擎层无 OCR 噪声，这里的召回是模型纯能力；候选 LLM 必须 ≥ 基线 −1pp。
 

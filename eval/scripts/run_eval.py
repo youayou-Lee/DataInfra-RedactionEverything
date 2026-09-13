@@ -300,6 +300,29 @@ def run_e2e_file(api: common_api.EvalApi, spec: dict, args: argparse.Namespace) 
     metrics["file"] = {"id": spec["id"], "carrier": spec["carrier"], "doc_type": spec["doc_type"],
                        "density": spec["density"], "gt_entities": sum(
                            len(vs) for p in gt_pages for vs in p["entities"].values())}
+
+    # 逐页错误明细（诊断报告「错误明细」节；数字在原串域分级，实体在去空白域判漏检）
+    error_rows: list[dict] = []
+    for i, gt_page in enumerate(gt_pages):
+        pred_page = pages[i]["entities"] if i < len(pages) else {}
+        for etype in nerq.DIGITAL_GATE_TYPES:
+            gt_vals = sorted(set(gt_page["entities"].get(etype, [])))
+            if not gt_vals:
+                continue
+            graded = nerq.grade_digital(gt_vals, pred_page.get(etype, []))
+            for v in graded["miss"]:
+                error_rows.append({"file": spec["id"], "page": i + 1, "type": etype,
+                                   "kind": "数字丢失", "expect": v, "actual": "—", "stage": "OCR/NER"})
+            for v, w in graded["near_miss"]:
+                error_rows.append({"file": spec["id"], "page": i + 1, "type": etype,
+                                   "kind": "数字字符噪声", "expect": v, "actual": w, "stage": "OCR"})
+        for etype, vals in gt_page["entities"].items():
+            pred_sq = {common_api.squash(x) for x in pred_page.get(etype, [])}
+            for v in sorted(set(vals)):
+                if common_api.squash(v) not in pred_sq:
+                    error_rows.append({"file": spec["id"], "page": i + 1, "type": etype,
+                                       "kind": "漏检", "expect": v, "actual": "—", "stage": "NER/OCR"})
+    metrics["errors"] = error_rows
     return metrics
 
 
@@ -375,7 +398,7 @@ def merge_file_digital(per_file: list[dict]) -> dict:
 
 
 def build_e2e_baseline_comparison(metrics: dict, args: argparse.Namespace) -> dict:
-    """e2e 层与上一版报告对比（I5）：总体 P/R/F1 + 数字 exact 聚合率。"""
+    """e2e 层与上一版报告对比：总体 P/R/F1、数字聚合率、分类型 F1、速度基线（System Card 对比列）。"""
     baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
     b_overall = baseline.get("overall") or {}
     if not b_overall.get("overall"):
@@ -383,8 +406,8 @@ def build_e2e_baseline_comparison(metrics: dict, args: argparse.Namespace) -> di
     c_overall = metrics["overall"]
 
     def digital_rate(overall: dict) -> float | None:
-        total = sum(s["total_gt"] for s in overall.get("digital", {}).values())
-        exact = sum(s["exact"] for s in overall.get("digital", {}).values())
+        total = sum(s.get("total_gt", 0) for s in overall.get("digital", {}).values())
+        exact = sum(s.get("exact", 0) for s in overall.get("digital", {}).values())
         return exact / total if total else None
 
     rows = {}
@@ -396,7 +419,9 @@ def build_e2e_baseline_comparison(metrics: dict, args: argparse.Namespace) -> di
     return {"baseline_label": (baseline.get("env") or {}).get("target_label", args.baseline),
             "baseline_env": (baseline.get("env") or {}).get("env_label", "?"),
             "env_mismatch": (baseline.get("env") or {}).get("env_label") != args.env_label,
-            "rows": rows}
+            "rows": rows,
+            "per_type_f1": {t: v.get("f1") for t, v in (b_overall.get("per_type") or {}).items()},
+            "perf_baseline": _perf_agg_safe([fm for fm in baseline.get("per_file", []) if fm.get("perf")])}
 
 
 def main() -> int:
@@ -434,10 +459,11 @@ def main() -> int:
         metrics = run_e2e_level(args)
         if args.baseline and metrics.get("overall"):
             metrics["baseline_comparison"] = build_e2e_baseline_comparison(metrics, args)
-    metrics["env"] = {"env_label": args.env_label, "target_label": args.target_label,
-                      "level": args.level, "suite": args.suite, "git": git_rev(),
-                      "generated_at": datetime.now().isoformat(timespec="seconds"),
-                      "with_perf": bool(args.with_perf)}
+    if not args.from_json:  # 重渲染保留原报告 env（同名回写，git/时间不失真）
+        metrics["env"] = {"env_label": args.env_label, "target_label": args.target_label,
+                          "level": args.level, "suite": args.suite, "git": git_rev(),
+                          "generated_at": datetime.now().isoformat(timespec="seconds"),
+                          "with_perf": bool(args.with_perf)}
 
     date_tag = str(metrics["env"].get("generated_at", datetime.now().isoformat(timespec="seconds")))[:10].replace("-", "")
     stem = f"{date_tag}-{args.env_label}-{args.target_label}-{args.level}"
@@ -511,8 +537,8 @@ def render_ner_report(metrics: dict, args: argparse.Namespace) -> str:
     abstract = [f"漏检：{indicator_meta._plain_miss(o['recall'])}；误检 {(1 - o['precision']) * 100:.0f}%。",
                 f"数字保真：{indicator_meta._plain_digital(metrics.get('digital', {}))[0]}。",
                 f"单次识别约 {metrics.get('latency_sec', {}).get('mean', 0):.1f} 秒。"]
-    lines += _callout("abstract", "一句话结论", abstract,
-                      )
+    lines += _callout("abstract", "一句话结论", abstract)
+    lines.append("")  # callout 间空行
     findings = indicator_meta.build_ner_findings(metrics) if hasattr(indicator_meta, "build_ner_findings") else []
     for f in findings:
         lines += _callout(f["type"], f["title"], f["lines"])
@@ -522,7 +548,21 @@ def render_ner_report(metrics: dict, args: argparse.Namespace) -> str:
     lines += [f"> {line}" if line else ">" for line in detail]
     dict_rows = [[n, d] for n, d in indicator_meta.INDICATOR_DICTIONARY]
     lines += [""] + _table_in_callout("question", "指标字典", ["指标", "定义与用途"], dict_rows)
-    return "\n".join(lines) + "\n"
+    md = "\n".join(lines) + "\n"
+    validate_callout_separation(md)
+    return md
+
+
+def validate_callout_separation(md: str) -> None:
+    """Obsidian 两个 callout 之间必须有空行，否则合并成一个块（渲染回归守卫）。"""
+    prev_quote = False
+    for i, line in enumerate(md.splitlines()):
+        is_quote = line.startswith(">")
+        if is_quote and prev_quote is False and line.startswith("> [!") and i > 0:
+            pass  # 新 callout 的首行（前面是空行或普通行）= 正常
+        if is_quote and prev_quote and line.startswith("> [!"):
+            raise AssertionError(f"第 {i + 1} 行 callout 与上一个引用块粘连（缺空行）: {line[:60]}")
+        prev_quote = is_quote
 
 
 def _fm_escape(value) -> str:
@@ -604,7 +644,11 @@ def render_e2e_markdown(result: dict, args: argparse.Namespace) -> str:
 
 
 def render_e2e_report(result: dict, env: dict) -> str:
-    """Obsidian 结构：frontmatter → 一句话结论 → 重点发现 → 快照表 → 折叠明细 → 指标字典。"""
+    """诊断报告（Issue #37 v4）：结论先行 + SLO 预算隐喻 + System Card 对比列。
+
+    骨架：一句话诊断 → 健康度速览（四信号+速度预算）→ 效果 → 速度 → 稳健性
+    → 跨版本对比 → 错误明细（折叠）→ 结论与行动。
+    """
     overall = result.get("overall") or {}
     per_file = result.get("per_file") or []
     perf_agg = _perf_agg_safe([fm for fm in per_file if fm.get("perf")])
@@ -613,109 +657,199 @@ def render_e2e_report(result: dict, env: dict) -> str:
     anomalies = [fm["file"]["id"] for fm in per_file
                  if fm.get("robustness", {}).get("outcome") not in ("ok", "rejected", None)]
     failed = result.get("failed") or []
+    cmp = result.get("baseline_comparison")
 
     lines = _frontmatter(env)
-    lines += ["", f"# 端到端评测：{env.get('target_label', '?')}", ""]
+    if cmp:
+        lines.insert(-1, f"baseline_run_id: {_fm_escape(cmp['baseline_label'])}")
+    lines += ["", f"# 文档脱敏系统评测报告 — {env.get('target_label', '?')}", ""]
 
-    # 一句话结论（abstract callout）
-    abstract = []
-    if overall:
-        text, _t, _e, _m = indicator_meta._plain_digital(overall.get("digital", {}))
-        abstract.append(f"效果：数字保真 =={text}==；{indicator_meta._plain_miss(overall.get('overall', {}).get('recall'))}。")
+    # ── 一句话诊断（结论先行：状态+哪个指标+严重度+决策）──
+    verdict = indicator_meta.build_verdict(overall, perf_agg, anomalies, len(failed))
+    diag = [verdict["verdict"]]
+    b = indicator_meta.digital_budget(overall.get("digital", {})) if overall else None
+    if b:
+        diag.append(f"数字保真预算消耗 =={b['consumed_pct']}%==（{b['exact']}/{b['total']} 全对，"
+                    f"其中 near_miss {b['near']}、真错 {b['miss']}）"
+                    + (f" ｜ 基线对比：{cmp['rows']['数字exact率']['current'] - cmp['rows']['数字exact率']['baseline']:+.1%}"
+                       if cmp and "数字exact率" in cmp["rows"] else ""))
+    if overall and overall.get("overall"):
+        diag.append(f"实体 F1 {overall['overall']['f1']:.3f}"
+                    + (f"（基线 {cmp['rows']['F1']['baseline']:.3f}，{cmp['rows']['F1']['current'] - cmp['rows']['F1']['baseline']:+.3f}）"
+                       if cmp and "F1" in cmp["rows"] else "（无基线对比）"))
+        diag.append(f"实体召回：{indicator_meta._plain_miss(overall['overall'].get('recall'))}")
     if perf_agg and perf_agg.get("p50"):
-        abstract.append(f"速度：单页约 =={perf_agg['p50']:.0f} 秒==；{indicator_meta._plain_pages(perf_agg.get('pages', 0), perf_agg.get('throughput'))}。")
-    robust_txt = "全部文件跑通，0 失败" if not failed else f"{len(failed)} 个文件失败"
-    if anomalies:
-        robust_txt += f"；{len(anomalies)} 个稳健性缺陷（见下）"
-    abstract.append(f"稳健性：{robust_txt}。")
-    lines += _callout("abstract", "一句话结论", abstract)
+        diag.append(f"延迟 p95 {perf_agg['p95']:.1f}s（承诺线 15s）｜吞吐 {perf_agg.get('throughput', 0):.1f} 页/分钟"
+                    + (f"（基线 p95 {cmp['perf_baseline'].get('p95', 0):.1f}s）" if cmp else ""))
+    lines += _callout("abstract", "一句话诊断", diag)
+    lines.append("")
 
-    # 重点发现（每条一个 callout，通俗语言）
-    if overall:
-        findings = indicator_meta.build_e2e_findings(overall, perf_agg, len(failed), anomalies)
-    else:
-        slowest = None
-        perf_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("wall_s", {}).get("p50")]
-        if perf_files:
-            worst = max(perf_files, key=lambda fm: fm["perf"]["wall_s"]["p50"])
-            slowest = (worst["file"]["id"], worst["perf"]["wall_s"]["p50"])
-        findings = indicator_meta.build_real_findings(perf_agg, len(failed), anomalies, slowest)
-    for f in findings:
-        lines += _callout(f["type"], f["title"], f["lines"])
+    # ── 0. 健康度速览（四信号 + 速度预算）──
+    lines += ["## 0. 健康度速览（给管理者）", ""]
+    if b:
+        lines += _callout("danger" if b["wrong"] else "success",
+                          f"红线指标：数字保真率 —— 预算消耗 {b['consumed_pct']}%（目标 0%）",
+                          ["身份证/电话/银行卡/护照 ==逐字符全对== 是发布红线：错一位 = 该脱的没脱干净。",
+                           "任一错误都计入预算消耗；==消耗必须为 0%== 才可发布。"])
+        lines.append("")
+    def _delta(cur, base, fmt="{:+.3f}", good_when_up=True):
+        if base is None:
+            return "—"
+        d = cur - base
+        mark = "📈" if (d > 0) == good_when_up and d != 0 else ("📉" if d != 0 else "➖")
+        return f"{base:.3f}（{fmt.format(d)} {mark}）" if abs(d) > 1e-9 else f"{base:.3f}（持平）"
+    f1_cur = overall.get("overall", {}).get("f1") if overall else None
+    f1_base = cmp["rows"]["F1"]["baseline"] if cmp and "F1" in cmp["rows"] else None
+    sig_rows = []
+    if b:
+        sig_rows.append(["数字保真率", f"{b['exact'] / b['total'] * 100:.1f}%", "100%", "🔴" if b["wrong"] else "🟢",
+                         _delta(b["exact"] / b["total"], cmp["rows"].get("数字exact率", {}).get("baseline"), "{:+.1%}") if cmp else "—"])
+    if f1_cur is not None:
+        sig_rows.append(["实体 F1", f"{f1_cur:.3f}", "≥ 0.95（参考）",
+                         "🟢" if f1_cur >= 0.95 else "🟡", _delta(f1_cur, f1_base)])
+    if perf_agg and perf_agg.get("p50"):
+        sig_rows.append(["延迟 p95", f"{perf_agg['p95']:.1f}s", "≤ 15s（承诺线）",
+                         "🟢" if perf_agg["p95"] <= 15 else "🟡",
+                         _delta(perf_agg["p95"], cmp["perf_baseline"].get("p95") if cmp else None, "{:+.1f}s", good_when_up=False)])
+        sig_rows.append(["吞吐", f"{perf_agg.get('throughput', 0):.1f} 页/分钟", "越高越好", "—",
+                         _delta(perf_agg.get("throughput", 0), cmp["perf_baseline"].get("throughput") if cmp else None, "{:+.1f}")])
+    if sig_rows:
+        lines += _table_in_callout("example", "四信号（当前 / 目标 / 状态 / 基线对比）",
+                                   ["信号", "当前", "目标", "状态", "基线对比"], sig_rows)
+        lines.append("")
+    duration_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("duration_ms")]
+    stage_tot: dict[str, float] = {}
+    stages: list = []
+    if duration_files:
+        for fm in duration_files:
+            for k, v in fm["perf"]["duration_ms"].items():
+                if k in ("total", "request_total_ms") or not v.get("mean"):
+                    continue
+                stage_tot[k] = stage_tot.get(k, 0) + v.get("mean", 0)
+        grand = sum(stage_tot.values()) or 1
+        stages = sorted(stage_tot.items(), key=lambda kv: -kv[1])
+        budget_lines = [f"- **最大瓶颈：{stages[0][0]}**（占已埋点时间 {stages[0][1] / grand * 100:.0f}%）"
+                        if stages else "- 各阶段无埋点数据"]
+        for k, v in stages[1:3]:
+            budget_lines.append(f"- {k}：占 {v / grand * 100:.0f}%")
+        lines += _callout("tip", "速度预算（阶段耗时占比）", budget_lines)
         lines.append("")
 
-    # 各文件快照（一张窄表：一眼扫完）
-    rows = []
-    for fm in per_file:
-        fmeta = fm["file"]
-        pf = fm.get("perf") or {}
-        ws = pf.get("wall_s") or {}
-        if "overall" in fm:
-            m = fm["overall"]
-            gate = "✅" if fm["digital_gate"]["pass"] else "❌"
-            rows.append([fmeta["id"], fmeta["carrier"], f"{m['f1']:.3f}", gate,
-                         f"{ws.get('p50', '-')}s" if ws.get("p50") else "-"])
-        else:
-            r = fm.get("robustness") or {}
-            rows.append([fmeta["id"], fmeta["carrier"], "—", r.get("outcome", "—"),
-                         f"{ws.get('p50', '-')}s" if ws.get("p50") else "-"])
-    if rows:
-        lines += ["", "## 各文件快照", ""]
-        lines += _table_in_callout("example", "全部文件一览（点开）",
-                                   ["文件", "载体", "F1", "数字保真/结果", "单页 p50"], rows)
-
-    # 折叠明细区
-    if overall:
-        per_type_rows = [[t, f"{v['precision']:.4f}", f"{v['recall']:.4f}", f"{v['f1']:.4f}",
-                          v["tp"], v["fp"], v["fn"]] for t, v in overall["per_type"].items()]
-        lines += [""] + _table_in_callout(
-            "example", "明细：分类型效果（P/R/F1）",
-            ["类型", "P", "R", "F1", "tp", "fp", "fn"], per_type_rows)
+    # ── 1. 效果评测（有 GT 时）──
+    if overall and overall.get("overall"):
+        lines += ["## 1. 效果评测", ""]
+        per_type_rows = []
+        for t, v in overall["per_type"].items():
+            base_f1 = (cmp or {}).get("per_type_f1", {}).get(t)
+            per_type_rows.append([t, f"{v['precision']:.4f}", f"{v['recall']:.4f}", f"{v['f1']:.4f}",
+                                  _delta(v["f1"], base_f1)])
+        lines += _table_in_callout("example", "分类型 P/R/F1（含基线对比）",
+                                   ["类型", "P", "R", "F1", "基线 F1（Δ）"], per_type_rows)
+        lines.append("")
+        lines += _callout("note", "指标翻译（不需要背定义）",
+                          ["**精确率 P**：系统标记为敏感的内容里，多少是真的（「别把无关内容也脱了」）",
+                           "**召回率 R**：真正的敏感内容里，系统抓到了多少（「别漏了真正的敏感信息」）",
+                           "**near_miss**：数字只差空格/连字符，OCR 噪声，可自动修复；**miss**：真错真丢，要人查"])
+        lines.append("")
         digital_rows = []
         for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
             s_ = overall["digital"].get(etype)
             if s_:
-                digital_rows.append([etype, s_["exact"], s_["near_miss"], s_["miss"],
-                                     f"{s_['exact_rate'] * 100:.1f}%"])
-        detail_lines = list(_table_in_callout(
-            "example", "明细：数字保真分级（exact=全对 / near_miss=只差空格 / miss=真错）",
-            ["类型", "exact", "near_miss", "miss", "正确率"], digital_rows))
-        for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
-            s_ = overall["digital"].get(etype)
-            if not s_:
-                continue
-            for v, w in s_.get("near_miss_detail") or []:
-                detail_lines.append(f"> - near_miss [{etype}] GT={v!r} → PRED={w!r}")
-            for v in s_.get("miss_detail") or []:
-                detail_lines.append(f"> - miss [{etype}] {v!r}")
-        lines += detail_lines
-        if overall.get("loose", {}).get("wrong_type"):
-            conf = "、".join(f"{k}×{v}" for k, v in overall["loose"]["type_confusion_top"].items())
-            lines += ["", f"> [!info] 类型混淆（找对文本标错类型）：{overall['loose']['wrong_type']} 条" +
-                      (f"（{conf}）" if conf else "")]
-    perf_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("duration_ms")]
-    if perf_files:
-        speed_rows = [[fm["file"]["id"], k, s_["mean"], s_["p95"]]
-                      for fm in perf_files for k, s_ in fm["perf"]["duration_ms"].items()]
-        lines += [""] + _table_in_callout("example", "明细：速度分解（duration_ms 埋点）",
-                                          ["文件", "阶段", "mean ms", "p95 ms"], speed_rows)
-    if result.get("baseline_comparison"):
-        cmp = result["baseline_comparison"]
+                ref = etype in nerq.REFERENCE_STRICT_TYPES
+                digital_rows.append([etype + ("（参考，不入红线）" if ref else ""),
+                                     f"{s_['exact_rate'] * 100:.1f}%",
+                                     "越接近 100% 越好" if ref else "100%",
+                                     ("🟢" if s_["exact_rate"] >= 0.8 else "🟡") if ref
+                                     else ("🔴" if s_["exact_rate"] < 1 else "🟢")])
+        if digital_rows:
+            lines += _table_in_callout("example", "数字保真率分类型（红线区）",
+                                       ["类型", "逐字符正确率", "目标", "状态"], digital_rows)
+            lines.append("")
+
+    # ── 2. 速度评测 ──
+    if duration_files or (perf_agg and perf_agg.get("pages")):
+        lines += ["## 2. 速度评测", ""]
+        if perf_agg and perf_agg.get("p50"):
+            sp_rows = [["单页耗时 p50", f"{perf_agg['p50']:.1f}s",
+                        f"{cmp['perf_baseline'].get('p50', 0):.1f}s" if cmp else "—",
+                        _delta(perf_agg["p50"], cmp["perf_baseline"].get("p50") if cmp else None, "{:+.1f}s", False)],
+                       ["单页耗时 p95", f"{perf_agg['p95']:.1f}s",
+                        f"{cmp['perf_baseline'].get('p95', 0):.1f}s" if cmp else "—",
+                        _delta(perf_agg["p95"], cmp["perf_baseline"].get("p95") if cmp else None, "{:+.1f}s", False)],
+                       ["吞吐", f"{perf_agg.get('throughput', 0):.1f} 页/分钟",
+                        f"{cmp['perf_baseline'].get('throughput', 0):.1f}" if cmp else "—",
+                        _delta(perf_agg.get("throughput", 0), cmp["perf_baseline"].get("throughput") if cmp else None, "{:+.1f}")]]
+            lines += _table_in_callout("example", "整体延迟与吞吐", ["指标", "当前", "基线", "Δ"], sp_rows)
+            lines.append("")
+        if stage_tot:
+            agg_rows = []
+            for k, total_mean in stages:
+                vals = [fm["perf"]["duration_ms"][k] for fm in duration_files
+                        if k in fm["perf"]["duration_ms"]]
+                agg_rows.append([k, f"{total_mean / len(vals):.0f}",
+                                 f"{total_mean / grand * 100:.0f}%",
+                                 f"{max(v.get('p95', 0) for v in vals):.0f}"])
+            lines += _table_in_callout("example", "阶段耗时分解（跨文件聚合，每页时间花在哪）",
+                                       ["阶段", "mean ms", "占比", "最差 p95 ms"], agg_rows)
+            lines.append("")
+
+    # ── 3. 稳健性（真实案卷 / 边界样本）──
+    robust_files = [fm for fm in per_file if fm.get("robustness")]
+    if robust_files:
+        lines += ["## 3. 稳健性（真实案卷，无标注不评效果）", ""]
+        lines += _callout("warning", "此数据集无 ground truth",
+                          ["真实案卷没有逐字符标注，==不计算保真率与 P/R==；只用于速度与稳定性验证。"])
+        lines.append("")
+        rob_rows = []
+        for fm in robust_files:
+            pf, r = fm.get("perf") or {}, fm["robustness"]
+            ws = pf.get("wall_s") or {}
+            rob_rows.append([fm["file"]["id"], pf.get("steady_pages", "-"),
+                             f"{ws.get('p50', '-')}s" if ws.get("p50") else "-",
+                             r.get("empty_pages", "-"), r["outcome"]])
+        lines += _table_in_callout("example", "真实子集逐文件", ["文件", "稳态页", "p50", "空框页", "结果"], rob_rows)
+        lines.append("")
+
+    # ── 4. 跨版本对比 ──
+    if cmp:
         cmp_rows = [[key, f"{row['baseline']:.4f}", f"{row['current']:.4f}",
                      f"{row['current'] - row['baseline']:+.4f}"] for key, row in cmp["rows"].items()]
-        lines += [""] + _table_in_callout(
-            "info", f"与基线对比（{cmp['baseline_label']}）"
-            + ("⚠️ 环境标签不同，跨环境只看相对值" if cmp["env_mismatch"] else ""),
+        lines += ["## 4. 跨版本对比", ""]
+        lines += _table_in_callout(
+            "info", f"vs 基线 {cmp['baseline_label']}"
+            + ("（⚠️ 环境不同：%s vs %s，只看相对值）" % (cmp["baseline_env"], env.get("env_label"))
+               if cmp["env_mismatch"] else ""),
             ["指标", "基线", "本次", "Δ"], cmp_rows)
-    if failed:
-        lines += [""] + _callout("failure", f"失败文件（{len(failed)}）",
-                                 [f"{x['id']}: {x['error']}" for x in failed])
+        lines.append("")
 
-    # 指标字典（折叠）
-    dict_rows = [[n, d] for n, d in indicator_meta.INDICATOR_DICTIONARY]
-    lines += [""] + _table_in_callout("question", "指标字典（每个指标是什么意思）",
-                                      ["指标", "定义与用途"], dict_rows)
-    return "\n".join(lines) + "\n"
+    # ── 5. 错误明细（工程师下钻）──
+    error_rows = [e for fm in per_file for e in fm.get("errors") or []]
+    if error_rows:
+        show = error_rows[:50]
+        lines += ["## 5. 错误明细（工程师下钻）", ""]
+        lines += _table_in_callout(
+            "bug", f"错误列表 {len(error_rows)} 条（显示前 {len(show)}，全量见 JSON）"
+                   f"——数字噪声 {sum(1 for e in error_rows if e['kind'] == '数字字符噪声')}"
+                   f"、数字丢失 {sum(1 for e in error_rows if e['kind'] == '数字丢失')}"
+                   f"、漏检 {sum(1 for e in error_rows if e['kind'] == '漏检')}",
+            ["文件", "页", "类型", "错误", "期望", "实际", "疑似阶段"],
+            [[e["file"], e["page"], e["type"], e["kind"], e["expect"], e["actual"], e["stage"]] for e in show])
+        lines.append("")
+    if failed:
+        lines += _callout("failure", f"评测失败文件（{len(failed)}）",
+                          [f"{x['id']}: {x['error']}" for x in failed])
+        lines.append("")
+
+    # ── 6. 结论与行动 ──
+    lines += ["## 6. 结论与行动", ""]
+    lines += _callout("success" if verdict["pass"] else "danger",
+                      verdict["verdict"],
+                      ["**下一步：**"] + [f"- [ ] {a}" for a in verdict["actions"]])
+    lines.append("")
+
+    md = "\n".join(lines) + "\n"
+    validate_callout_separation(md)
+    return md
 
 
 if __name__ == "__main__":

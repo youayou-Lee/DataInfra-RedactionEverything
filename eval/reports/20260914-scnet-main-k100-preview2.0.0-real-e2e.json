@@ -295,8 +295,8 @@
     "target_label": "preview2.0.0-real",
     "level": "e2e",
     "suite": "real",
-    "git": "13cc5a2",
-    "generated_at": "2026-09-14T03:09:45",
+    "git": "705870d",
+    "generated_at": "2026-09-14T03:23:22",
     "with_perf": false
   }
 }

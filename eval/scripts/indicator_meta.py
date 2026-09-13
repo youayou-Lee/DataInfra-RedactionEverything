@@ -263,3 +263,45 @@ def build_ner_findings(metrics: dict) -> list[dict]:
             "title": f"数字保真：{text}",
             "lines": ["引擎层数字不全对 = 模型本身的问题，与链路无关。"]})
     return findings
+
+# ---------------- v4：诊断报告（结论先行 + SLO 预算 + System Card 对比） ----------------
+
+def digital_budget(digital: dict) -> dict | None:
+    """SLO 预算隐喻：数字保真红线 100%，任何错误都是预算消耗（消耗须=0%）。"""
+    total = sum(s.get("total_gt", 0) for s in digital.values())
+    exact = sum(s.get("exact", 0) for s in digital.values())
+    near = sum(s.get("near_miss", 0) for s in digital.values())
+    miss = sum(s.get("miss", 0) for s in digital.values())
+    if not total:
+        return None
+    wrong = total - exact
+    return {"total": total, "exact": exact, "near": near, "miss": miss, "wrong": wrong,
+            "consumed_pct": round(wrong / total * 100, 1)}
+
+
+def build_verdict(overall: dict, perf_agg: dict, anomalies: list[str],
+                  failed_count: int) -> dict:
+    """审计式结论：意见类型（可发布/发布冻结）+ 理由 + 行动项清单。"""
+    b = digital_budget(overall.get("digital", {})) if overall else None
+    actions: list[str] = []
+    if b and b["wrong"]:
+        emoji = "🔴" if b["miss"] else "🟡"
+        verdict = f"{emoji} 发布冻结：数字保真预算消耗 {b['consumed_pct']}%（红线 0%）"
+        if b["near"]:
+            actions.append(f"修复 OCR 数字空格/连字符噪声（{b['near']} 例 near_miss，可自动规范化）")
+        if b["miss"]:
+            worst = max(overall["digital"].items(), key=lambda kv: kv[1]["miss"])
+            actions.append(f"排查 {worst[0]} 丢失 {worst[1]['miss']} 例（先看错误明细，定位 OCR 还是识别层）")
+    else:
+        emoji = "🟢" if not failed_count else "🟡"
+        verdict = f"{emoji} 数字保真达标（预算消耗 0%）"
+    if anomalies:
+        actions.append(f"修复边界样本处理：{', '.join(anomalies)} 应明确拒绝却被受理")
+    if failed_count:
+        actions.append(f"排查 {failed_count} 个评测失败文件（见失败列表）")
+    if perf_agg and perf_agg.get("p50") and perf_agg["p50"] > 15:
+        actions.append(f"速度优化：单页 p50 {perf_agg['p50']:.0f}s 超过 15s 承诺线（看速度分解的最大阶段）")
+    if not actions:
+        actions.append("保持现状，与基线对比关注回归项")
+    return {"verdict": verdict, "actions": actions,
+            "pass": not (b and b["wrong"]) and not failed_count and not anomalies}

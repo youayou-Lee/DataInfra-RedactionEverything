@@ -36,10 +36,15 @@ base_corpus = sys.modules.get("make_ner_gt_corpus") or _load(
 # ---------- 确定性 ----------
 
 def _pdf_digest(path: Path) -> tuple:
+    """PDF 内容摘要：页数 + 逐页文本层 + 逐页图像字节哈希（扫描页文本层为空，图像
+    字节才是其实际内容——评审 r3 Minor-2：图像漂移必须能被抓到）。"""
     with fitz.open(str(path)) as doc:
-        return (doc.page_count,
-                tuple(page.get_text() for page in doc),
-                tuple(bool(page.get_images()) for page in doc))
+        page_digests = []
+        for page in doc:
+            images = tuple(hashlib.sha256(doc.extract_image(img[0])["image"]).hexdigest()
+                           for img in page.get_images(full=True))
+            page_digests.append((page.get_text(), images))
+        return (doc.page_count, tuple(page_digests))
 
 
 def _docx_digest(path: Path) -> tuple:

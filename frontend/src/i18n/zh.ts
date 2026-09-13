@@ -752,6 +752,7 @@ const zhBase: Record<string, string> = {
   'nav.wordPools.sub': '化名替换模式词池',
 
   'batchWizard.step1.textMethodPseudonym': '化名替换',
+  'batchWizard.step1.textMethodPseudonymUnavailable': '化名替换（暂未上线）',
   'batchWizard.step1.textModeBulletPseudonym':
     '化名替换 - 用词池中的虚构词替换原文，保持文档可读性',
   'batchWizard.step1.wordPoolLink': '配置替换词池 →',
@@ -767,6 +768,9 @@ const zhBase: Record<string, string> = {
   'wordPools.strategy_numbered': '顺序编号（词1、词2…）',
   'wordPools.strategy_cycle': '循环复用',
   'wordPools.strategy_generated': '自动生成',
+  'wordPools.strategy_derived': '编号派生（陈某1/某公司1，从原文姓氏/机关后缀派生）',
+  'wordPools.wordsDisabledForDerived':
+    '编号派生模式下替换词由系统从原文自动生成，此处词表不生效；需要固定词请切换其他策略或使用下方精确映射。',
   'wordPools.customMap': '精确映射（原词 → 替换词）',
   'wordPools.customMapOrig': '原词',
   'wordPools.customMapRepl': '替换词',

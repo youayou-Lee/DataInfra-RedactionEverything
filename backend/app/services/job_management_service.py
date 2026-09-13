@@ -380,9 +380,26 @@ async def detach_job_from_files(job_id: str, items: list[dict[str, Any]]) -> int
 # CRUD operations
 # ---------------------------------------------------------------------------
 
+def _reject_batch_pseudonym(config: Any) -> None:
+    """批量×化名门控：create / update_draft / submit 三入口统一校验。
+
+    同批多文件化名对齐（job 级统一映射、预览与成品同源）未上线，旧路径按文件独立
+    分配化名，同一人在不同文件会分到不同化名。单次处理（非 job 路径）不受限。
+    update_draft 是前端提交主路径的配置写入口（先 PUT config 再 submit），漏掉即绕过。
+    上线 T3 后移除（frontend 同步放开 BATCH_PSEUDONYM_AVAILABLE）。
+    """
+    cfg = config if isinstance(config, dict) else {}
+    if str(cfg.get("replacement_mode") or "").strip().lower() == "pseudonym":
+        raise ValueError(
+            "批量化名替换暂未上线：多文件同批化名对齐开发中，请改用打码/结构化标签；"
+            "单文件处理已支持化名替换"
+        )
+
+
 def create_job(store: JobStore, job_type_str: str, title: str, config: Any,
                skip_item_review: bool, priority: int, owner_id: str = "local_user") -> dict[str, Any]:
     """Create a new job and return its summary."""
+    _reject_batch_pseudonym(config)
     jt = job_type_from_str(job_type_str)
     jid = store.create_job(
         job_type=jt,
@@ -798,6 +815,8 @@ def update_draft(store: JobStore, job_id: str, patch: dict[str, Any]) -> dict[st
         raise ConflictError("job config is locked")
     if not patch:
         return job_to_summary(row, store)
+    _reject_batch_pseudonym(patch)
+    _reject_batch_pseudonym(patch.get("config"))
     if not store.update_job_draft(job_id, patch):
         raise ValueError("nothing to update")
     store.touch_job_updated(job_id)
@@ -851,6 +870,8 @@ def submit_job(store: JobStore, job_id: str) -> dict[str, Any]:
     items = store.list_items(job_id)
     if not items:
         raise ValueError("no items to submit")
+    # 提交口兜底：门控前建的存量 pseudonym 草稿在此拦截（改用其他方式后可提交）
+    _reject_batch_pseudonym(job_config_dict(row))
     if _is_structured_job(row):
         from app.services.structured_service import get_or_create_policy, profile_dataset
         from app.services.structured_store import get_structured_store

@@ -33,7 +33,7 @@ POOL_TYPE_ALIASES: dict[str, str] = {
     "LOCATION": "ADDRESS",
 }
 
-VALID_STRATEGIES = ("numbered", "cycle", "generated")
+VALID_STRATEGIES = ("numbered", "cycle", "generated", "derived")
 
 
 class WordPoolUpdate(BaseModel):

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import type { RecognitionPreset } from '@/services/presetsApi';
 import type { BatchWizardMode, BatchWizardPersistedConfig } from '@/services/batchPipeline';
+import { BATCH_PSEUDONYM_AVAILABLE } from '../hooks/use-batch-wizard-utils';
 
 const DEFAULT_PRESET_VALUE = '__default__';
 
@@ -211,8 +212,14 @@ function BatchStep1PresetCardsInner({
                     </SelectItem>
                     <SelectItem value="smart">{t('batchWizard.step1.textMethodSmart')}</SelectItem>
                     <SelectItem value="mask">{t('batchWizard.step1.textMethodMask')}</SelectItem>
-                    <SelectItem value="pseudonym">
-                      {t('batchWizard.step1.textMethodPseudonym')}
+                    <SelectItem
+                      value="pseudonym"
+                      disabled={!BATCH_PSEUDONYM_AVAILABLE}
+                      data-testid="text-redaction-mode-pseudonym"
+                    >
+                      {BATCH_PSEUDONYM_AVAILABLE
+                        ? t('batchWizard.step1.textMethodPseudonym')
+                        : t('batchWizard.step1.textMethodPseudonymUnavailable')}
                     </SelectItem>
                   </SelectContent>
                 </Select>

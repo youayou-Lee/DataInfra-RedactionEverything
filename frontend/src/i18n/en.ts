@@ -833,6 +833,7 @@ const enBase: Record<string, string> = {
   'nav.wordPools.sub': 'Pools for pseudonym mode',
 
   'batchWizard.step1.textMethodPseudonym': 'Pseudonym',
+  'batchWizard.step1.textMethodPseudonymUnavailable': 'Pseudonym (coming soon)',
   'batchWizard.step1.textModeBulletPseudonym':
     'Pseudonym - replace text with fictional words from pools, keeping documents readable',
   'batchWizard.step1.wordPoolLink': 'Configure word pools →',
@@ -848,6 +849,9 @@ const enBase: Record<string, string> = {
   'wordPools.strategy_numbered': 'Numbered (Word1, Word2…)',
   'wordPools.strategy_cycle': 'Cycle',
   'wordPools.strategy_generated': 'Auto-generated',
+  'wordPools.strategy_derived': 'Derived numbering (陈某1/某公司1, from original surname/agency suffix)',
+  'wordPools.wordsDisabledForDerived':
+    'With derived numbering, replacements are generated from the original text and this word list is ignored. Switch to another strategy or use the exact map below for fixed words.',
   'wordPools.customMap': 'Exact mapping (original → replacement)',
   'wordPools.customMapOrig': 'Original',
   'wordPools.customMapRepl': 'Replacement',

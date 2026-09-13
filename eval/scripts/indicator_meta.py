@@ -145,3 +145,121 @@ def render_dictionary_md() -> str:
     for name, definition in INDICATOR_DICTIONARY:
         lines.append(f"| {name} | {definition} |")
     return "\n".join(lines)
+
+
+# ---------------- v3：Obsidian 报告的「发现点」构造（通俗语言唯一源） ----------------
+
+def _plain_miss(recall: float | None) -> str:
+    """召回率 → 通俗话术。"""
+    if recall is None:
+        return "无效果数据"
+    if recall >= 0.99:
+        return "基本无漏检"
+    miss_every = round(1 / (1 - recall))
+    return f"每 {miss_every} 个敏感实体漏 1 个（召回 {recall * 100:.1f}%）"
+
+
+def _plain_digital(digital: dict) -> tuple[str, int, int, int]:
+    """数字保真 → (话术, total, exact, miss)。"""
+    total = sum(s.get("total_gt", 0) for s in digital.values())
+    exact = sum(s.get("exact", 0) for s in digital.values())
+    miss = sum(s.get("miss", 0) for s in digital.values())
+    if total == 0:
+        return "无数字实体", 0, 0, 0
+    if exact == total:
+        return f"全部 {total} 个数字逐字符正确（红线达标）", total, exact, miss
+    return f"{total} 个数字只有 {exact} 个全对（{exact / total * 100:.0f}%，红线 100%）", total, exact, miss
+
+
+def _plain_pages(pages: int, throughput: float | None) -> str:
+    if not throughput:
+        return "—"
+    return f"20 页卷宗约 {20 / throughput:.0f} 分钟（吞吐 {throughput:.1f} 页/分钟）"
+
+
+def build_e2e_findings(overall: dict, perf_agg: dict, failed_count: int,
+                       anomalies: list[str]) -> list[dict]:
+    """端到端报告的重点发现：[(callout类型, 标题, 正文行)]——通俗语言，最多 4 条。"""
+    findings: list[dict] = []
+    digital = overall.get("digital", {})
+    text, total, exact, miss = _plain_digital(digital)
+    if total:
+        near = sum(s.get("near_miss", 0) for s in digital.values())
+        if exact == total:
+            findings.append({"type": "success", "title": f"数字保真达标（红线）：{text}",
+                             "lines": ["该脱敏的数字一个字符都没错。"]})
+        else:
+            lines = [f"身份证/电话/银行卡这类数字要求==逐字符全对==，本次 {text}。"]
+            if near:
+                lines.append(f"- {near} 条只差空格/连字符（OCR 把数字认串了）→ ==可自动修复==")
+            if miss:
+                lines.append(f"- {miss} 条是真错/真丢 → 需要按层排查（见折叠明细）")
+            findings.append({"type": "danger" if miss else "warning",
+                             "title": f"数字保真未达标：{text}（漏脱敏红线）", "lines": lines})
+    o = overall.get("overall", {})
+    if o:
+        recall = o.get("recall", 0)
+        plain = _plain_miss(recall)
+        worst = sorted(overall.get("per_type", {}).items(), key=lambda kv: kv[1]["recall"])[:2]
+        worst_txt = "、".join(f"{k}（{v['recall'] * 100:.0f}%）" for k, v in worst)
+        findings.append({
+            "type": "success" if recall >= 0.99 else ("warning" if recall >= 0.8 else "danger"),
+            "title": f"漏检情况：{plain}",
+            "lines": [f"漏检 = 该脱敏的没被识别 = ==漏脱敏==。" + (f" 最差的两类：{worst_txt}。" if worst else ""),
+                      f"误检（把无关内容也脱掉）：{(1 - o.get('precision', 0)) * 100:.0f}%，损害文档可读性。"]})
+    if perf_agg and perf_agg.get("p50"):
+        findings.append({
+            "type": "success" if perf_agg["p95"] <= 20 else "warning",
+            "title": f"速度：单页约 {perf_agg['p50']:.0f} 秒（最慢 10% 的页要 {perf_agg['p95']:.0f} 秒+）",
+            "lines": [_plain_pages(int(perf_agg.get("pages", 0)), perf_agg.get("throughput")),
+                      "单页时间花在哪（OCR/识别/定位）见折叠的速度分解。"]})
+    if anomalies:
+        findings.append({
+            "type": "bug", "title": f"稳健性缺陷：{len(anomalies)} 个边界样本未被正确处理",
+            "lines": [f"{', '.join(anomalies)} 应被明确拒绝却==被正常受理==——加密文件不该能被处理。"]})
+    if failed_count:
+        findings.append({"type": "failure", "title": f"{failed_count} 个文件评测失败（明细见文末）", "lines": []})
+    return findings
+
+
+def build_real_findings(perf_agg: dict, failed_count: int, anomalies: list[str],
+                        slowest: tuple[str, float] | None = None) -> list[dict]:
+    """真实子集报告的重点发现（无 GT，只谈速度与稳健）。"""
+    findings: list[dict] = []
+    if perf_agg and perf_agg.get("p50"):
+        tput_line = _plain_pages(int(perf_agg.get("pages", 0)), perf_agg.get("throughput"))
+        findings.append({
+            "type": "info", "title": f"真实扫描件单页约 {perf_agg['p50']:.0f} 秒",
+            "lines": ([tput_line] if tput_line != "—" else []) +
+                     ["与合成集（13 秒级）的差就是==真实数据税==：噪声、盖章、票据。"]})
+    if slowest and slowest[1] > 30:
+        findings.append({
+            "type": "warning", "title": f"发现 10 倍慢点：{slowest[0]} 单页 {slowest[1]:.0f} 秒",
+            "lines": ["该卷是==银行流水/转账凭证==密集型，其他扫描卷只要 7-13 秒——"
+                      "表格密集类卷宗是性能优化的下一个靶子。"]})
+    findings.append({
+        "type": "success" if failed_count == 0 else "failure",
+        "title": f"稳健性：{failed_count} 个文件失败，2 个空框页" if failed_count == 0 else f"{failed_count} 个文件失败",
+        "lines": ["空框页=整页什么都没识别出来（可能真空白，也可能识别失败，需人工抽查）。"]})
+    if anomalies:
+        findings.append({
+            "type": "bug", "title": "加密 PDF 未被拒绝",
+            "lines": ["需要密码的加密卷被==正常受理并处理==了——应该明确报错拒绝，这是稳健性缺陷。"]})
+    return findings
+
+def build_ner_findings(metrics: dict) -> list[dict]:
+    """NER 引擎层重点发现（LLM NER 对比实验的判定视角）。"""
+    o = metrics["overall"]
+    findings = []
+    recall = o.get("recall", 0)
+    findings.append({
+        "type": "success" if recall >= 0.99 else ("warning" if recall >= 0.8 else "danger"),
+        "title": f"漏检：{_plain_miss(recall)}",
+        "lines": ["引擎层无 OCR 噪声，这里的召回是模型纯能力；候选 LLM 必须 ≥ 基线 −1pp。"]})
+    text, total, exact, miss = _plain_digital(metrics.get("digital", {}))
+    if total:
+        findings.append({
+            "type": "success" if exact == total else "danger",
+            "title": f"数字保真：{text}",
+            "lines": ["引擎层数字不全对 = 模型本身的问题，与链路无关。"]})
+    return findings

@@ -419,11 +419,16 @@ def main() -> int:
     parser.add_argument("--env-label", required=True, help="环境标签（必录，报告命名用）")
     parser.add_argument("--baseline", default=None, help="上一版报告 JSON（ner/e2e 均可对比）")
     parser.add_argument("--out", default=str(_REPO_ROOT / "eval" / "reports"))
+    parser.add_argument("--from-json", default=None,
+                        help="不跑评测，从已存 JSON 报告按当前报告版式重渲染 md（--level 仍需指定）")
     parser.add_argument("--timeout", type=float, default=600.0)
     parser.add_argument("--max-tokens", type=int, default=2048)
     args = parser.parse_args()
 
-    if args.level == "ner":
+    if args.from_json:
+        metrics = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
+        metrics["env"]["generated_at"] = metrics["env"].get("generated_at") or datetime.now().isoformat(timespec="seconds")
+    elif args.level == "ner":
         metrics = asyncio.run(run_ner_level(args))
     else:
         metrics = run_e2e_level(args)
@@ -434,7 +439,7 @@ def main() -> int:
                       "generated_at": datetime.now().isoformat(timespec="seconds"),
                       "with_perf": bool(args.with_perf)}
 
-    date_tag = datetime.now().strftime("%Y%m%d")
+    date_tag = str(metrics["env"].get("generated_at", datetime.now().isoformat(timespec="seconds")))[:10].replace("-", "")
     stem = f"{date_tag}-{args.env_label}-{args.target_label}-{args.level}"
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -450,14 +455,9 @@ def main() -> int:
     (out_dir / f"{stem}.json").write_text(json.dumps(slim, ensure_ascii=False, indent=2,
                                                      default=str), encoding="utf-8")
     if args.level == "ner":
-        summary_md = ("## 管理者摘要\n\n> NER 引擎层：纯模型对比（无 OCR 噪声），"
-                      "是 LLM NER 实验的判定层。\n\n"
-                      + indicator_meta.render_summary_md(indicator_meta.build_ner_summary(metrics)))
-        md = (f"# NER 引擎层评测（Issue #37）：{args.target_label}\n\n" + "\n".join(env_header(args))
-              + "\n\n" + summary_md + "\n\n" + nerq.render_markdown(metrics)
-              + "\n## 指标字典\n\n" + indicator_meta.render_dictionary_md() + "\n")
+        md = render_ner_report(metrics, args)
     else:
-        md = render_e2e_markdown(metrics, args)
+        md = render_e2e_report(metrics, metrics["env"])
     (out_dir / f"{stem}.md").write_text(md, encoding="utf-8")
     print(f"OK -> {out_dir}/{stem}.{{json,md}}")
 
@@ -501,104 +501,220 @@ def _perf_agg(per_file: list[dict]) -> dict:
             "empty_pages": empty}
 
 
+def render_ner_report(metrics: dict, args: argparse.Namespace) -> str:
+    """NER 引擎层报告（Obsidian 结构）：一句话结论 → 重点 → 全部明细折叠。"""
+    env = {"env_label": args.env_label, "target_label": args.target_label,
+           "level": "ner", "git": git_rev(), "generated_at": datetime.now().isoformat(timespec="seconds")}
+    o = metrics["overall"]
+    lines = _frontmatter(env)
+    lines += ["", f"# NER 引擎层评测：{args.target_label}", ""]
+    abstract = [f"漏检：{indicator_meta._plain_miss(o['recall'])}；误检 {(1 - o['precision']) * 100:.0f}%。",
+                f"数字保真：{indicator_meta._plain_digital(metrics.get('digital', {}))[0]}。",
+                f"单次识别约 {metrics.get('latency_sec', {}).get('mean', 0):.1f} 秒。"]
+    lines += _callout("abstract", "一句话结论", abstract,
+                      )
+    findings = indicator_meta.build_ner_findings(metrics) if hasattr(indicator_meta, "build_ner_findings") else []
+    for f in findings:
+        lines += _callout(f["type"], f["title"], f["lines"])
+        lines.append("")
+    detail = nerq.render_markdown(metrics).splitlines()
+    lines += ["", "> [!example]- 全部明细（分类型 / 数字保真逐条 / 告警）"]
+    lines += [f"> {line}" if line else ">" for line in detail]
+    dict_rows = [[n, d] for n, d in indicator_meta.INDICATOR_DICTIONARY]
+    lines += [""] + _table_in_callout("question", "指标字典", ["指标", "定义与用途"], dict_rows)
+    return "\n".join(lines) + "\n"
+
+
+def _fm_escape(value) -> str:
+    return str(value).replace('"', "'")
+
+
+def _callout(ctype: str, title: str, lines: list[str], collapsed: bool = False) -> list[str]:
+    """Obsidian callout；collapsed=True 时默认折叠（标题尾加 -）。"""
+    marker = "-" if collapsed else ""
+    out = [f"> [!{ctype}]{marker} {title}"]
+    out += [f"> {line}" for line in lines]
+    return out
+
+
+def _table_in_callout(ctype: str, title: str, header: list[str], rows: list[list[str]]) -> list[str]:
+    """表格放进可折叠 callout（明细默认收起，点开才展开）。"""
+    lines = [f"> [!{ctype}]- {title}", ">"]
+    lines.append("> | " + " | ".join(header) + " |")
+    lines.append("> |" + "---|" * len(header))
+    for row in rows:
+        lines.append("> | " + " | ".join(str(c) for c in row) + " |")
+    return lines
+
+
+def _perf_agg_safe(per_file: list[dict]) -> dict:
+    """跨文件速度聚合；pages_detail 被瘦身掉时退化为按文件 p50/p95 加权近似（重渲染旧 JSON 用）。"""
+    walls, empty = [], 0
+    total_steady = 0
+    p50_w = p95_w = 0.0
+    for fm in per_file:
+        pf = fm.get("perf") or {}
+        steady = pf.get("steady_pages") or 0
+        total_steady += steady
+        detail = pf.get("pages_detail")
+        if detail:
+            for pg in detail:
+                if pg.get("warmup"):
+                    continue
+                walls.append(pg["wall_s"])
+                if not any(pg.get("entities") or {}):
+                    empty += 1
+        elif steady:
+            p50_w += (pf.get("wall_s", {}).get("p50") or 0) * steady
+            p95_w += (pf.get("wall_s", {}).get("p95") or 0) * steady
+    throughput = (total_steady * 60 / sum(walls)) if walls else 0
+    if not walls and total_steady:
+        # 逐页明细被瘦身时，用 Σ稳态页/Σ文件总耗时 近似吞吐（重渲染旧 JSON 场景）
+        total_wall = sum((fm.get("perf") or {}).get("wall_s", {}).get("total") or 0
+                         for fm in per_file if fm.get("perf"))
+        throughput = total_steady * 60 / total_wall if total_wall else 0
+    if walls:
+        p50, p95 = percentile(walls, 50), percentile(walls, 95)
+    elif total_steady:
+        p50, p95 = p50_w / total_steady, p95_w / total_steady
+    else:
+        p50 = p95 = 0.0
+    return {"pages": total_steady, "p50": p50, "p95": p95,
+            "throughput": throughput, "empty_pages": empty}
+
+
+def _frontmatter(env: dict) -> list[str]:
+    return ["---",
+            f"title: 端到端评测：{_fm_escape(env.get('target_label', '?'))}",
+            f"date: {str(env.get('generated_at', ''))[:10]}",
+            "tags:",
+            "  - 评测报告",
+            "  - issue-37",
+            f"  - {env.get('level', 'e2e')}",
+            f"env: {_fm_escape(env.get('env_label', '?'))}",
+            f"target: {_fm_escape(env.get('target_label', '?'))}",
+            f"git: {_fm_escape(env.get('git', 'unknown'))}",
+            "---"]
+
+
 def render_e2e_markdown(result: dict, args: argparse.Namespace) -> str:
-    overall = result["overall"]
-    per_file = result["per_file"]
-    lines = [f"# 端到端评测（Issue #37）：{args.target_label}", ""] + env_header(args) + [""]
+    env = {"env_label": args.env_label, "target_label": args.target_label,
+           "level": "e2e", "git": git_rev(), "generated_at": datetime.now().isoformat(timespec="seconds")}
+    return render_e2e_report(result, env)
 
-    # ---- 一、管理者摘要（先看这里：指标 + 意义 + 状态灯）----
-    perf_agg = _perf_agg([fm for fm in per_file if fm.get("perf")])
-    rejected = result.get("rejected") or []
+
+def render_e2e_report(result: dict, env: dict) -> str:
+    """Obsidian 结构：frontmatter → 一句话结论 → 重点发现 → 快照表 → 折叠明细 → 指标字典。"""
+    overall = result.get("overall") or {}
+    per_file = result.get("per_file") or []
+    perf_agg = _perf_agg_safe([fm for fm in per_file if fm.get("perf")])
+    rejected = [fm["file"]["id"] for fm in per_file
+                if fm.get("robustness", {}).get("outcome") == "rejected"]
+    anomalies = [fm["file"]["id"] for fm in per_file
+                 if fm.get("robustness", {}).get("outcome") not in ("ok", "rejected", None)]
+    failed = result.get("failed") or []
+
+    lines = _frontmatter(env)
+    lines += ["", f"# 端到端评测：{env.get('target_label', '?')}", ""]
+
+    # 一句话结论（abstract callout）
+    abstract = []
     if overall:
-        summary = indicator_meta.build_e2e_summary(overall, perf_agg, len(result.get("failed") or []),
-                                                   ner_baseline=None)
-    else:  # 纯真实子集（速度/稳健性，无 GT）
-        anomalies = [fm["file"]["id"] for fm in per_file
-                     if fm.get("robustness", {}).get("outcome") not in ("ok", "rejected")]
-        summary = indicator_meta.build_real_summary(perf_agg, len(result.get("failed") or []),
-                                                    rejected, anomalies)
-    lines += ["## 一、管理者摘要", "",
-              "> 先看本节：状态灯 ✅⚠️❌ 与「目标/参考」列给出该指标是否健康的判断；",
-              "> 每个指标的准确定义见文末「指标字典」；逐文件/逐类型明细在本节之后。", "",
-              indicator_meta.render_summary_md(summary), ""]
+        text, _t, _e, _m = indicator_meta._plain_digital(overall.get("digital", {}))
+        abstract.append(f"效果：数字保真 =={text}==；{indicator_meta._plain_miss(overall.get('overall', {}).get('recall'))}。")
+    if perf_agg and perf_agg.get("p50"):
+        abstract.append(f"速度：单页约 =={perf_agg['p50']:.0f} 秒==；{indicator_meta._plain_pages(perf_agg.get('pages', 0), perf_agg.get('throughput'))}。")
+    robust_txt = "全部文件跑通，0 失败" if not failed else f"{len(failed)} 个文件失败"
+    if anomalies:
+        robust_txt += f"；{len(anomalies)} 个稳健性缺陷（见下）"
+    abstract.append(f"稳健性：{robust_txt}。")
+    lines += _callout("abstract", "一句话结论", abstract)
 
-    # ---- 速度/稳健性专属节（真实子集或有稳健性条目时）----
-    robust_files = [fm for fm in per_file if fm.get("robustness")]
-    if robust_files:
-        lines += ["## 二、真实案卷速度与稳健性（无 GT，不评效果）", "",
-                  "| 文件 | 载体 | 页数 | 总耗时 s | p50 s | p95 s | 页/分钟 | 空框页 | 结果 |",
-                  "|---|---|---|---|---|---|---|---|---|"]
-        for fm in robust_files:
-            f, r = fm["file"], fm["robustness"]
-            pf = fm.get("perf") or {}
-            ws = pf.get("wall_s") or {}
-            lines.append(
-                f"| {f['id']} | {f['carrier']} | {pf.get('steady_pages', '-')} | {ws.get('total', '-')} "
-                f"| {ws.get('p50', '-')} | {ws.get('p95', '-')} "
-                f"| {pf.get('throughput_pages_per_min') or 'n/a'} | {r.get('empty_pages', '-')} "
-                f"| {r['outcome']} |")
-        for fm in robust_files:
-            if fm["robustness"]["outcome"] != "ok":
-                lines.append(f"- ⚠️ {fm['file']['id']}: {fm['robustness']['outcome']} — "
-                             f"{fm['robustness']['detail']}")
+    # 重点发现（每条一个 callout，通俗语言）
+    if overall:
+        findings = indicator_meta.build_e2e_findings(overall, perf_agg, len(failed), anomalies)
+    else:
+        slowest = None
+        perf_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("wall_s", {}).get("p50")]
+        if perf_files:
+            worst = max(perf_files, key=lambda fm: fm["perf"]["wall_s"]["p50"])
+            slowest = (worst["file"]["id"], worst["perf"]["wall_s"]["p50"])
+        findings = indicator_meta.build_real_findings(perf_agg, len(failed), anomalies, slowest)
+    for f in findings:
+        lines += _callout(f["type"], f["title"], f["lines"])
         lines.append("")
 
-    # ---- 效果明细（有 GT 时）----
+    # 各文件快照（一张窄表：一眼扫完）
+    rows = []
+    for fm in per_file:
+        fmeta = fm["file"]
+        pf = fm.get("perf") or {}
+        ws = pf.get("wall_s") or {}
+        if "overall" in fm:
+            m = fm["overall"]
+            gate = "✅" if fm["digital_gate"]["pass"] else "❌"
+            rows.append([fmeta["id"], fmeta["carrier"], f"{m['f1']:.3f}", gate,
+                         f"{ws.get('p50', '-')}s" if ws.get("p50") else "-"])
+        else:
+            r = fm.get("robustness") or {}
+            rows.append([fmeta["id"], fmeta["carrier"], "—", r.get("outcome", "—"),
+                         f"{ws.get('p50', '-')}s" if ws.get("p50") else "-"])
+    if rows:
+        lines += ["", "## 各文件快照", ""]
+        lines += _table_in_callout("example", "全部文件一览（点开）",
+                                   ["文件", "载体", "F1", "数字保真/结果", "单页 p50"], rows)
+
+    # 折叠明细区
     if overall:
-        lines += ["## 效果汇总（全部文件 micro 聚合）", "",
-                  f"- P={overall['overall']['precision']:.4f} R={overall['overall']['recall']:.4f} "
-                  f"F1={overall['overall']['f1']:.4f}（tp {overall['overall']['tp']} / fp {overall['overall']['fp']} "
-                  f"/ fn {overall['overall']['fn']}）",
-                  f"- 数字保真闸门：{'✅ 通过' if overall['digital_gate']['pass'] else '❌ FAIL'}",
-                  f"- 宽松口径（span 对、类型错）：{overall['loose']['wrong_type']} 条"
-                  + ("" if not overall['loose']['type_confusion_top'] else
-                     "，混淆 Top：" + "、".join(f"{k}×{v}" for k, v in
-                                              overall['loose']['type_confusion_top'].items())),
-                  "", "| 类型 | P | R | F1 | tp | fp | fn |", "|---|---|---|---|---|---|---|"]
-        for etype, s in overall["per_type"].items():
-            lines.append(f"| {etype} | {s['precision']:.4f} | {s['recall']:.4f} | {s['f1']:.4f} "
-                         f"| {s['tp']} | {s['fp']} | {s['fn']} |")
-        lines += ["", "## 数字实体逐字保真明细（一票否决区：漏了哪些、错成什么样）", "",
-                  "| 类型 | exact | near_miss | miss | exact_rate |", "|---|---|---|---|---|"]
+        per_type_rows = [[t, f"{v['precision']:.4f}", f"{v['recall']:.4f}", f"{v['f1']:.4f}",
+                          v["tp"], v["fp"], v["fn"]] for t, v in overall["per_type"].items()]
+        lines += [""] + _table_in_callout(
+            "example", "明细：分类型效果（P/R/F1）",
+            ["类型", "P", "R", "F1", "tp", "fp", "fn"], per_type_rows)
+        digital_rows = []
         for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
-            s = overall["digital"].get(etype)
-            if s:
-                lines.append(f"| {etype} | {s['exact']} | {s['near_miss']} | {s['miss']} | {s['exact_rate']:.4f} |")
-                for v, w in s.get("near_miss_detail") or []:
-                    lines.append(f"  - near_miss: GT={v!r} PRED={w!r}")
-                for v in s.get("miss_detail") or []:
-                    lines.append(f"  - miss: {v!r}")
-        quality_files = [fm for fm in per_file if "overall" in fm]
-        lines += ["", "## 分文件效果", "",
-                  "| 文件 | 载体 | GT 实体 | P | R | F1 | 数字闸门 | 总耗时 s | 页/分钟 |",
-                  "|---|---|---|---|---|---|---|---|---|"]
-        for fm in quality_files:
-            f, m = fm["file"], fm["overall"]
-            tput = fm["perf"]["throughput_pages_per_min"]
-            lines.append(f"| {f['id']} | {f['carrier']} | {f['gt_entities']} | {m['precision']:.4f} "
-                         f"| {m['recall']:.4f} | {m['f1']:.4f} | {'✅' if fm['digital_gate']['pass'] else '❌'} "
-                         f"| {fm['perf']['wall_s']['total']} | {tput if tput is not None else 'n/a'} |")
-    if result.get("failed"):
-        lines += ["", "## 失败文件（隔离记录）", ""] + [
-            f"- {x['id']}: {x['error']}" for x in result["failed"]]
+            s_ = overall["digital"].get(etype)
+            if s_:
+                digital_rows.append([etype, s_["exact"], s_["near_miss"], s_["miss"],
+                                     f"{s_['exact_rate'] * 100:.1f}%"])
+        detail_lines = list(_table_in_callout(
+            "example", "明细：数字保真分级（exact=全对 / near_miss=只差空格 / miss=真错）",
+            ["类型", "exact", "near_miss", "miss", "正确率"], digital_rows))
+        for etype in nerq.DIGITAL_GATE_TYPES + nerq.REFERENCE_STRICT_TYPES:
+            s_ = overall["digital"].get(etype)
+            if not s_:
+                continue
+            for v, w in s_.get("near_miss_detail") or []:
+                detail_lines.append(f"> - near_miss [{etype}] GT={v!r} → PRED={w!r}")
+            for v in s_.get("miss_detail") or []:
+                detail_lines.append(f"> - miss [{etype}] {v!r}")
+        lines += detail_lines
+        if overall.get("loose", {}).get("wrong_type"):
+            conf = "、".join(f"{k}×{v}" for k, v in overall["loose"]["type_confusion_top"].items())
+            lines += ["", f"> [!info] 类型混淆（找对文本标错类型）：{overall['loose']['wrong_type']} 条" +
+                      (f"（{conf}）" if conf else "")]
     perf_files = [fm for fm in per_file if fm.get("perf") and fm["perf"].get("duration_ms")]
     if perf_files:
-        lines += ["", "## 速度分解（steady 页，duration_ms 埋点：单页时间花在哪）", "",
-                  "| 文件 | 段 | mean ms | p95 ms |", "|---|---|---|---|"]
-        for fm in perf_files:
-            for key, s in fm["perf"]["duration_ms"].items():
-                lines.append(f"| {fm['file']['id']} | {key} | {s['mean']} | {s['p95']} |")
-    comparison = result.get("baseline_comparison")
-    if comparison:
-        lines += ["", f"## 与基线对比（{comparison['baseline_label']}）", ""]
-        if comparison["env_mismatch"]:
-            lines.append(f"⚠️ 环境标签不同（{comparison['baseline_env']} vs {args.env_label}），"
-                         "跨环境只看相对值。")
-        lines += ["| 指标 | 基线 | 本次 | Δ |", "|---|---|---|---|"]
-        for key, row in comparison["rows"].items():
-            lines.append(f"| {key} | {row['baseline']:.4f} | {row['current']:.4f} | "
-                         f"{row['current'] - row['baseline']:+.4f} |")
-    lines += ["", "## 指标字典（全部指标的准确定义）", "", indicator_meta.render_dictionary_md(), ""]
+        speed_rows = [[fm["file"]["id"], k, s_["mean"], s_["p95"]]
+                      for fm in perf_files for k, s_ in fm["perf"]["duration_ms"].items()]
+        lines += [""] + _table_in_callout("example", "明细：速度分解（duration_ms 埋点）",
+                                          ["文件", "阶段", "mean ms", "p95 ms"], speed_rows)
+    if result.get("baseline_comparison"):
+        cmp = result["baseline_comparison"]
+        cmp_rows = [[key, f"{row['baseline']:.4f}", f"{row['current']:.4f}",
+                     f"{row['current'] - row['baseline']:+.4f}"] for key, row in cmp["rows"].items()]
+        lines += [""] + _table_in_callout(
+            "info", f"与基线对比（{cmp['baseline_label']}）"
+            + ("⚠️ 环境标签不同，跨环境只看相对值" if cmp["env_mismatch"] else ""),
+            ["指标", "基线", "本次", "Δ"], cmp_rows)
+    if failed:
+        lines += [""] + _callout("failure", f"失败文件（{len(failed)}）",
+                                 [f"{x['id']}: {x['error']}" for x in failed])
+
+    # 指标字典（折叠）
+    dict_rows = [[n, d] for n, d in indicator_meta.INDICATOR_DICTIONARY]
+    lines += [""] + _table_in_callout("question", "指标字典（每个指标是什么意思）",
+                                      ["指标", "定义与用途"], dict_rows)
     return "\n".join(lines) + "\n"
 
 

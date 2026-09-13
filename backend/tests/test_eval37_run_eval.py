@@ -165,7 +165,7 @@ def test_indicator_meta_summary_rows():
 def test_render_e2e_markdown_real_only():
     """v2：纯真实子集（无 overall）渲染速度/稳健性报告 + 管理者摘要，不出现效果表。"""
     result = {
-        "overall": {}, "failed": [], "rejected": ["real_encrypted_supplement"],
+        "overall": {}, "failed": [], "rejected": [],
         "per_file": [
             {"file": {"id": "real_zqc_wenshu", "carrier": "scanned_pdf", "gt_entities": 0},
              "perf": {"pages_total": 15, "steady_pages": 14, "wall_s": {"total": 200.0, "p50": 14.0, "p95": 20.0},
@@ -176,7 +176,8 @@ def test_render_e2e_markdown_real_only():
              "robustness": {"outcome": "ok", "detail": "14 steady 页，空框页 1", "empty_pages": 1}},
             {"file": {"id": "real_encrypted_supplement", "carrier": "encrypted_pdf", "gt_entities": 0},
              "perf": None,
-             "robustness": {"outcome": "rejected", "detail": "HTTP 400", "wall_s": 0.4}}],
+             "robustness": {"outcome": "accepted_should_reject",
+                            "detail": "加密卷被正常受理（未拒绝）", "wall_s": 0.4}}],
     }
 
     class Args:
@@ -184,10 +185,11 @@ def test_render_e2e_markdown_real_only():
         target_label = "t-real"
         api_base = "http://x"
     md = run_eval.render_e2e_markdown(result, Args())
-    assert "管理者摘要" in md and "指标字典" in md
-    assert "真实案卷速度与稳健性" in md and "rejected" in md
-    assert "加密卷拒识" in md  # 摘要含拒识行
-    assert "效果汇总" not in md  # 无 GT 不渲染效果表
+    assert md.startswith("---") and "一句话结论" in md
+    assert "[!bug]" in md and "加密 PDF 未被拒绝" in md  # 稳健性缺陷重点展示
+    assert "全部文件一览" in md and "accepted_should_reject" in md
+    assert "分类型效果" not in md  # 无 GT 不渲染效果明细
+    assert "指标字典" in md
 
 
 def test_merge_file_digital_sums_and_keeps_tuple_detail():
@@ -212,16 +214,19 @@ def test_render_e2e_markdown_smoke():
         "overall": {"overall": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1},
                     "per_type": {"姓名": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1}},
                     "digital": {"电话": {"exact": 1, "near_miss": 1, "miss": 0, "exact_rate": 0.5,
+                                        "total_gt": 2,
                                         "near_miss_detail": [("138 0013 8000", "13800138000")],
                                         "miss_detail": []}},
-                    "digital_gate": {"pass": True, "failures": []},
+                    "digital_gate": {"pass": False, "failures": ["电话"]},
                     "loose": {"wrong_type": 2, "type_confusion_top": {"姓名→机构名称": 2}}},
         "per_file": [{
             "file": {"id": "x", "carrier": "txt", "gt_entities": 2},
             "overall": {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 1, "fp": 0, "fn": 1},
-            "digital_gate": {"pass": True, "failures": []},
-            "perf": {"wall_s": {"total": 1.0}, "throughput_pages_per_min": None,
-                     "duration_ms": {"ocr": {"mean": 100.0, "p95": 120.0}}}}],
+            "digital_gate": {"pass": False, "failures": []},
+            "perf": {"steady_pages": 3, "wall_s": {"total": 1.0, "p50": 2.0, "p95": 3.0},
+                     "throughput_pages_per_min": 60,
+                     "duration_ms": {"ocr": {"mean": 100.0, "p95": 120.0}},
+                     "pages_detail": [{"warmup": False, "wall_s": 2.0, "entities": {"姓名": ["张"]}}]}}],
         "failed": [{"id": "y", "error": "RuntimeError: demo"}],
     }
 
@@ -230,8 +235,10 @@ def test_render_e2e_markdown_smoke():
         target_label = "t-target"
         api_base = "http://x"
     md = run_eval.render_e2e_markdown(result, Args())
-    assert "t-env" in md and "数字保真闸门" in md and "| x | txt |" in md
-    assert "宽松口径" in md and "姓名→机构名称×2" in md
-    assert "n/a" in md  # steady 空时吞吐渲染 n/a（M3）
-    assert "y" in md  # 失败文件单列（M5）
-    assert "GT='138 0013 8000' PRED='13800138000'" in md  # I-A：元组明细正常渲染非 'gt'/'pred'
+    assert md.startswith("---") and "tags:" in md  # Obsidian frontmatter
+    assert "一句话结论" in md and "每 2 个敏感实体漏 1 个" in md  # 通俗话术
+    assert "[!danger]" in md or "[!warning]" in md  # 重点发现用状态 callout
+    assert "[!example]-" in md and "指标字典" in md  # 明细折叠 + 字典
+    assert "GT='138 0013 8000' → PRED='13800138000'" in md  # near_miss 真值渲染
+
+

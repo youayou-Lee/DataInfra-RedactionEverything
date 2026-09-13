@@ -703,11 +703,15 @@ const BoxList: FC<{
             }}
             data-testid={`playground-box-${box.id}`}
           >
-            <Checkbox
-              checked={box.selected}
-              onCheckedChange={() => onToggle(box.id)}
-              className="size-4"
-            />
+            {/* 包一层拦截冒泡：Checkbox 的 onCheckedChange 已切换一次，
+                click 再冒泡到行会切换第二次互相抵消（点框无反应） */}
+            <span onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={box.selected}
+                onCheckedChange={() => onToggle(box.id)}
+                className="size-4"
+              />
+            </span>
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex flex-wrap items-center gap-1.5">
                 <Badge variant="secondary">

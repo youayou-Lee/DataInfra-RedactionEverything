@@ -77,8 +77,17 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
   const shouldLoadRedactedPreview = showRedactedPreview ?? redactionVersion > 0;
   const visibleBoxes = boundingBoxes.filter((box) => Number(box.page || 1) === currentPage);
 
+  // 记住上一个非空 file_id：null→id（首次挂载/草稿恢复）不是真正换文件，
+  // 不重置页码，让草稿记住的 currentPage 能恢复出来（Issue #33）。
+  const lastNonNullFileIdRef = useRef<string | null>(null);
   useEffect(() => {
-    setCurrentPage(1);
+    const fileId = fileInfo?.file_id ?? null;
+    const previousFileId = lastNonNullFileIdRef.current;
+    lastNonNullFileIdRef.current = fileId;
+    // 仅真换文件（非空 id → 不同的非空 id）时回到第 1 页
+    if (previousFileId !== null && previousFileId !== fileId) {
+      setCurrentPage(1);
+    }
     pageImageCacheRef.current.clear();
     pageImageRequestRef.current.clear();
     redactedPageImageCacheRef.current.clear();
@@ -481,8 +490,10 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
           'success',
         );
       } catch (err) {
-        setBoundingBoxes(previousBoxes);
+        // 取消（含恢复/重置路径触发的 cancelRerunNerImage abort）时直接返回：
+        // 不得把旧会话的 previousBoxes 回写覆盖刚恢复/重置的新会话 boxes。
         if (controller.signal.aborted) return;
+        setBoundingBoxes(previousBoxes);
         showToast(localizeErrorMessage(err, 'playground.recognizeFailed'), 'error');
       } finally {
         if (visionAbortRef.current === controller) {

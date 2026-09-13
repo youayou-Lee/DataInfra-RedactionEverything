@@ -2,11 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { showToast } from '@/components/Toast';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { useAuth } from '@/features/auth/auth-context';
 import { t } from '@/i18n';
 import { useServiceHealth, type ServicesHealth } from '@/hooks/use-service-health';
+import {
+  getScopedStorageItem,
+  removeStorageItem,
+  scopedStorageKey,
+  setScopedStorageItem,
+} from '@/lib/storage';
 import { authFetch, downloadFile } from '@/services/api-client';
 import type { VersionHistoryEntry } from '@/types';
 import { localizeErrorMessage } from '@/utils/localizeError';
+import {
+  buildDraftSnapshot,
+  parseDraft,
+  planResume,
+  serializeDraft,
+  type PlaygroundDraftSnapshot,
+} from '../lib/playground-draft';
 import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
@@ -31,6 +46,9 @@ function serviceLabel(health: ServicesHealth, key: ServiceKey) {
 }
 
 export function usePlayground() {
+  const { status } = useAuth();
+  const ownerKey =
+    status?.authenticated && status.username ? status.username.toLowerCase() : 'anonymous';
   const recognition = usePlaygroundRecognition();
   const { health, checking: healthChecking } = useServiceHealth();
   const { setProcessingMode: setRecognitionProcessingMode } = recognition;
@@ -104,6 +122,7 @@ export function usePlayground() {
     resetEntityHistory: entityCtx.entityHistory.reset,
     resetImageHistory: () => imageCtx.imageHistory.reset(),
     setEntities: entityCtx.setEntities,
+    setSelectedTypes: recognition.setSelectedTypes,
     setBoundingBoxes: (val) => imageCtx.setBoundingBoxes(val),
     getRecognitionBlocker,
   });
@@ -518,6 +537,11 @@ export function usePlayground() {
     redactionAbortRef.current?.abort();
     redactionAbortRef.current = null;
     redactionInFlightRef.current = false;
+    // 与 applyDraftSnapshot 同享防护：取消在途识别，防止 R2（重置后重跑）
+    // 与手动重置路径被旧文件识别回调污染。
+    fileCtx.cancelProcessing(false);
+    entityCtx.cancelRerunNerText();
+    imageCtx.cancelRerunNerImage();
     setResetConfirmOpen(false);
     fileCtx.setStage('upload');
     fileCtx.setFileInfo(null);
@@ -539,7 +563,162 @@ export function usePlayground() {
     imageCtx.imageHistory.reset();
     setVersionHistory([]);
     setVersionHistoryOpen(false);
-  }, [entityCtx, fileCtx, imageCtx, setRecognitionProcessingMode]);
+    removeStorageItem(scopedStorageKey(STORAGE_KEYS.PLAYGROUND_DRAFT, ownerKey));
+  }, [entityCtx, fileCtx, imageCtx, ownerKey, setRecognitionProcessingMode]);
+
+  // 会话草稿（Issue #33）：有活动文件时防抖落盘；显式重置时清除。
+  // 上传新文件后本 effect 随 fileInfo 变化自然覆盖旧草稿。
+  useEffect(() => {
+    if (!fileCtx.fileInfo) return;
+    const timer = setTimeout(() => {
+      const snapshot = buildDraftSnapshot({
+        stage: fileCtx.stage,
+        fileInfo: fileCtx.fileInfo!,
+        content: fileCtx.content,
+        entities: entityCtx.entities,
+        boundingBoxes: imageCtx.boundingBoxes,
+        processingMode: recognition.processingMode,
+        replacementMode: recognition.replacementMode,
+        watermarkText: recognition.watermarkText,
+        pseudonymMap,
+        confirmedPseudonymMap,
+        entityMap,
+        redactedCount,
+        currentPage: imageCtx.currentPage,
+      });
+      const json = serializeDraft(snapshot);
+      if (json === null) return; // 超限：放弃持久化，内存会话不受影响
+      setScopedStorageItem(STORAGE_KEYS.PLAYGROUND_DRAFT, json, ownerKey);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    fileCtx.fileInfo,
+    fileCtx.stage,
+    fileCtx.content,
+    entityCtx.entities,
+    imageCtx.boundingBoxes,
+    imageCtx.currentPage,
+    recognition.processingMode,
+    recognition.replacementMode,
+    recognition.watermarkText,
+    pseudonymMap,
+    confirmedPseudonymMap,
+    entityMap,
+    redactedCount,
+    ownerKey,
+  ]);
+
+  // 把草稿快照整体恢复为当前会话（挂载恢复与历史页「回到现场」共用）。
+  // 恢复是幂等的：undo 栈重置、dialog 态一律回到关闭，epoch 前进使在途异步结果失效。
+  const applyDraftSnapshot = useCallback(
+    (snapshot: PlaygroundDraftSnapshot) => {
+      asyncResultEpochRef.current += 1;
+      latestFileIdRef.current = snapshot.fileInfo.file_id;
+      redactionAbortRef.current?.abort();
+      redactionInFlightRef.current = false;
+      // 取消在途识别（Provider 全局化后可跨页在途）：否则旧文件的
+      // pendingFile 识别/重跑/图片检测完成后会无条件 setEntities+setStage，
+      // 把旧文件实体灌进新恢复的会话（跨文件串染）。
+      fileCtx.cancelProcessing(false);
+      entityCtx.cancelRerunNerText();
+      imageCtx.cancelRerunNerImage();
+      fileCtx.setFileInfo(snapshot.fileInfo);
+      fileCtx.setContent(snapshot.content);
+      fileCtx.setStage(snapshot.stage);
+      entityCtx.setEntities(snapshot.entities);
+      entityCtx.entityHistory.reset();
+      imageCtx.setBoundingBoxes(snapshot.boundingBoxes);
+      imageCtx.imageHistory.reset();
+      imageCtx.setCurrentPage(snapshot.currentPage);
+      setEntityMap(snapshot.entityMap);
+      setRedactedCount(snapshot.redactedCount);
+      setRedactionVersion((version) => version + 1); // 触发 result 阶段脱敏预览图重取
+      setPseudonymMap(snapshot.pseudonymMap);
+      setPseudonymMapLoading(false);
+      setPseudonymMapError(null);
+      setConfirmedPseudonymMap(snapshot.confirmedPseudonymMap);
+      // 顺序约束：setReplacementMode 对非 'pseudonym' 值会连带置 processingMode='mask'，
+      // 故必须先调它、最后调 setProcessingMode，否则替换模式会话会被恢复成打码模式。
+      recognition.setReplacementMode(snapshot.replacementMode);
+      recognition.setProcessingMode(snapshot.processingMode);
+      recognition.setWatermarkText(snapshot.watermarkText);
+      setResetConfirmOpen(false);
+      setReportOpen(false);
+      setVersionHistoryOpen(false);
+      // result 阶段恢复时报告/版本历史不入草稿，需要重取（失败静默回落）。
+      // 守卫用 latestFileIdRef 而非 canApplyAsyncResult：file_id effect
+      // （[fileCtx.fileInfo?.file_id]）在恢复时必然再 bump epoch，epoch 守卫
+      // 恒 false 会击穿应用；改判「本会话仍是这个文件」——恢复时 ref 已指向
+      // 目标文件，响应返回即应用；用户又切走则 ref 已变 → 丢弃陈旧响应。
+      if (snapshot.stage === 'result') {
+        const resultFileId = snapshot.fileInfo.file_id;
+        const applyResult = async <T,>(
+          url: string,
+          apply: (data: T) => void,
+          fallback: () => void,
+        ) => {
+          try {
+            const res = await authFetch(url);
+            if (!res.ok) throw new Error(String(res.status));
+            const data = await safeJson<T>(res);
+            if (latestFileIdRef.current === resultFileId) apply(data);
+          } catch {
+            if (latestFileIdRef.current === resultFileId) fallback();
+          }
+        };
+        void applyResult<Record<string, unknown>>(
+          `/api/v1/redaction/${resultFileId}/report`,
+          setRedactionReport,
+          () => setRedactionReport(null),
+        );
+        void applyResult<{ versions?: VersionHistoryEntry[] }>(
+          `/api/v1/redaction/${resultFileId}/versions`,
+          (data) => setVersionHistory(data.versions || []),
+          () => setVersionHistory([]),
+        );
+      }
+    },
+    [entityCtx, fileCtx, imageCtx, recognition],
+  );
+
+  // 挂载恢复（R1）：每个应用生命周期只做一次；幂等，StrictMode 双挂载无害。
+  // URL 带 ?file_id=（历史页「回到现场」的明确意图）时跳过：避免先展示旧草稿现场
+  // 再弹「切换处理文件」确认框——用户点 A 却先看到 B，观感即「跳错文件」。
+  const draftRestoreDoneRef = useRef(false);
+  useEffect(() => {
+    if (draftRestoreDoneRef.current) return;
+    draftRestoreDoneRef.current = true;
+    if (new URLSearchParams(window.location.search).get('file_id')) return;
+    const snapshot = parseDraft(
+      getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null, ownerKey),
+    );
+    if (!snapshot) return;
+    applyDraftSnapshot(snapshot);
+    showToast(t('playground.restored'), 'info');
+  }, [applyDraftSnapshot, ownerKey]);
+
+  // 历史页「回到现场」入口（R2 + 草稿恢复）：?file_id= 协议统一走这里。
+  // 有本文件的草稿 → 直接恢复现场；无草稿 → 重置后按当前识别配置重新识别。
+  const resumeFromFile = useCallback(
+    async (targetFileId: string) => {
+      const snapshot = parseDraft(
+        getScopedStorageItem<string | null>(STORAGE_KEYS.PLAYGROUND_DRAFT, null, ownerKey),
+      );
+      const decision = planResume({ targetFileId, snapshot });
+      if (decision.mode === 'unavailable') return;
+      if (decision.mode === 'draft') {
+        applyDraftSnapshot(decision.snapshot);
+        showToast(t('playground.restored'), 'info');
+        return;
+      }
+      // R2：无草稿（或草稿属于其他文件）→ 重置后恢复：命中服务端识别缓存则秒回
+      // （loadExistingFile 内 toast「已从服务端恢复」），未识别过才走识别 loading——
+      // 不在此处预告文案，避免「未找到现场」+「已从服务端恢复」双 toast 矛盾
+      performReset();
+      await fileCtx.loadExistingFile(decision.fileId);
+    },
+    [applyDraftSnapshot, fileCtx, ownerKey, performReset],
+  );
 
   const handleReset = useCallback(() => {
     if (hasResetRisk) {
@@ -639,6 +818,7 @@ export function usePlayground() {
     handleRerunNer,
     handleRedact,
     cancelProcessing,
+    resumeFromFile,
     handleReset,
     resetConfirmOpen,
     confirmReset,

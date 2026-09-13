@@ -19,6 +19,7 @@ import {
   resolveJobPrimaryNavigation,
   type PrimaryNavAction,
 } from '@/utils/jobPrimaryNavigation';
+import { buildPlaygroundResumeAction } from '@/utils/playgroundResume';
 
 export type HistoryTableDensity = {
   table: string;
@@ -237,6 +238,7 @@ export const HistoryDataRow = memo(function HistoryDataRow({
 }: HistoryDataRowProps) {
   const deliveryState = getHistoryDeliveryState(row, t);
   const reviewAction = buildHistoryReviewAction(row, navLabels);
+  const playgroundResume = buildPlaygroundResumeAction(row);
   const actionIconBtnBase = cn(HISTORY_ACTION_ICON_BTN_BASE, density.rowHeight < 36 && 'size-6');
   const actionPlaceholder = (
     <span
@@ -337,7 +339,7 @@ export const HistoryDataRow = memo(function HistoryDataRow({
         </div>
 
         <div className="jobs-action-cell">
-          {reviewAction.kind === 'link' && (
+          {reviewAction.kind === 'link' ? (
             <Button
               variant="outline"
               size="icon"
@@ -350,8 +352,22 @@ export const HistoryDataRow = memo(function HistoryDataRow({
                 <ArrowRight data-icon="inline-end" />
               </Link>
             </Button>
+          ) : playgroundResume.kind === 'link' ? (
+            <Button
+              variant="outline"
+              size="icon"
+              className={cn(actionIconBtnBase, 'bg-background hover:bg-muted')}
+              title={t('history.resumeSession')}
+              aria-label={t('history.resumeSession')}
+              asChild
+            >
+              <Link to={playgroundResume.to} data-testid={`resume-playground-${row.file_id}`}>
+                <ArrowRight data-icon="inline-end" />
+              </Link>
+            </Button>
+          ) : (
+            actionPlaceholder
           )}
-          {reviewAction.kind !== 'link' ? actionPlaceholder : null}
         </div>
         <div className="jobs-action-cell">
           {row.has_output && (

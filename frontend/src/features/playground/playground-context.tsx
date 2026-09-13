@@ -63,6 +63,7 @@ export interface PlaygroundActionsContextValue {
   handleRerunNer: PlaygroundContextValue['handleRerunNer'];
   handleRedact: PlaygroundContextValue['handleRedact'];
   cancelProcessing: PlaygroundContextValue['cancelProcessing'];
+  resumeFromFile: PlaygroundContextValue['resumeFromFile'];
   handleReset: PlaygroundContextValue['handleReset'];
   confirmReset: PlaygroundContextValue['confirmReset'];
   cancelReset: PlaygroundContextValue['cancelReset'];
@@ -192,6 +193,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       handleRerunNer: ctx.handleRerunNer,
       handleRedact: ctx.handleRedact,
       cancelProcessing: ctx.cancelProcessing,
+      resumeFromFile: ctx.resumeFromFile,
       handleReset: ctx.handleReset,
       confirmReset: ctx.confirmReset,
       cancelReset: ctx.cancelReset,
@@ -220,6 +222,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.handleRerunNer,
       ctx.handleRedact,
       ctx.cancelProcessing,
+      ctx.resumeFromFile,
       ctx.handleReset,
       ctx.confirmReset,
       ctx.cancelReset,

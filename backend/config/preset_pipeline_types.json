@@ -934,7 +934,7 @@
       "order": 320,
       "data_domain": "asset_resource",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "identifier_like"
       ],
@@ -993,7 +993,7 @@
       "order": 450,
       "data_domain": "document_record",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "identifier_like"
       ],

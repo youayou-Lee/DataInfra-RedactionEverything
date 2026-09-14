@@ -241,14 +241,19 @@ class OcrHasVisionService:
         width: int,
         height: int,
     ) -> list[SensitiveRegion]:
-        """Regex 兜底：作为文本链路最后一步，补齐 HaS Text 漏检的自定义正则类型。
+        """Regex 保证层：补齐 HaS Text 漏检的 regex 类型（Issue #43）。
 
+        每个命中作为伪实体喂给 match_entities_to_ocr，复用 chars 逐字框的
+        精确 span、跨行拆分与去重——旧实现按 block 整行打码，案号/车牌这类
+        出现在叙述行中的实体会被严重过度遮盖。
         当没有配置任何带 regex_pattern 的启用类型时严格无操作（返回 []）。
         """
         from app.services import entity_type_service as ets
+        from app.services.vision.ocr_entity_match import split_regions_across_lines
+        from app.services.vision.ocr_pipeline import match_entities_to_ocr
 
         regex_types = ets.get_regex_types(self.current_owner_id)
-        if not regex_types:
+        if not regex_types or not ocr_blocks:
             return []
 
         import re
@@ -260,34 +265,59 @@ class OcrHasVisionService:
             except Exception as exc:  # noqa: BLE001 - never raise on bad pattern
                 logger.warning("Regex fallback skipping type %s (bad pattern): %s", item.id, exc)
                 continue
+            pseudo_entities: list[dict] = []
             for block in ocr_blocks:
+                text = block.text or ""
                 try:
-                    if not pat.search(block.text or ""):
-                        continue
-                except Exception as exc:  # noqa: BLE001 - never raise on regex search
+                    matches = list(pat.finditer(text))
+                except Exception as exc:  # noqa: BLE001 - never raise on bad block text
                     logger.warning("Regex fallback search failed for type %s: %s", item.id, exc)
                     break
-                # De-dupe (block-level): skip if a region already covers this block
-                # with the same custom type at the same location.
-                if any(
-                    region.entity_type == item.id
-                    and region.left == block.left
-                    and region.top == block.top
-                    for region in new_regions
-                ):
-                    continue
-                new_regions.append(SensitiveRegion(
-                    text=block.text or "",
-                    entity_type=item.id,
-                    left=block.left,
-                    top=block.top,
-                    width=block.width,
-                    height=block.height,
-                    source="regex_fallback",
-                ))
+                for m in matches:
+                    matched = (m.group(0) or "").strip()
+                    if matched:
+                        pseudo_entities.append({"type": item.id, "text": matched})
+            if not pseudo_entities:
+                continue
+            matched_regions = split_regions_across_lines(
+                match_entities_to_ocr(ocr_blocks, pseudo_entities), ocr_blocks)
+            for region in matched_regions:
+                region.source = "regex_fallback"
+                new_regions.append(region)
         if new_regions:
             logger.info("Regex fallback added %d regions", len(new_regions))
         return new_regions
+
+    def _suppress_dates_inside_number_codes(
+        self,
+        regions: list[SensitiveRegion],
+    ) -> list[SensitiveRegion]:
+        """丢弃完全落在案号/文书编号框内的 DATE 命中（Issue #43）。
+
+        「受案字(2023)00XXX号」里被 HaS 过抽的「2023」日期框只会把遮盖面
+        碎化；外层编号框已覆盖这些像素。仅抑制 DATE，其它类型不动。
+        """
+        code_boxes = [
+            r for r in regions if r.entity_type in ("LEGAL_CASE_ID", "DOCUMENT_NUMBER")
+        ]
+        if not code_boxes:
+            return regions
+        kept: list[SensitiveRegion] = []
+        dropped = 0
+        for r in regions:
+            if r.entity_type == "DATE" and any(
+                r.left >= c.left
+                and r.top >= c.top
+                and r.left + r.width <= c.left + c.width
+                and r.top + r.height <= c.top + c.height
+                for c in code_boxes
+            ):
+                dropped += 1
+                continue
+            kept.append(r)
+        if dropped:
+            logger.info("Suppressed %d DATE region(s) inside case/document numbers", dropped)
+        return kept
 
     def _draw_regions_on_image(
         self,
@@ -360,6 +390,7 @@ class OcrHasVisionService:
         # （未配置任何 regex 类型时严格无操作）
         if ocr_blocks:
             regions.extend(self._apply_regex_fallback(ocr_blocks, 0, 0))
+            regions = self._suppress_dates_inside_number_codes(regions)
 
         duration_ms["draw"] = 0
         duration_ms["total"] = round((time.perf_counter() - perf_start) * 1000)
@@ -509,6 +540,7 @@ class OcrHasVisionService:
         # （未配置任何 regex 类型时严格无操作）
         if ocr_blocks:
             all_regions.extend(self._apply_regex_fallback(ocr_blocks, width, height))
+            all_regions = self._suppress_dates_inside_number_codes(all_regions)
 
         logger.info("Final detected %d sensitive regions", len(all_regions))
 

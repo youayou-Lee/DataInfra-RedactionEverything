@@ -34,28 +34,30 @@ def pin_text_attention_to_sdpa(config: Any, log: Callable[[str], None] | None = 
     flash→sdpa fallback, and it is the one path already verified running on
     DCU.
     """
-    if not isinstance(config, object) or isinstance(config, (str, bytes, int, float, bool)):
+    if config is None or isinstance(config, (str, bytes, int, float, bool)):
         return []
 
     changed: list[str] = []
     seen: set[int] = set()
-    stack: list[Any] = [config]
-    while stack:
-        cfg = stack.pop(0)
+    queue: list[Any] = [config]
+    while queue:
+        cfg = queue.pop(0)
         if cfg is None or id(cfg) in seen:
             continue
         seen.add(id(cfg))
         current = getattr(cfg, "_attn_implementation", None)
-        if current == "sdpa":
-            continue
-        try:
-            cfg._attn_implementation = "sdpa"
-        except AttributeError:  # frozen/slots-only objects cannot be pinned
-            continue
-        changed.append(str(current))
-        if log is not None:
-            log(f"[la-attn] pinned {cfg.__class__.__name__} attention "
-                f"{current!r} -> 'sdpa' (remote forward implements magi/sdpa only)")
-        for sub in ("text_config",):
-            stack.append(getattr(cfg, sub, None))
+        if current != "sdpa":
+            try:
+                cfg._attn_implementation = "sdpa"
+            except AttributeError:  # frozen/slots-only objects cannot be pinned
+                pass
+            else:
+                changed.append(str(current))
+                if log is not None:
+                    log(f"[la-attn] pinned {cfg.__class__.__name__} attention "
+                        f"{current!r} -> 'sdpa' (remote forward implements magi/sdpa only)")
+        # Even a config already pinned to sdpa can carry a nested text_config
+        # saved by an older environment with an explicit flash/magi value, and
+        # the decoder layers read the text_config first — keep descending.
+        queue.append(getattr(cfg, "text_config", None))
     return changed

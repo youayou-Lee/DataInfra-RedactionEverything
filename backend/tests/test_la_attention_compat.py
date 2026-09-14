@@ -69,6 +69,18 @@ def test_noop_when_already_sdpa():
     assert changed == []
 
 
+def test_descends_into_text_config_when_top_already_sdpa():
+    # 混合态：顶层被旧环境存成 sdpa，但 text_config 显式 flash——
+    # decoder 读的是 text_config，必须仍然下钻钉住
+    text = _Cfg(attn="flash_attention_2")
+    top = _Cfg(attn="sdpa", text=text)
+
+    changed = pin_text_attention_to_sdpa(top)
+
+    assert text._attn_implementation == "sdpa"
+    assert changed == ["flash_attention_2"]
+
+
 def test_survives_missing_text_config():
     top = _Cfg(attn="magi")
 

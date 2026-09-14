@@ -734,7 +734,7 @@
       "order": 242,
       "data_domain": "pii",
       "coref_enabled": false,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [],
       "entity_type_ids": [],
       "generic_target": "GEN_ATTRIBUTE_STATUS"

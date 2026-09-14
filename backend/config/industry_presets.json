@@ -94,7 +94,8 @@
       "CRIMINAL_RECORD",
       "LEGAL_CASE_ID",
       "LEGAL_CLAIM",
-      "LICENSE_PLATE"
+      "LICENSE_PLATE",
+      "NATIVE_PLACE"
     ],
     "ocrHasTypes": [
       "PERSON",
@@ -109,7 +110,8 @@
       "CRIMINAL_RECORD",
       "LEGAL_CASE_ID",
       "LEGAL_CLAIM",
-      "LICENSE_PLATE"
+      "LICENSE_PLATE",
+      "NATIVE_PLACE"
     ],
     "visualFeatureTypes": [
       "face",

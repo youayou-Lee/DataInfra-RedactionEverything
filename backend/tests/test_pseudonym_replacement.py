@@ -594,7 +594,7 @@ def test_research_institute_strips_national_prefix():
     for text, expected in (
         ("中国法治企业研究院", "某法治企业研究院1"),
         ("中国首席法务官研究院", "某首席法务官研究院1"),
-        ("全国某行业研究中心", "某行业研究中心1"),
+        ("全国行业研究中心", "某行业研究中心1"),
     ):
         ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
         assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text

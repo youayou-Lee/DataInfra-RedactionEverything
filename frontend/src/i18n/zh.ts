@@ -510,7 +510,7 @@ const zhBase: Record<string, string> = {
   'batchWizard.step2.dropHintSmart':
     '支持 Word (.docx)、文本 (.txt)、PDF、图片 (.jpg .png)，系统自动识别文件类型',
   'batchWizard.step2.dropHintImage': '支持图片 (.jpg .png) 和扫描件 PDF',
-  'batchWizard.step2.dropHintText': '支持 Word (.docx .doc) 和 PDF 文档',
+  'batchWizard.step2.dropHintText': '支持 Word (.docx) 和 PDF 文档',
   'batchWizard.step2.jobLinked': '当前任务工单',
   'batchWizard.step2.uploadQueue': '上传队列',
   'batchWizard.step2.queueCount': '当前共 {count} 个文件',
@@ -957,7 +957,7 @@ const zhOverrides: Record<string, string> = {
     '先运行 npm run doctor，再启动 npm run dev:models 或重启上面列出的服务。',
   'playground.dropHere': '把文件拖到这里上传',
   'playground.supportedFormats':
-    '支持 .doc、.docx、.txt、.md、.html、.pdf、.jpg、.png、.webp、.tif 等格式',
+    '支持 .docx、.txt、.md、.html、.pdf、.jpg、.png 等格式（.doc 请先另存为 .docx）',
   'playground.clickToUpload': '或点击选择文件',
   'playground.upload.rejectInvalidType': '{filename} 暂不支持。请选择 Word、文本、PDF 或图片文件。',
   'playground.upload.rejectTooLarge': '{filename} 超过 {max}，请选择更小的文件。',

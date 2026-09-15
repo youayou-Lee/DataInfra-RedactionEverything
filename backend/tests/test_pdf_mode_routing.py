@@ -315,6 +315,44 @@ async def test_pdf_replacement_per_entity_check_catches_dropped(_dirs, monkeypat
         "回退原位替换后两个实体原文都必须消失"
 
 
+@pytest.mark.asyncio
+async def test_pdf_replacement_preserved_entity_not_flagged_residual(_dirs, monkeypatch):
+    """设计性保留实体豁免残留判定（评审跟进项）：公共机构替换词==原文
+    （org_rules #56），不得因此永远回退原位替换、废掉 docx 回转收益。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    _make_pdf(src)
+    called = {}
+
+    def _fake_pdf2docx(src_path, wd):
+        from docx import Document as _Doc
+        fake_docx = os.path.join(wd, "source.docx")
+        d = _Doc()
+        d.add_paragraph("主管机关：司法部")
+        d.save(fake_docx)
+        called["pdf2docx"] = True
+        return fake_docx
+
+    async def _fake_docx2pdf(docx, out):
+        called["docx2pdf"] = True
+        import shutil; shutil.copy(str(src), out); return True
+
+    monkeypatch.setattr(Redactor, "_pdf_to_docx", staticmethod(_fake_pdf2docx))
+    monkeypatch.setattr(Redactor, "_docx_to_pdf", staticmethod(_fake_docx2pdf))
+    ents = [Entity(id="e1", text="司法部", type="INSTITUTION_NAME", start=0, end=3, page=1, selected=True)]
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=ents, bounding_boxes=[],
+        config=RedactionConfig(
+            replacement_mode="pseudonym",
+            custom_replacements={"司法部": "司法部"},  # 保留原文
+        ),
+    )
+    assert called.get("pdf2docx") and called.get("docx2pdf"), \
+        "保留实体（替换词==原文）不应触发残留回退，应正常走 docx 回转"
+    assert result["residual_entities"] == []
+
+
 def test_soffice_staging_root_snap_vs_nonsnap():
     """snap 版 soffice 暂存走 $HOME 非隐藏目录（沙箱读不了 /tmp 和 ~/.cache，
     评审 C2）；非 snap 走系统 /tmp。"""

@@ -584,13 +584,22 @@ class TextRedactorMixin:
                 # 丢失」凑数骗过。两类失败都回退原位替换——
                 #   ①残留：redacted docx 里仍有原文（拆 run 替换不完整）
                 #   ②转换丢失：源 docx 里就没有该实体（pdf2docx 丢内容）
-                residual = self._docx_texts_present(redacted_docx_path, unique_texts)
+                # 设计性保留实体（公共机构原文保留，org_rules #56：替换词
+                # ==原文）豁免残留判定，否则含机关名的文书永远回退原位替换
+                check_texts = {
+                    t for t in unique_texts
+                    if context.entity_map.get(t) != t
+                }
+                residual = self._docx_texts_present(redacted_docx_path, check_texts)
                 lost = set()
                 if not residual:
                     # 全部替换干净时才需要区分「替换成功」vs「转换时就被丢掉」
-                    candidates = unique_texts
-                    in_source = self._docx_texts_present(docx_path, candidates)
-                    lost = candidates - in_source
+                    in_source = self._docx_texts_present(docx_path, check_texts)
+                    lost = check_texts - in_source
+                    # 设计性保留实体（替换词==原文）在成品里消失=被转换丢弃
+                    preserved = unique_texts - check_texts
+                    kept = self._docx_texts_present(redacted_docx_path, preserved)
+                    lost |= preserved - kept
                 if residual or lost:
                     logger.warning(
                         "[redact:pdf-docx] docx 替换校验失败 residual=%s lost=%s，回退原位替换: %s",

@@ -308,6 +308,10 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         for orig, repl in entity_map.items():
             if not orig:
                 continue
+            # 设计性保留（替换词==原文，公共机构白名单 org_rules #56）：
+            # 原文留在成品是预期行为，不判残留也不判落盘
+            if orig == repl:
+                continue
             # 原文残留检测（跨节点/跨行提取会插入空白，去空白比对；
             # ASCII 加词边界匹配原始文本以减少短词误报；替换词本身包含
             # 原文时（John→Johnson）归一化子串会误报，跳过该分支）

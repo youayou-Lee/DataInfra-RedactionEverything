@@ -211,7 +211,11 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 
     # 打码(MASK)模式仅对 PDF/图片类文件有意义（图像打码/逐字符掩码）；
     # 文本格式（DOCX/TXT/MD 等）带 mask 进来时降级为智能模式（Issue #57）
-    _mask_file_type = str(file_info.get("file_type") or "").lower()
+    _raw_file_type = file_info.get("file_type")
+    # file_type 可能是 FileType 枚举（str(枚举) 得 'FileType.X'），统一取 value
+    _mask_file_type = str(
+        _raw_file_type.value if hasattr(_raw_file_type, "value") else (_raw_file_type or "")
+    ).lower()
     if request.config.replacement_mode == ReplacementMode.MASK and _mask_file_type not in {
         "pdf",
         "pdf_scanned",
@@ -222,7 +226,8 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
             file_id,
             _mask_file_type or "unknown",
         )
-        request.config.replacement_mode = ReplacementMode.SMART
+        # 拷贝后替换，避免变异调用方持有的同一 config 引用
+        request.config = request.config.model_copy(update={"replacement_mode": ReplacementMode.SMART})
 
     _attach_word_pools(request.config, str(file_info.get("owner_id") or "local_user"))
     redactor = Redactor()

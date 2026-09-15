@@ -61,3 +61,41 @@ async def test_mask_kept_for_pdf(monkeypatch):
     request = RedactionRequest(file_id="f-1", entities=[], bounding_boxes=[], config=config)
     await orch.execute_redaction(request)
     assert capture["mode"] == ReplacementMode.MASK
+
+
+@pytest.mark.asyncio
+async def test_mask_kept_for_filetype_enum_value(monkeypatch):
+    # file_type 为 FileType 枚举时不得因 str() 归一化误降级（评审 Important）
+    from app.models.common import FileType
+
+    capture: dict[str, Any] = {}
+    monkeypatch.setattr(orch, "Redactor", lambda: _StubRedactor(capture))
+    monkeypatch.setattr(
+        orch, "_get_file_store", lambda: _StubStore({"f-1": {"file_type": FileType.PDF}})
+    )
+    monkeypatch.setattr(orch, "_get_file_store_lock", lambda: __import__("asyncio").Lock())
+
+    config = RedactionConfig(replacement_mode=ReplacementMode.MASK)
+    request = RedactionRequest(file_id="f-1", entities=[], bounding_boxes=[], config=config)
+    await orch.execute_redaction(request)
+    assert capture["mode"] == ReplacementMode.MASK
+
+
+@pytest.mark.asyncio
+async def test_mask_downgrade_does_not_mutate_caller_config(monkeypatch):
+    import asyncio
+
+    capture: dict[str, Any] = {}
+    monkeypatch.setattr(orch, "Redactor", lambda: _StubRedactor(capture))
+    monkeypatch.setattr(
+        orch, "_get_file_store", lambda: _StubStore({"f-1": {"file_type": "docx"}})
+    )
+    monkeypatch.setattr(orch, "_get_file_store_lock", lambda: asyncio.Lock())
+
+    config = RedactionConfig(replacement_mode=ReplacementMode.MASK)
+    request = RedactionRequest(file_id="f-1", entities=[], bounding_boxes=[], config=config)
+    await orch.execute_redaction(request)
+    assert capture["mode"] == ReplacementMode.SMART
+    # 调用方持有的原 config 不被变异
+    assert request.config.replacement_mode == ReplacementMode.SMART
+    assert config.replacement_mode == ReplacementMode.MASK

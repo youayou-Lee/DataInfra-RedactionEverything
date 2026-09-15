@@ -103,8 +103,9 @@ class CellRunner:
                 cell["status"] = gates.STATUS_PASS
         except Exception as exc:  # 脚本侧异常（网络/超时）：ERROR，不算格式 FAIL
             cell["error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
-        cell["wall_s"] = round(time.perf_counter() - t0, 2)
-        self._cleanup()
+        finally:
+            cell["wall_s"] = round(time.perf_counter() - t0, 2)
+            self._cleanup()
         return cell
 
     def run_anomaly(self, case_id: str, artifact: Path, expect: str) -> dict:
@@ -166,6 +167,18 @@ class CellRunner:
         return rec
 
     # ---- 关卡 ----
+
+    @staticmethod
+    def _classify_fail(gr: dict) -> str:
+        """hard = 5xx/解析崩溃/成品损坏/原文残留/解析兜底；其余（化名/召回不足）= soft。"""
+        g2 = gr.get("g2", {})
+        if g2.get("status") == gates.STATUS_FAIL:
+            return "hard"
+        g4_detail = gr.get("g4", {}).get("detail", {})
+        for problem in g4_detail.get("problems", []):
+            if problem.startswith(("成品下载", "成品残留", "载体完整性")):
+                return "hard"
+        return "soft"
 
     def _run_gates(self, sample: Path, format_id: str, mode: str, cell: dict) -> dict:
         kind = MATRIX[format_id]["kind"]
@@ -311,13 +324,16 @@ class CellRunner:
 
     def _integrity(self, path: Path, format_id: str) -> dict:
         kind = MATRIX[format_id]["kind"]
-        if format_id == "docx":
-            return gates.check_docx_integrity(path)
-        if kind in ("pdf_text", "pdf_scanned"):
-            return gates.check_pdf_integrity(path, expect_pages=1)
-        if kind == "image":
-            return gates.check_image_integrity(path, expect_size=self.expect_size)
-        return {"ok": True, "note": f"{format_id} 无载体完整性校验（文本族）"}
+        try:
+            if format_id == "docx":
+                return gates.check_docx_integrity(path)
+            if kind in ("pdf_text", "pdf_scanned"):
+                return gates.check_pdf_integrity(path, expect_pages=1)
+            if kind == "image":
+                return gates.check_image_integrity(path, expect_size=self.expect_size)
+            return {"ok": True, "note": f"{format_id} 无载体完整性校验（文本族）"}
+        except Exception as exc:  # 成品损坏/解不开 = 完整性 FAIL，不是脚本 ERROR
+            return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
 
     # ---- 清理 ----
 
@@ -325,7 +341,10 @@ class CellRunner:
         if not self.cleanup:
             return
         for fid in dict.fromkeys(self._touched):
-            self.api.delete_file(fid)
+            try:
+                self.api.delete_file(fid)
+            except Exception as exc:  # 网络抖动不杀跑批；合成数据残留无害，末尾统一清点
+                print(f"    [清理] file {fid} 删除失败（尽力而为）: {str(exc)[:120]}")
         self._touched = []
 
 
@@ -374,9 +393,20 @@ def _build_anomalies(workdir: Path) -> dict[str, tuple[Path, str]]:
 
 
 def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bool,
-              formats_filter: list[str] | None = None) -> dict:
+              formats_filter: list[str] | None = None,
+              partial_out: Path | None = None) -> dict:
     gt = json.loads((FORMATS_DIR / "gt.json").read_text(encoding="utf-8"))
     runner = CellRunner(api, gt, workdir, cleanup=cleanup)
+
+    def _persist(cells: list[dict], anomalies: list[dict]) -> None:
+        """逐格落盘：隧道抖动/意外中断时不丢已完成格子。"""
+        if partial_out is None:
+            return
+        tiers_now = {f: gates.aggregate_format(cs) for f, cs in _group_by_format(cells).items()}
+        partial_out.write_text(json.dumps({
+            "suite": suite, "cells": cells, "anomalies": anomalies,
+            "tiers": tiers_now, "partial": True,
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     formats = list(MATRIX) if suite == "full" else SMOKE_FORMATS
     if formats_filter:
@@ -386,6 +416,7 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
         formats = formats_filter
     anomaly_ids = list(_build_anomalies(workdir)) if suite == "full" else SMOKE_ANOMALIES
     cells: list[dict] = []
+    anomalies: list[dict] = []
     for format_id in formats:
         spec = MATRIX[format_id]
         prev_status: dict[str, str] = {}
@@ -404,6 +435,7 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
             cell = runner.run_cell(format_id, mode)
             prev_status = {g: r["status"] for g, r in cell["gates"].items()}
             cells.append(cell)
+            _persist(cells, anomalies)
             _print_cell(cell)
 
     anomalies = []
@@ -415,6 +447,7 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
             path, expect = cases[cid]
             rec = runner.run_anomaly(cid, path, expect)
             anomalies.append(rec)
+            _persist(cells, anomalies)
             print(f"  [异常] {cid}: {rec['status']}"
                   + (f"（{rec['observations'][-1]}）" if rec["observations"] else ""))
 
@@ -484,7 +517,8 @@ def main() -> int:
     print(f"== Issue #46 格式矩阵 suite={args.suite} -> {args.base_url} ==")
     try:
         data = run_suite(api, suite=args.suite, workdir=workdir, cleanup=not args.keep_files,
-                         formats_filter=args.formats.split(",") if args.formats else None)
+                         formats_filter=args.formats.split(",") if args.formats else None,
+                         partial_out=workdir / "partial-matrix.json")
     finally:
         api.close()
 
@@ -495,6 +529,9 @@ def main() -> int:
                     "started_at": started.isoformat(timespec="seconds"),
                     "finished_at": datetime.now().isoformat(timespec="seconds")}
     json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    partial = workdir / "partial-matrix.json"
+    if partial.exists():  # 跑批完整结束，逐格落盘的中间态不再需要
+        partial.unlink()
     md_path = REPORTS_DIR / f"{ts}-{args.env}-format-matrix.md"
     md_path.write_text(render_md(data), encoding="utf-8")
     print(f"== 报告：{json_path.name} / {md_path.name} ==")

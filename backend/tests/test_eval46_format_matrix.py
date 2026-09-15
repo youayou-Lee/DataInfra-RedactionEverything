@@ -194,6 +194,98 @@ def test_aggregate_tiers(cells, expect):
     assert gates.aggregate_format(cells) == expect
 
 
+# ---------- 离线编排测试（stub API，不打网；抓接线类 bug）----------
+
+def test_run_suite_offline_smoke(tmp_path, monkeypatch):
+    """stub EvalApi 走通 run_suite 全链路：抓接线类 bug（UnboundLocal/AttributeError/
+    fail_class 未归类）；不追求 stub 下业务全 PASS，聚焦结构完整性。"""
+    import run_format_matrix as rfm
+
+    class R:
+        def __init__(self, status_code=200, payload=None, text="", content=b"CLEAN"):
+            self.status_code = status_code
+            self._payload = payload or {}
+            self.text = text
+            self.content = content
+
+        def json(self):
+            return self._payload
+
+    GT_FLAT = sum(GT_ENTITIES.values(), [])
+
+    class StubClient:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def get(self, url, params=None):
+            if "/parse" in url:
+                if "fmt_doc" in url:  # 仅 .doc 的 parse 走兜底（按 file_id 路由，无顺序耦合）
+                    return R(200, {"content": "[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]"})
+                return R(200, {"content": "委托人：" + GT_FLAT[0]})
+            if "/download" in url:
+                return R(200, {"file_id": "x"}, content=b"CLEAN")
+            return R(200, {})
+
+        def post(self, url, json=None):
+            if "/files/upload" in url:  # 异常例：结构化 400
+                return R(400, {}, text='{"message":"文件过大，最大支持 50MB"}')
+            if "/ner/hybrid" in url:
+                ents = [{"id": f"e{i}", "text": t, "type": "PERSON", "start": 0, "end": 1}
+                        for i, t in enumerate(GT_FLAT)]
+                return R(200, {"entities": ents, "recognition_failed": False})
+            if "/redaction/execute" in url:
+                return R(200, {"output_file_id": "out-1",
+                               "entity_map": {t: f"替{i}" for i, t in enumerate(GT_FLAT)},
+                               "residual_entities": []})
+            return R(200, {})
+
+        def delete(self, url):
+            return R(204, {})
+
+    class StubApi:
+        def __init__(self, *a, **kw):
+            self.client = StubClient(self)
+            self.deleted = []
+
+        def upload(self, path):
+            return f"fid-{path.name}"
+
+        def vision(self, file_id, page, force=True, **kw):
+            boxes = [{"id": f"b{i}", "x": 0.1, "y": 0.2 + i * 0.05, "width": 0.3,
+                      "height": 0.04, "page": 1, "type": "PERSON", "text": t, "selected": True}
+                     for i, t in enumerate(GT_FLAT)]
+            return {"bounding_boxes": boxes, "pipeline_status": {}}
+
+        def parse_and_hybrid_ner(self, file_id):
+            return {"姓名": list(GT_ENTITIES["姓名"])}, 0.1
+
+        def delete_file(self, fid):
+            self.deleted.append(fid)
+            return True
+
+        def close(self):
+            pass
+
+    api = StubApi()
+    data = rfm.run_suite(api, suite="smoke", workdir=tmp_path, cleanup=True)
+
+    assert len(data["cells"]) == 6 and len(data["anomalies"]) == 2
+    doc_mask = next(c for c in data["cells"] if c["cell_id"] == "doc×mask")
+    assert doc_mask["status"] == "FAIL" and doc_mask["fail_class"] == "hard", \
+        f"G2 兜底必须归类 hard（_classify_fail 接线存在且生效）: {doc_mask}"
+    assert data["tiers"]["doc"] == "前端禁用"
+    doc_pseudo = next(c for c in data["cells"] if c["cell_id"] == "doc×pseudonym")
+    assert doc_pseudo["status"] == "SKIP"
+    wiring_errors = [c["error"] for c in data["cells"]
+                     if c.get("error") and ("AttributeError" in c["error"]
+                                            or "UnboundLocalError" in c["error"]
+                                            or "TypeError" in c["error"]
+                                            or "KeyError" in c["error"])]
+    assert not wiring_errors, f"接线类 bug: {wiring_errors}"
+    assert data["summary"]["cells_error"] == 0, \
+        f"stub 环境不允许非接线 ERROR: {[c['error'] for c in data['cells'] if c['error']]}"
+
+
 # ---------- 报告渲染快照 ----------
 
 def test_render_md_snapshot():

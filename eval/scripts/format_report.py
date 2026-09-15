@@ -155,14 +155,16 @@ def _basis(cell: dict | None) -> str:
 
 
 def _fail_reason(cell: dict) -> str:
+    # G4 的 problems 最具体（残留/载体/下载），优先于上游关卡的概括性原因
+    r = cell.get("gates", {}).get("g4")
+    if r and r["status"] == "FAIL" and r.get("detail", {}).get("problems"):
+        return "g4：" + "；".join(r["detail"]["problems"][:2])
     for gate in _GATE_ORDER:
         r = cell.get("gates", {}).get(gate)
         if r and r["status"] == "FAIL":
             detail = r.get("detail", {})
             if detail.get("reason"):
                 return f"{gate}：{detail['reason']}"
-            if detail.get("problems"):
-                return f"{gate}：{'；'.join(detail['problems'][:2])}"
             if detail.get("missing"):
                 return f"{gate}：缺 {detail['missing'][:3]}"
     return cell.get("error") or "未知原因"

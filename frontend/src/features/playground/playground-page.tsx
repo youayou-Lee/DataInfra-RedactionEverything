@@ -1,6 +1,6 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
-import { type FC, type ReactNode, useMemo } from 'react';
+import { type FC, type ReactNode, useEffect, useMemo } from 'react';
 import { useT } from '@/i18n';
 import { getEntityTypeName } from '@/config/entityTypes';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -18,7 +18,11 @@ import {
   usePlaygroundContext,
   usePlaygroundUIContext,
 } from './playground-context';
-import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
+import {
+  isMaskAllowedForFile,
+  previewEntityHoverRingClass,
+  previewEntityMarkStyle,
+} from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
 
 /** Inner component that consumes the playground context. */
@@ -84,6 +88,14 @@ const PlaygroundInner: FC = () => {
       ),
     [recognition.pipelines],
   );
+
+  // Issue #57: 打码模式仅对 PDF 开放；文本格式自动回落为结构化模式
+  const maskAllowed = isMaskAllowedForFile(fileInfo?.file_type);
+  useEffect(() => {
+    if (!maskAllowed && recognition.replacementMode === 'mask') {
+      recognition.setReplacementMode('structured');
+    }
+  }, [maskAllowed, recognition]);
 
   const pagesArr = fileInfo?.pages;
   const hasTextPagination =
@@ -340,6 +352,7 @@ const PlaygroundInner: FC = () => {
               }
               replacementMode={recognition.replacementMode}
               setReplacementMode={recognition.setReplacementMode}
+              maskAllowed={maskAllowed}
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}

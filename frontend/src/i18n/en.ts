@@ -92,6 +92,7 @@ const enBase: Record<string, string> = {
 
   'mode.smart': 'Smart Replace',
   'mode.mask': 'Mask',
+  'mode.maskPdfOnly': 'Mask mode supports PDF files only',
   'mode.structured': 'Structured Tags',
   'mode.pseudonym': 'Pseudonym',
   'editor.samplePseudonym': 'Alias A',
@@ -1315,6 +1316,8 @@ const enOverrides: Record<string, string> = {
     'The current review changes could not be saved, so the file was not changed.',
   'batchWizard.reviewSaveBeforeExportFailed':
     'The current review changes could not be saved. Export was blocked to avoid stale redaction output.',
+  'batchWizard.maskDowngraded':
+    'Mask mode supports PDF files only; this batch contains other formats, switched to Smart mode.',
   'batchWizard.configLocked':
     'This batch recognition list is locked because recognition has already started. Create a new batch job to change the list, item combination, or redaction methods.',
   'batchWizard.noActiveJob': 'No active task is available.',

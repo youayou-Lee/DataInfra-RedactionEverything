@@ -33,6 +33,13 @@ export function previewEntityHoverRingClass(source: Entity['source']): string {
   return getSelectionToneClasses(sourceToTone(source)).hoverRing;
 }
 
+// Issue #57: 打码(MASK)模式仅对 PDF 有效；图片走图像打码，文本格式禁用
+export function isMaskAllowedForFile(fileType?: string): boolean {
+  if (!fileType) return true;
+  const normalized = fileType.toLowerCase();
+  return normalized === 'pdf' || normalized === 'image' || normalized === 'pdf_scanned';
+}
+
 export function getModePreview(mode: string, sampleEntity?: Entity) {
   const name = sampleEntity?.text || t('editor.sampleName');
   switch (mode) {

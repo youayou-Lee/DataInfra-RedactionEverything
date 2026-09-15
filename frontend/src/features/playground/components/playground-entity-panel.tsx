@@ -38,6 +38,7 @@ export interface PlaygroundEntityPanelProps {
   displayStats?: Record<string, { total: number; selected: number }>;
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  maskAllowed?: boolean;
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
@@ -65,6 +66,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     displayStats,
     replacementMode,
     setReplacementMode,
+    maskAllowed = true,
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
@@ -178,6 +180,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               <ReplacementModeSelector
                 entities={entities}
                 mode={replacementMode}
+                maskAllowed={maskAllowed}
                 onModeChange={(mode) => {
                   clearPlaygroundTextPresetTracking();
                   setReplacementMode(mode);
@@ -302,8 +305,9 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
 const ReplacementModeSelector: FC<{
   entities: Entity[];
   mode: 'structured' | 'smart' | 'mask' | 'pseudonym';
+  maskAllowed: boolean;
   onModeChange: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
-}> = ({ entities, mode, onModeChange }) => {
+}> = ({ entities, mode, maskAllowed, onModeChange }) => {
   const t = useT();
   const sampleEntity = entities.find((entity) => entity.text && entity.text.length > 0);
   const modes: {
@@ -342,7 +346,14 @@ const ReplacementModeSelector: FC<{
                 onChange={() => onModeChange(item.value)}
                 className="sr-only"
               />
-              <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
+              <span
+                className={cn(
+                  'truncate text-xs font-medium text-foreground',
+                  item.value === 'mask' && !maskAllowed && 'cursor-not-allowed opacity-40',
+                )}
+              >
+                {item.label}
+              </span>
               {item.badge && (
                 <Badge
                   variant="outline"

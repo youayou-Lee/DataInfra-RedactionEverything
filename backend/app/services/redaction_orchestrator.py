@@ -209,6 +209,21 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 
     file_info = file_store[file_id]
 
+    # 打码(MASK)模式仅对 PDF/图片类文件有意义（图像打码/逐字符掩码）；
+    # 文本格式（DOCX/TXT/MD 等）带 mask 进来时降级为智能模式（Issue #57）
+    _mask_file_type = str(file_info.get("file_type") or "").lower()
+    if request.config.replacement_mode == ReplacementMode.MASK and _mask_file_type not in {
+        "pdf",
+        "pdf_scanned",
+        "image",
+    }:
+        logger.warning(
+            "file %s type=%s does not support MASK mode, downgraded to SMART",
+            file_id,
+            _mask_file_type or "unknown",
+        )
+        request.config.replacement_mode = ReplacementMode.SMART
+
     _attach_word_pools(request.config, str(file_info.get("owner_id") or "local_user"))
     redactor = Redactor()
     result = await redactor.redact(

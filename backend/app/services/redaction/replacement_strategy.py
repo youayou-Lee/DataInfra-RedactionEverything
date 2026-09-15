@@ -13,7 +13,7 @@ from app.models.schemas import (
     ReplacementMode,
 )
 from app.models.type_mapping import canonical_type_id
-from app.services.redaction.org_rules import is_org_like, is_public_institution, org_pool_key_for
+from app.services.redaction.org_rules import is_org_like, is_preserved_org_text, org_pool_key_for
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class RedactionContext:
         if (
             self.mode == ReplacementMode.PSEUDONYM
             and is_org_like(type_key)
-            and is_public_institution(entity.text)
+            and is_preserved_org_text(entity.text)
         ):
             self._coref_map[entity_key] = entity.text
             self.entity_map[entity.text] = entity.text

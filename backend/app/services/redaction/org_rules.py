@@ -14,8 +14,9 @@ from __future__ import annotations
 from app.models.type_mapping import TYPE_REGISTRY
 
 # 化名模式下默认保留原文的公共机构后缀。
-# 范围=国家部委级机关 + 司法行政类公共机构；地方机关（公安局/法院/司法
-# 局等）不在白名单——preview2.0.0 已验收行为是照常匿名化（某人民法院1）。
+# 范围=国家部委级机关 + 党的机关 + 省/厅级政府组成部门 + 司法行政类公共
+# 机构；县级及以下机关（公安局/法院/司法局等）不在白名单——preview2.0.0
+# 已验收行为是照常匿名化（某人民法院1/某公安局1）。
 PUBLIC_INSTITUTION_SUFFIXES: tuple[str, ...] = (
     "律师事务中心",
     "法律援助中心",
@@ -28,7 +29,13 @@ PUBLIC_INSTITUTION_KEYWORDS: tuple[str, ...] = (
     "国务院",
     "最高人民法院",
     "最高人民检察院",
+    "中共中央",
     "政法委",
+    "党委",
+    "党组",
+    "组织部",
+    "宣传部",
+    "统战部",
 )
 
 # 「部」单独作后缀歧义大（如「某某贸易部」），仅限常见部委名组合按机关保留
@@ -56,12 +63,38 @@ MINISTRY_PREFIXES: tuple[str, ...] = (
     "退役",
     "应急",
     "审计",
+    "组织",
+    "宣传",
+    "统战",
+    "政法",
 )
 
-# 后缀歧义保护：命中「部/厅/局/署」但含经营主体字样的名称不按机关保留
+# 后缀歧义保护：命中「部/厅」但含经营主体字样的名称不按机关保留
 _AMBIGUOUS_SUFFIX_EXCLUDE_MARKERS: tuple[str, ...] = (
     "公司", "企业", "集团", "事务所", "银行", "贸易",
 )
+
+# 出版物（报刊/指南/年鉴等）：NER 常误判为机构名称，但其名是公开出版物、
+# 无脱敏必要，保留原文（Issue #58 验收反馈：首席法务杂志/商法/亚太法律指南）
+PUBLICATION_SUFFIXES: tuple[str, ...] = (
+    "杂志",
+    "期刊",
+    "文摘",
+    "日报",
+    "周报",
+    "周刊",
+    "晚报",
+    "早报",
+    "时报",
+    "年鉴",
+    "概况",
+    "指南",
+    "汇编",
+    "公报",
+)
+
+# 书名号包裹是出版物的强信号
+_QUOTED_PUBLICATION_RE = __import__("re").compile(r"^《[^》]{1,40}》$")
 
 # 组织子类型 → 词池键：按原文后缀路由（Issue #55）
 # 法院/检察院不在此列：它们照常匿名化，由 _pool_key_for 的机关关键词精化
@@ -105,6 +138,21 @@ def org_pool_key_for(text: str) -> str | None:
     return None
 
 
+def is_publication(text: str) -> bool:
+    """判断是否为出版物名称（杂志/报刊/指南/年鉴等），化名模式下保留原文。"""
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if _QUOTED_PUBLICATION_RE.match(stripped):
+        return True
+    return any(stripped.endswith(suffix) for suffix in PUBLICATION_SUFFIXES)
+
+
+def is_preserved_org_text(text: str) -> bool:
+    """化名模式下默认保留原文的组织文本：公共机构或出版物。"""
+    return is_public_institution(text) or is_publication(text)
+
+
 def is_public_institution(text: str) -> bool:
     """判断组织名称是否为默认保留原文的公共机构（Issue #56）。"""
     stripped = (text or "").strip()
@@ -112,7 +160,7 @@ def is_public_institution(text: str) -> bool:
         return False
     # 规范化：去国号前缀，如「中华人民共和国司法部」→「司法部」
     normalized = stripped.removeprefix("中华人民共和国")
-    ambiguous_hit = normalized.endswith("部") and any(
+    ambiguous_hit = normalized.endswith(("部", "厅")) and any(
         m in normalized for m in _AMBIGUOUS_SUFFIX_EXCLUDE_MARKERS
     )
     if not ambiguous_hit:
@@ -121,5 +169,8 @@ def is_public_institution(text: str) -> bool:
         if any(keyword in normalized for keyword in PUBLIC_INSTITUTION_KEYWORDS):
             return True
         if any(normalized.endswith(prefix + "部") for prefix in MINISTRY_PREFIXES):
+            return True
+        # 「厅」=省级政府组成部门（司法厅/公安厅/财政厅…），含经营字样时已被上面排除
+        if normalized.endswith("厅"):
             return True
     return False

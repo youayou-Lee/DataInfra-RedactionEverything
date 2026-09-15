@@ -472,3 +472,47 @@ def test_public_institution_rules_apply_only_in_pseudonym_mode():
 
     ctx = RedactionContext(RM.MASK, word_pools=ORG_POOLS)
     assert ctx.get_replacement(_entity("司法部", type_="ORG")) == "***"
+
+
+# ---------- 验收反馈回归：出版物 + 党的机关 + 厅级机关（2026-09-15） ----------
+
+
+def test_publications_preserved_verbatim():
+    # NER 常把出版物误判为机构名称；其名公开、无脱敏必要，保留原文
+    for text in (
+        "《首席法务杂志》",
+        "首席法务杂志",
+        "《首席法务官》杂志",
+        "《亚洲法律杂志》",
+        "亚洲法律概况",
+        "2020亚太法律指南",
+        "《商法》",
+        "最高人民法院公报",
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_party_and_provincial_organs_preserved_verbatim():
+    for text in (
+        "中共中央组织部",
+        "中共中央宣传部",
+        "广西壮族自治区司法厅",
+        "广西司法厅",
+        "某省委组织部",
+        "某市政法委",
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_publication_and_party_rules_negative_controls():
+    # 经营主体不因后缀相近被误保留
+    for text in (
+        "某某出版集团有限公司",
+        "某某贸易有限公司",
+        "某某贸易部",
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        out = ctx.get_replacement(_entity(text, type_="ORG"))
+        assert out != text, text

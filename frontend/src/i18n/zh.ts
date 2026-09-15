@@ -89,6 +89,7 @@ const zhBase: Record<string, string> = {
 
   'mode.smart': '智能替换',
   'mode.mask': '掩码替换',
+  'mode.maskPdfOnly': '打码仅支持 PDF 文件',
   'mode.structured': '结构化标签',
   'mode.pseudonym': '化名替换',
 
@@ -100,6 +101,8 @@ const zhBase: Record<string, string> = {
   'playground.processingModeReplaceUnavailable': '扫描件 / 图片暂不可用',
   'playground.processingModeScannedNotice':
     '扫描型 PDF / 图片暂未上线替换（化名），当前仅支持打码。',
+  'playground.processingModeMaskPdfNotice':
+    '打码（掩码）仅支持 PDF 文件；当前文件请使用「替换」方式。',
   'playground.pseudonymMap': '化名映射',
   'playground.pseudonymMapDesc': '确认每个敏感项的替换词后执行，成品即所见；对照表随导出提供。',
   'playground.pseudonymLoading': '生成默认化名中…',
@@ -719,6 +722,8 @@ const zhBase: Record<string, string> = {
   'batchWizard.reviewSaveBeforeNavigateFailed': '当前审阅修改保存失败，已阻止切换文件。',
   'batchWizard.reviewSaveBeforeExportFailed':
     '当前审阅修改保存失败，已阻止导出以避免使用过期的脱敏结果。',
+  'batchWizard.maskDowngraded':
+    '打码模式仅支持 PDF 文件；本批次包含其他格式，已自动切换为智能替换。',
   'batchWizard.configLocked':
     '该批次的配置清单已锁定，因为识别已经开始；如需修改清单、识别项组合或打码方式，请新建批处理任务。',
   'batchWizard.noActiveJob': '当前没有可用的任务。',

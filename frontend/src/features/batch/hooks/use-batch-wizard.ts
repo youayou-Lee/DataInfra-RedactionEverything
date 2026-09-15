@@ -46,7 +46,11 @@ import { useBatchPhaseNotifications } from './use-batch-phase-notifications';
 import { useBatchPolling } from './use-batch-polling';
 import { useBatchReview } from './use-batch-review';
 import { useBatchSubmit } from './use-batch-submit';
-import { isBatchImageMode, resolveBatchFileType } from '../utils/file-type';
+import {
+  isBatchImageMode,
+  isMaskModeSupportedFileType,
+  resolveBatchFileType,
+} from '../utils/file-type';
 
 export function useBatchWizard() {
   const { batchMode } = useParams<{ batchMode: string }>();
@@ -287,6 +291,18 @@ export function useBatchWizard() {
     if (!jid) return;
     setActiveJobId((prev) => (prev === jid ? prev : jid));
   }, [searchParams]);
+
+  // Issue #57: 打码(MASK)模式仅对 PDF 生效；批量里出现非 PDF 文本文件时
+  // 自动降级为智能替换，避免文本格式被逐字符打码
+  useEffect(() => {
+    if (cfg.replacementMode !== 'mask') return;
+    if (!rows.length) return;
+    if (rows.every((row) => isMaskModeSupportedFileType(row.file_type))) return;
+    setCfg((current) =>
+      current.replacementMode === 'mask' ? { ...current, replacementMode: 'smart' } : current,
+    );
+    setMsg({ text: t('batchWizard.maskDowngraded'), tone: 'warn' });
+  }, [cfg.replacementMode, rows, setCfg, setMsg]);
 
   useEffect(() => {
     lastSavedJobConfigJson.current = '';

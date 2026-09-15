@@ -85,6 +85,10 @@ export function usePlayground() {
     null,
   );
   const pseudonymEpochRef = useRef(0);
+  // 用户在映射表手动改过的原文键：重新识别刷新自动映射时不覆盖
+  const pseudonymUserEditedRef = useRef<Set<string>>(new Set());
+  // 上次成功拉取映射时的实体集签名：变化（重新识别）则刷新全部自动映射
+  const pseudonymEntitySigRef = useRef<string>('');
 
   const getRecognitionBlocker = useCallback(
     (file: { fileType: string; isScanned: boolean; content: string }) => {
@@ -234,11 +238,16 @@ export function usePlayground() {
     () => selectedEntityTexts.filter((text) => !(text in pseudonymMap)),
     [selectedEntityTexts, pseudonymMap],
   );
+  const entitySignature = useMemo(
+    () => selectedEntityTexts.join('\u0000'),
+    [selectedEntityTexts],
+  );
   useEffect(() => {
     if (recognition.processingMode !== 'replace') return;
     if (fileCtx.isImageMode) return;
-    // 全部行已补齐（可能含失败后手动填全的情况）时清掉残留错误，避免卡死执行按钮
-    if (missingPseudonymKeys.length === 0) {
+    const sigChanged = pseudonymEntitySigRef.current !== entitySignature;
+    // 全部行已补齐且实体集未变化（可能含失败后手动填全的情况）时清掉残留错误
+    if (missingPseudonymKeys.length === 0 && !sigChanged) {
       setPseudonymMapError(null);
       return;
     }
@@ -265,10 +274,15 @@ export function usePlayground() {
         const data = await safeJson<{ entity_map?: Record<string, string> }>(res);
         if (epoch !== pseudonymEpochRef.current) return;
         const incoming = data.entity_map ?? {};
+        pseudonymEntitySigRef.current = entitySignature;
         setPseudonymMap((current) => {
           const next = { ...current };
           for (const [key, value] of Object.entries(incoming)) {
-            if (!(key in next)) next[key] = value;
+            // 只补缺；实体集变化（重新识别）时刷新全部「非用户手改」键，
+            // 使服务端化名规则升级后旧自动映射能被纠正
+            if (!(key in next) || (sigChanged && !pseudonymUserEditedRef.current.has(key))) {
+              next[key] = value;
+            }
           }
           return next;
         });
@@ -283,6 +297,7 @@ export function usePlayground() {
     void run();
     return () => controller.abort();
   }, [
+    entitySignature,
     missingPseudonymKeys.length,
     recognition.processingMode,
     fileCtx.isImageMode,
@@ -296,6 +311,7 @@ export function usePlayground() {
   }, []);
 
   const setPseudonymReplacement = useCallback((text: string, replacement: string) => {
+    pseudonymUserEditedRef.current.add(text);
     setPseudonymMap((current) => ({ ...current, [text]: replacement }));
   }, []);
 
@@ -550,6 +566,8 @@ export function usePlayground() {
     setRedactedCount(0);
     setEntityMap({});
     setPseudonymMap({});
+    pseudonymUserEditedRef.current = new Set();
+    pseudonymEntitySigRef.current = '';
     setPseudonymMapLoading(false);
     setPseudonymMapError(null);
     setConfirmedPseudonymMap(null);

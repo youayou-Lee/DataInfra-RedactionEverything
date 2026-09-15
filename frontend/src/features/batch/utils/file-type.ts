@@ -23,6 +23,11 @@ export function isBatchImageMode(fileType: FileType): boolean {
   return fileType === FileType.IMAGE || fileType === FileType.PDF_SCANNED;
 }
 
+// Issue #57: 打码(MASK)模式仅对 PDF 文件生效（扫描件/图片走图像打码）
+export function isMaskModeSupportedFileType(fileType: FileType): boolean {
+  return fileType === FileType.PDF;
+}
+
 export function isBatchFileAllowedForMode(mode: BatchWizardMode, fileType: FileType): boolean {
   if (mode === 'smart') return true;
   if (mode === 'text') return fileType !== FileType.IMAGE;

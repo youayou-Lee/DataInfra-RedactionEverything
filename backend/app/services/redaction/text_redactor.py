@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import fitz
@@ -564,7 +565,11 @@ class TextRedactorMixin:
         PDF 原位替换。任一转换环节失败即回退原位替换（原文仍会从内容流
         删除，只是版面质量差），不允许因此交付失败或原文泄露。
         """
-        import tempfile
+        unique_texts = {e.text for e in entities if e.selected and e.text}
+        if not unique_texts:
+            # 零实体：直接原样拷贝——跑 docx 回转只会白白重排版面（评审 I3）
+            shutil.copyfile(input_path, output_path)
+            return 0
 
         workdir = tempfile.mkdtemp(prefix="pdf_redact_")
         try:
@@ -575,13 +580,21 @@ class TextRedactorMixin:
                 count = await self._redact_docx(
                     docx_path, redacted_docx_path, entities, context
                 )
-                expected = len({e.text for e in entities if e.selected and e.text})
-                if count < expected:
-                    # docx 里实体命中率不足（pdf2docx 拆 run 等）＝有原文没被替换，
-                    # 回退原位替换（search_for 对拆分容忍度更高），不交付含原文 PDF
+                # 逐实体校验（评审 I1）：聚合计数会被「A 替换多次+B 整体
+                # 丢失」凑数骗过。两类失败都回退原位替换——
+                #   ①残留：redacted docx 里仍有原文（拆 run 替换不完整）
+                #   ②转换丢失：源 docx 里就没有该实体（pdf2docx 丢内容）
+                residual = self._docx_texts_present(redacted_docx_path, unique_texts)
+                lost = set()
+                if not residual:
+                    # 全部替换干净时才需要区分「替换成功」vs「转换时就被丢掉」
+                    candidates = unique_texts
+                    in_source = self._docx_texts_present(docx_path, candidates)
+                    lost = candidates - in_source
+                if residual or lost:
                     logger.warning(
-                        "[redact:pdf-docx] docx 替换命中 %d/%d 不足，回退原位替换: %s",
-                        count, expected, input_path,
+                        "[redact:pdf-docx] docx 替换校验失败 residual=%s lost=%s，回退原位替换: %s",
+                        sorted(residual)[:5], sorted(lost)[:5], input_path,
                     )
                     return await self._redact_pdf_text(
                         input_path, output_path, entities, context
@@ -605,6 +618,27 @@ class TextRedactorMixin:
             shutil.rmtree(workdir, ignore_errors=True)
         return await self._redact_pdf_text(input_path, output_path, entities, context)
 
+    def _docx_texts_present(self, docx_path: str, texts: set[str]) -> set[str]:
+        """返回在 docx 正文中仍以原文形态出现的实体文本集合。
+
+        空白字符归一后比对（容忍跨 run 拆分）；读取失败时保守返回全部
+        （调用方会因此回退原位替换，安全方向）。
+        """
+        if not texts:
+            return set()
+        try:
+            doc = Document(docx_path)
+            parts = [p.text or "" for p in self._iter_all_paragraphs(doc)]
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    for cell in row.cells:
+                        parts.append(cell.text or "")
+            squeezed = "".join(parts).replace(" ", "").replace("\n", "").replace("\t", "")
+            return {t for t in texts if t.replace(" ", "") in squeezed}
+        except Exception:
+            logger.exception("[redact:pdf-docx] docx 残留校验读取失败，按全量残留处理")
+            return set(texts)
+
     @staticmethod
     def _pdf_to_docx(input_path: str, workdir: str) -> str | None:
         """pdf2docx 转换；依赖缺失或转换失败返回 None（调用方回退）。"""
@@ -626,11 +660,22 @@ class TextRedactorMixin:
         return docx_path if os.path.exists(docx_path) and os.path.getsize(docx_path) > 0 else None
 
     @staticmethod
+    def _soffice_staging_root(soffice: str) -> str:
+        """soffice 暂存根目录（评审 C2）。
+
+        snap 打包的 LibreOffice 沙箱只能访问 $HOME 下**非隐藏**目录——
+        /tmp 和 ~/.cache 都读不了（隐藏顶级目录被 home 接口阻断），
+        所以 snap 用 ~/redaction-soffice-tmp；非 snap（apt/Docker）用 /tmp。
+        """
+        if "/snap/" in soffice:
+            return os.path.join(os.path.expanduser("~"), "redaction-soffice-tmp")
+        return os.path.join(tempfile.gettempdir(), "redaction-soffice")
+
+    @staticmethod
     async def _docx_to_pdf(docx_path: str, output_pdf_path: str) -> bool:
         """LibreOffice 回转 docx→PDF（doc→docx 先例同一转换器）。
 
-        snap 打包的 LibreOffice 受沙箱限制只能访问 $HOME，读不了 /tmp，
-        所以转换在 ~/.cache 下的暂存目录进行，产物再搬回目标位置。
+        暂存目录选择见 _soffice_staging_root；产物再搬回目标位置。
         """
         soffice_candidates = [
             os.environ.get("SOFFICE_PATH", ""),
@@ -646,9 +691,7 @@ class TextRedactorMixin:
         if not soffice:
             logger.warning("[redact:pdf-docx] 未找到 LibreOffice (soffice)")
             return False
-        staging_root = os.path.join(
-            os.path.expanduser("~"), ".cache", "redaction-soffice"
-        )
+        staging_root = TextRedactorMixin._soffice_staging_root(soffice)
         try:
             os.makedirs(staging_root, exist_ok=True)
             staging = tempfile.mkdtemp(prefix="conv_", dir=staging_root)
@@ -663,12 +706,13 @@ class TextRedactorMixin:
             return False
         try:
             # soffice 是阻塞进程，丢进线程跑避免卡事件循环；超时防挂死
+            # profile URI 走 as_uri 百分号编码（用户名含空格等不再炸）
             proc = await asyncio.to_thread(
                 subprocess.run,
                 [soffice, "--headless", "--norestore",
                  # 独立 profile：并发转换互不抢锁，否则第二个实例会把参数
                  # 转发给第一个后立即退出 0，产物丢失
-                 f"-env:UserInstallation=file://{staging}/profile",
+                 f"-env:UserInstallation={Path(os.path.join(staging, 'profile')).as_uri()}",
                  "--convert-to", "pdf",
                  "--outdir", staging, staged_docx],
                 capture_output=True,

@@ -90,7 +90,8 @@ async def test_pdf_mask_missing_entity_falls_back_to_text_mask(_dirs):
         doc.close()
     assert "陈明飞" not in text.replace(" ", ""), "回退文本链路后可定位实体原文必须删除"
     assert not has_imgs, "存在漏定位实体时禁止栅格化（明文像素泄露）"
-    assert "不存在的实体文本XYZ" in result["residual_entities"]
+    # 残留以详细版（含替换去向）或纯文本形态透出均可，关键是不静默
+    assert any("不存在的实体文本XYZ" in r for r in result["residual_entities"])
 
 
 @pytest.mark.asyncio
@@ -146,24 +147,34 @@ async def test_pdf_replacement_prefers_docx_roundtrip(_dirs, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pdf_mask_with_user_boxes_uses_boxes_not_entities(_dirs, monkeypatch):
-    """拉框 + MASK：走用户框（既有行为），不触发实体定位。"""
+async def test_pdf_mask_with_user_boxes_also_masks_entities(_dirs, monkeypatch):
+    """拉框 + MASK：用户框与实体定位框**合并**栅格化（评审 I2）——只吃
+    手拉框会在「选了实体+残留旧框」时产出零打码的栅格化成品。"""
     up, _ = _dirs
     src = up / "t.pdf"
     _make_pdf(src)
     called = {}
-    monkeypatch.setattr(
-        Redactor, "_entities_to_norm_boxes",
-        staticmethod(lambda *a, **k: called.setdefault("located", True) or ([], [])),
-    )
+    _orig_locate = Redactor._entities_to_norm_boxes  # py3.10+ 类属性已是裸函数
+
+    def _spy(file_path, ents):
+        called["located"] = True
+        return _orig_locate(file_path, ents)
+
+    monkeypatch.setattr(Redactor, "_entities_to_norm_boxes", staticmethod(_spy))
     boxes = [BoundingBox(id="b1", x=0.1, y=0.1, width=0.3, height=0.05, page=1, type="PERSON", selected=True)]
     result = await Redactor().redact(
         file_info={"file_path": str(src), "file_type": "pdf"},
         entities=_entities(), bounding_boxes=boxes,
         config=RedactionConfig(replacement_mode="mask"),
     )
-    assert "located" not in called, "拉框时不应再做实体定位"
-    assert result["redacted_count"] == 1
+    assert called.get("located"), "拉框路径的 MASK 也应做实体定位并合并"
+    assert result["redacted_count"] == 3, "1 用户框 + 2 实体框"
+    doc = fitz.open(result["output_path"])
+    try:
+        text = "".join(p.get_text() for p in doc)
+    finally:
+        doc.close()
+    assert "陈明飞" not in text.replace(" ", "") and "110101199003078515" not in text
 
 
 @pytest.mark.asyncio
@@ -194,3 +205,126 @@ def test_entities_to_norm_boxes_coordinates(_dirs):
         assert 0 <= b.x < 1 and 0 <= b.y < 1
         assert 0 < b.width <= 1 and 0 < b.height <= 1
         assert b.selected and b.page == 1
+
+
+def test_entities_to_norm_boxes_searches_all_pages(_dirs):
+    """同一实体文本在多页出现时必须全部打框（评审 C1）——NER 漏检重复
+    出现时，只按登记页打码会让其他页原文以可读像素残留。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    doc = fitz.open()
+    for _ in range(3):
+        doc.new_page()
+    for i in range(3):
+        doc[i].insert_text((72, 130), "嫌疑人陈明飞到案", fontsize=12, fontname="china-s")
+    doc.save(str(src)); doc.close()
+    # 实体只登记第 1 页（模拟 NER 漏检后两页的重复出现）
+    ents = [Entity(id="e1", text="陈明飞", type="PERSON", start=0, end=3, page=1, selected=True)]
+    boxes, missed = Redactor._entities_to_norm_boxes(str(src), ents)
+    assert not missed
+    assert {b.page for b in boxes} == {1, 2, 3}, "三页同名文本必须都有框"
+
+
+@pytest.mark.asyncio
+async def test_pdf_mask_masks_same_text_on_all_pages(_dirs):
+    """端到端（评审 C1）：实体只登记第 1 页，第 2 页同名原文也必须被打码，
+    产物任何页都不得残留原文文本层。"""
+    up, _ = _dirs
+    src = up / "t2.pdf"
+    doc = fitz.open()
+    for _ in range(2):
+        doc.new_page()
+    for i in range(2):
+        doc[i].insert_text((72, 130), "委托人：陈明飞", fontsize=12, fontname="china-s")
+    doc.save(str(src)); doc.close()
+    ents = [Entity(id="e1", text="陈明飞", type="PERSON", start=0, end=3, page=1, selected=True)]
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=ents, bounding_boxes=[],
+        config=RedactionConfig(replacement_mode="mask"),
+    )
+    out = fitz.open(result["output_path"])
+    try:
+        for i in range(out.page_count):
+            assert "陈明飞" not in out[i].get_text(), f"第{i+1}页文本层残留原文"
+            assert len(out[i].get_images(full=True)) > 0, f"第{i+1}页应栅格化"
+    finally:
+        out.close()
+    assert result["redacted_count"] == 2, "两页同名各一框"
+    assert result["residual_entities"] == []
+
+
+@pytest.mark.asyncio
+async def test_pdf_replacement_zero_entities_short_circuits(_dirs, monkeypatch):
+    """零实体（评审 I3）：直接原样拷贝，不跑 docx 回转（避免无意义的有损
+    重排），输出与输入逐字节一致。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    _make_pdf(src)
+    called = {}
+    monkeypatch.setattr(
+        Redactor, "_pdf_to_docx",
+        staticmethod(lambda *a, **k: called.setdefault("pdf2docx", True) or None),
+    )
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=[], bounding_boxes=[],
+        config=RedactionConfig(replacement_mode="pseudonym"),
+    )
+    assert "pdf2docx" not in called, "零实体不应触发转换链路"
+    assert result["redacted_count"] == 0
+    with open(src, "rb") as f1, open(result["output_path"], "rb") as f2:
+        assert f1.read() == f2.read(), "零实体产物应与原文件一致"
+
+
+@pytest.mark.asyncio
+async def test_pdf_replacement_per_entity_check_catches_dropped(_dirs, monkeypatch):
+    """逐实体校验（评审 I1）：fake pdf2docx 丢掉实体 B（源 docx 就没有 B），
+    即使 A 全部替换成功也必须回退原位替换——聚合计数会被『A 多次+B 零次』
+    凑数骗过。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    _make_pdf(src)
+    called = {}
+
+    def _fake_pdf2docx(src_path, wd):
+        from docx import Document as _Doc
+        fake_docx = os.path.join(wd, "source.docx")
+        d = _Doc()
+        d.add_paragraph("委托人：陈明飞")  # 只保留 A，B 被「转换丢失」
+        d.save(fake_docx)
+        called["pdf2docx"] = True
+        return fake_docx
+
+    async def _fake_docx2pdf(docx, out):
+        called["docx2pdf"] = True
+        import shutil; shutil.copy(str(src), out); return True
+
+    monkeypatch.setattr(Redactor, "_pdf_to_docx", staticmethod(_fake_pdf2docx))
+    monkeypatch.setattr(Redactor, "_docx_to_pdf", staticmethod(_fake_docx2pdf))
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=_entities(), bounding_boxes=[],
+        config=RedactionConfig(replacement_mode="structured"),
+    )
+    assert called.get("pdf2docx")
+    assert "docx2pdf" not in called, "检测到转换丢实体后必须回退，不得交付回转产物"
+    text = "".join(p.get_text() for p in fitz.open(result["output_path"]))
+    squeezed = text.replace(" ", "")
+    assert "陈明飞" not in squeezed and "110101199003078515" not in squeezed, \
+        "回退原位替换后两个实体原文都必须消失"
+
+
+def test_soffice_staging_root_snap_vs_nonsnap():
+    """snap 版 soffice 暂存走 $HOME 非隐藏目录（沙箱读不了 /tmp 和 ~/.cache，
+    评审 C2）；非 snap 走系统 /tmp。"""
+    from app.services.redaction.text_redactor import TextRedactorMixin
+
+    snap_root = TextRedactorMixin._soffice_staging_root("/snap/bin/libreoffice")
+    home = os.path.expanduser("~")
+    assert snap_root.startswith(home), "snap 暂存必须在 $HOME 下"
+    assert not os.path.basename(snap_root).startswith("."), "snap 暂存不能是隐藏目录"
+    import tempfile as _tmp
+    assert TextRedactorMixin._soffice_staging_root("/usr/bin/soffice") == os.path.join(
+        _tmp.gettempdir(), "redaction-soffice"
+    )

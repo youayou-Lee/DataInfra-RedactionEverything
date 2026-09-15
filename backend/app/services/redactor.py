@@ -5,6 +5,7 @@
   - text_redactor: DOCX / PDF / TXT 文本替换
   - image_redactor: 图片区域匿名化
 """
+import asyncio
 import logging
 import os
 import re
@@ -112,8 +113,29 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             is_scanned_flag or bbox_count > 0
         ):
             file_type = FileType.PDF_SCANNED
-        elif file_type == FileType.PDF and config.replacement_mode == ReplacementMode.MASK:
-            mask_boxes, mask_missed = self._entities_to_norm_boxes(file_path, selected_entities)
+            if config.replacement_mode == ReplacementMode.MASK and selected_entities:
+                # 拉框路径的 MASK 同样要把选中实体定位成框一并栅格化：
+                # 只吃手拉框会在「选了实体+残留旧框」时产出零打码的栅格化
+                # 成品（评审 I2）。此路径无法整份回退文本链路（用户拉框
+                # 本身要求图像化），定位失败的实体计入 residual 告警透出。
+                mask_boxes, mask_missed = await asyncio.to_thread(
+                    self._entities_to_norm_boxes, file_path, selected_entities
+                )
+                if mask_missed:
+                    logger.warning(
+                        "[redact:pdf-mask] bbox path %d/%d entities not locatable, "
+                        "rasterized with user boxes only (surfaced as residual): %s",
+                        len(mask_missed), len(selected_entities), mask_missed[:5],
+                    )
+        elif (
+            file_type == FileType.PDF
+            and config.replacement_mode == ReplacementMode.MASK
+            and selected_entities
+        ):
+            # fitz 定位是同步密集操作，丢线程跑避免卡事件循环（评审 M2）
+            mask_boxes, mask_missed = await asyncio.to_thread(
+                self._entities_to_norm_boxes, file_path, selected_entities
+            )
             if mask_missed:
                 logger.warning(
                     "[redact:pdf-mask] %d/%d entities not locatable, whole file falls back to text mask: %s",
@@ -169,9 +191,11 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 file_path, output_path, selected_entities, context
             )
         elif file_type in [FileType.PDF_SCANNED, FileType.IMAGE]:
-            # 图片/扫描件匿名化（文本型 PDF 的 MASK 真打码也路由到这里）
+            # 图片/扫描件匿名化（文本型 PDF 的 MASK 真打码也路由到这里）；
+            # 手拉框与实体定位框合并栅格化（不能 only-or：旧框残留+实体选中
+            # 的组合曾产出零打码成品——评审 I2）
             redacted_count = await self._redact_image(
-                file_path, file_type, selected_boxes or mask_boxes, output_path, config
+                file_path, file_type, selected_boxes + mask_boxes, output_path, config
             )
 
         watermark_text = (getattr(config, "watermark_text", None) or "").strip()
@@ -194,7 +218,8 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 output_path, context.entity_map, file_type
             )
             residual_entities = verified + [
-                e for e in residual_entities if e not in verified
+                e for e in residual_entities
+                if e not in verified and not any(e in v for v in verified)
             ]
             if residual_entities:
                 logger.warning(
@@ -214,44 +239,50 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
     def _entities_to_norm_boxes(
         file_path: str, entities: list[Entity]
     ) -> tuple[list[BoundingBox], list[str]]:
-        """文本型 PDF MASK 真打码的实体定位：按实体文本在页面上搜索，
+        """文本型 PDF MASK 真打码的实体定位：按实体文本在**所有页**搜索，
         返回归一化坐标框（与视觉链路 BoundingBox 同构）。
 
-        search_for 找不到的实体（跨行断开等）原样返回给调用方，
-        由调用方决定降级路径——宁可降级不可静默漏打码。
+        不信任实体登记页码：NER 漏检重复出现时只按登记页打码，会让其他页
+        的同名原文以可读像素残留（评审 C1）。同一文本多处出现全部打框——
+        多打是安全方向，且与替换模式全量替换语义一致。所有页都找不到的
+        实体（跨行断开等）原样返回给调用方，由调用方决定降级路径——
+        宁可降级不可静默漏打码。
         """
         boxes: list[BoundingBox] = []
         missed: list[str] = []
         doc = fitz.open(file_path)
         try:
+            unique_texts: list[str] = []
+            seen: set[str] = set()
             for ent in entities:
-                if not ent.text:
-                    continue
-                page_no = int(getattr(ent, "page", 1) or 1)
-                if not (0 < page_no <= len(doc)):
-                    # 页码非法时不能猜页：框打错页=既盖错位置又漏掉真原文
-                    missed.append(ent.text)
-                    continue
-                page = doc[page_no - 1]
-                rects = page.search_for(ent.text)
-                if not rects:
-                    missed.append(ent.text)
-                    continue
-                pw, ph = page.rect.width, page.rect.height
-                for r in rects:
-                    boxes.append(
-                        BoundingBox(
-                            id=f"mask_{len(boxes)}",
-                            x=r.x0 / pw,
-                            y=r.y0 / ph,
-                            width=r.width / pw,
-                            height=r.height / ph,
-                            page=page_no,
-                            type="mask",
-                            text=ent.text,
-                            selected=True,
+                if ent.text and ent.text not in seen:
+                    seen.add(ent.text)
+                    unique_texts.append(ent.text)
+            for text in unique_texts:
+                found = False
+                for page_no in range(1, len(doc) + 1):
+                    page = doc[page_no - 1]
+                    rects = page.search_for(text)
+                    if not rects:
+                        continue
+                    found = True
+                    pw, ph = page.rect.width, page.rect.height
+                    for r in rects:
+                        boxes.append(
+                            BoundingBox(
+                                id=f"mask_{len(boxes)}",
+                                x=r.x0 / pw,
+                                y=r.y0 / ph,
+                                width=r.width / pw,
+                                height=r.height / ph,
+                                page=page_no,
+                                type="mask",
+                                text=text,
+                                selected=True,
+                            )
                         )
-                    )
+                if not found:
+                    missed.append(text)
         finally:
             doc.close()
         return boxes, missed

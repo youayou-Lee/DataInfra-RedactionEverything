@@ -266,8 +266,10 @@ def test_new_atomic_types_registered() -> None:
 
 
 def test_new_atomic_types_in_pipeline_presets_not_default_enabled() -> None:
+    # NATIVE_PLACE 已于 Issue #40 有意翻为默认勾选（出生地跨行地址在 ADDRESS
+    # 批召回不稳、籍贯批召回，实例实验实证），不再列入本守卫。
     by_id = {item.id: item for item in PRESET_OCR_HAS_TYPES}
-    for type_id in ("OCCUPATION", "POSTAL_CODE", "CERT_NO", "NATIVE_PLACE"):
+    for type_id in ("OCCUPATION", "POSTAL_CODE", "CERT_NO"):
         assert type_id in by_id, type_id
         assert by_id[type_id].default_enabled is False
 

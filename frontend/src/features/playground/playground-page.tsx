@@ -1,6 +1,7 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
-import { type FC, type ReactNode, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, type FC, type ReactNode, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useT } from '@/i18n';
 import { getEntityTypeName } from '@/config/entityTypes';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -14,12 +15,15 @@ import { PlaygroundLoading } from './components/playground-loading';
 import { PlaygroundTextSelectionPopover } from './components/playground-text-selection-popover';
 import { PlaygroundEntityPopover } from './components/playground-entity-popover';
 import {
-  PlaygroundProvider,
   usePlaygroundContext,
   usePlaygroundUIContext,
 } from './playground-context';
+import { needsSwitchConfirm, splitVirtualPages } from './lib/playground-draft';
 import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
+
+/** 超长单页文本的虚拟分页窗口大小（字符） */
+const VIRTUAL_PAGE_CHAR_LIMIT = 20_000;
 
 /** Inner component that consumes the playground context. */
 const PlaygroundInner: FC = () => {
@@ -41,6 +45,17 @@ const PlaygroundInner: FC = () => {
     recognitionIssue,
     entityMap,
     redactedCount,
+    processingMode,
+    setProcessingMode,
+    pseudonymMap,
+    setPseudonymReplacement,
+    pseudonymMapLoading,
+    pseudonymMapError,
+    retryPseudonymLoad,
+    replaceUnready,
+    pseudonymConflicts,
+    confirmedPseudonymMap,
+    handleDownloadPseudonymCsv,
     redactionReport,
     reportOpen,
     setReportOpen,
@@ -60,6 +75,7 @@ const PlaygroundInner: FC = () => {
     handleRerunNer,
     handleRedact,
     cancelProcessing,
+    resumeFromFile,
     handleReset,
     confirmReset,
     cancelReset,
@@ -85,16 +101,59 @@ const PlaygroundInner: FC = () => {
     [recognition.pipelines],
   );
 
+  // 历史页「回到现场」跳转入口（?file_id= 协议）：读到参数即恢复/重跑对应文件会话
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resumeFileId = searchParams.get('file_id');
+  const [switchConfirmTarget, setSwitchConfirmTarget] = useState<string | null>(null);
+  const resumeHandledRef = useRef<string | null>(null);
+
+  const startResume = useCallback(
+    (target: string) => {
+      resumeHandledRef.current = target;
+      void resumeFromFile(target);
+      setSearchParams({}, { replace: true }); // 清参数，防刷新/回退重复触发
+    },
+    [resumeFromFile, setSearchParams],
+  );
+
+  useEffect(() => {
+    if (!resumeFileId || resumeHandledRef.current === resumeFileId) return;
+    if (needsSwitchConfirm(fileInfo?.file_id ?? null, resumeFileId)) {
+      setSwitchConfirmTarget(resumeFileId); // 已有其他会话：先确认再覆盖
+      return;
+    }
+    startResume(resumeFileId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startResume 稳定引用由 useCallback 保证
+  }, [resumeFileId, fileInfo?.file_id]);
+
   const pagesArr = fileInfo?.pages;
+  // 虚拟分页（Issue #33 验收反馈）：MinerU 转出的 markdown 单页可达数十万字符、
+  // 上千实体，全文一次性渲染（且每次交互全量重建）会冻结主线程。超过阈值时按
+  // 字符窗口分页，复用既有分页渲染与实体偏移机制；实体按 start 落入窗口归属。
+  const virtualPages = useMemo(() => {
+    if (isImageMode || content.length <= VIRTUAL_PAGE_CHAR_LIMIT) return null;
+    return splitVirtualPages(content, VIRTUAL_PAGE_CHAR_LIMIT);
+  }, [isImageMode, content]);
+  const isVirtualPaginated = virtualPages !== null;
+  const activePages: string[] | undefined = virtualPages ?? (Array.isArray(pagesArr) ? pagesArr : undefined);
+  const activeTotalPages = isVirtualPaginated ? virtualPages.length : totalPages;
   const hasTextPagination =
-    !isImageMode && totalPages > 1 && Array.isArray(pagesArr) && pagesArr.length === totalPages;
-  const pageStartOffset = hasTextPagination
-    ? pagesArr!.slice(0, currentPage - 1).reduce((sum, page) => sum + (page?.length || 0) + 2, 0)
-    : 0;
-  const previewContent = hasTextPagination ? (pagesArr![currentPage - 1] ?? '') : content;
-  const pageFilteredEntities = hasTextPagination
-    ? entities.filter((entity) => Number(entity.page || 1) === currentPage)
-    : entities;
+    !isImageMode && activeTotalPages > 1 && activePages !== undefined && activePages.length === activeTotalPages;
+  // 草稿恢复的 currentPage 可能超过当前文件的页数（如从 18 页文件切到更短文件），钳制到有效域
+  const effectiveCurrentPage = Math.max(1, Math.min(currentPage, Math.max(1, activeTotalPages)));
+  const pageStartOffset = isVirtualPaginated
+    ? (effectiveCurrentPage - 1) * VIRTUAL_PAGE_CHAR_LIMIT
+    : hasTextPagination
+      ? activePages!.slice(0, effectiveCurrentPage - 1).reduce((sum, page) => sum + (page?.length || 0) + 2, 0)
+      : 0;
+  const previewContent = hasTextPagination ? (activePages![effectiveCurrentPage - 1] ?? '') : content;
+  const pageFilteredEntities = isVirtualPaginated
+    ? entities.filter(
+        (entity) => entity.start >= pageStartOffset && entity.start < pageStartOffset + VIRTUAL_PAGE_CHAR_LIMIT,
+      )
+    : hasTextPagination
+      ? entities.filter((entity) => Number(entity.page || 1) === effectiveCurrentPage)
+      : entities;
   const previewEntities = hasTextPagination
     ? pageFilteredEntities.map((entity) => ({
         ...entity,
@@ -302,10 +361,10 @@ const PlaygroundInner: FC = () => {
                     {hasTextPagination && (
                       <div className="flex-shrink-0 px-3 pt-2 sm:px-4">
                         <PaginationRail
-                          page={currentPage}
+                          page={effectiveCurrentPage}
                           pageSize={1}
-                          totalItems={totalPages}
-                          totalPages={totalPages}
+                          totalItems={activeTotalPages}
+                          totalPages={activeTotalPages}
                           compact
                           onPageChange={(nextPage) => setCurrentPage(nextPage)}
                         />
@@ -329,6 +388,7 @@ const PlaygroundInner: FC = () => {
               isLoading={isLoading}
               recognitionIssue={recognitionIssue}
               entities={pageFilteredEntities}
+              mappingEntities={entities}
               entityTypes={entityTypes}
               visionTypes={visionTypes}
               visibleBoxes={visibleBoxes}
@@ -340,6 +400,15 @@ const PlaygroundInner: FC = () => {
               }
               replacementMode={recognition.replacementMode}
               setReplacementMode={recognition.setReplacementMode}
+              processingMode={processingMode}
+              setProcessingMode={setProcessingMode}
+              pseudonymMap={pseudonymMap}
+              onPseudonymChange={setPseudonymReplacement}
+              pseudonymMapLoading={pseudonymMapLoading}
+              pseudonymMapError={pseudonymMapError}
+              onRetryPseudonymLoad={retryPseudonymLoad}
+              replaceUnready={replaceUnready}
+              pseudonymConflicts={pseudonymConflicts}
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}
@@ -382,6 +451,7 @@ const PlaygroundInner: FC = () => {
             onBackToEdit={() => setStage('preview')}
             onReset={handleReset}
             onDownload={handleDownload}
+            onDownloadPseudonymCsv={confirmedPseudonymMap ? handleDownloadPseudonymCsv : undefined}
           />
         </div>
       )}
@@ -403,16 +473,26 @@ const PlaygroundInner: FC = () => {
         onConfirm={confirmReset}
         onCancel={cancelReset}
       />
+
+      <ConfirmDialog
+        open={switchConfirmTarget !== null}
+        title={t('playground.switchSessionTitle')}
+        message={t('playground.switchSessionMessage')}
+        confirmText={t('playground.switchSessionConfirm')}
+        danger
+        onConfirm={() => {
+          const target = switchConfirmTarget;
+          setSwitchConfirmTarget(null);
+          if (target) startResume(target);
+        }}
+        onCancel={() => {
+          setSwitchConfirmTarget(null);
+          setSearchParams({}, { replace: true });
+        }}
+      />
     </div>
   );
 };
 
-/**
- * Playground page — wrapped in PlaygroundProvider so child components
- * can access the playground context directly without prop drilling.
- */
-export const Playground: FC = () => (
-  <PlaygroundProvider>
-    <PlaygroundInner />
-  </PlaygroundProvider>
-);
+/** Playground 页面——Provider 已提升到 Layout 层，切页不再丢失会话状态。 */
+export const Playground: FC = () => <PlaygroundInner />;

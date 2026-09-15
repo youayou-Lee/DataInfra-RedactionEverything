@@ -813,7 +813,7 @@
     "tag_template": "<籍贯[{index}]>",
     "data_domain": "pii",
     "coref_enabled": false,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [],
     "entity_type_ids": [],
     "generic_target": "GEN_ATTRIBUTE_STATUS"
@@ -985,14 +985,14 @@
       "京B88888"
     ],
     "color": "#F59E0B",
-    "regex_pattern": null,
+    "regex_pattern": "[京津沪渝冀晋蒙辽吉黑苏浙皖闽赣鲁豫鄂湘粤桂琼川贵云藏陕甘青宁新港澳使领][A-HJ-NP-Z]\\s*[A-HJ-NP-Z0-9]{4,5}号?牌?",
     "use_llm": true,
     "enabled": true,
     "order": 320,
     "tag_template": "<车牌号[{index}]>",
     "data_domain": "asset_resource",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "identifier_like"
     ],
@@ -1053,14 +1053,14 @@
       "沪公刑立字〔2026〕12号"
     ],
     "color": "#9333EA",
-    "regex_pattern": null,
+    "regex_pattern": "(?:[一-龥]{1,20})?\\s*[（(]\\s*\\d{4}\\s*[）)][\\s一-龥0-9]{0,26}号",
     "use_llm": true,
     "enabled": true,
     "order": 450,
     "tag_template": "<案号[{index}]>",
     "data_domain": "document_record",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "identifier_like"
     ],

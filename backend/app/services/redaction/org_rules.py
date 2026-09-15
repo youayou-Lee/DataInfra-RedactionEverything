@@ -13,33 +13,19 @@ from __future__ import annotations
 
 from app.models.type_mapping import TYPE_REGISTRY
 
-# 化名模式下默认保留原文的公共机构后缀（含行政区划前缀的长名可命中）
+# 化名模式下默认保留原文的公共机构后缀。
+# 范围=国家部委级机关 + 司法行政类公共机构；地方机关（公安局/法院/司法
+# 局等）不在白名单——preview2.0.0 已验收行为是照常匿名化（某人民法院1）。
 PUBLIC_INSTITUTION_SUFFIXES: tuple[str, ...] = (
-    "人民政府",
-    "人民法院",
-    "检察院",
-    "人大常委会",
-    "公证处",
-    "司法局",
-    "司法所",
-    "公安局",
-    "公安分局",
-    "管委会",
-    "委员会",
     "律师事务中心",
     "法律援助中心",
     "政务服务中心",
-    "厅",
-    "局",
-    "署",
+    "公证处",
 )
 
 # 关键词通道：出现即视为公共机构（覆盖不以固定后缀结尾的名称）
 PUBLIC_INSTITUTION_KEYWORDS: tuple[str, ...] = (
-    "司法部",
     "国务院",
-    "公安部",
-    "国家安全部",
     "最高人民法院",
     "最高人民检察院",
     "政法委",
@@ -54,7 +40,7 @@ MINISTRY_PREFIXES: tuple[str, ...] = (
     "国防",
     "教育",
     "科技",
-    "工业",
+    "工业和信息化",
     "民政",
     "财政",
     "人力资源",
@@ -69,6 +55,7 @@ MINISTRY_PREFIXES: tuple[str, ...] = (
     "卫生",
     "退役",
     "应急",
+    "审计",
 )
 
 # 后缀歧义保护：命中「部/厅/局/署」但含经营主体字样的名称不按机关保留
@@ -77,12 +64,10 @@ _AMBIGUOUS_SUFFIX_EXCLUDE_MARKERS: tuple[str, ...] = (
 )
 
 # 组织子类型 → 词池键：按原文后缀路由（Issue #55）
+# 法院/检察院不在此列：它们照常匿名化，由 _pool_key_for 的机关关键词精化
+# 路由到 GOVERNMENT_AGENCY 池（preview2.0.0 已验收行为，勿劫走）。
 ORG_POOL_RULES: tuple[tuple[str, str], ...] = (
     ("律师事务所", "LAW_FIRM"),
-    ("人民法院", "COURT"),
-    ("法院", "COURT"),
-    ("人民检察院", "PROCURATORATE"),
-    ("检察院", "PROCURATORATE"),
     ("医院", "HOSPITAL"),
     ("卫生院", "HOSPITAL"),
     ("大学", "SCHOOL"),
@@ -127,7 +112,7 @@ def is_public_institution(text: str) -> bool:
         return False
     # 规范化：去国号前缀，如「中华人民共和国司法部」→「司法部」
     normalized = stripped.removeprefix("中华人民共和国")
-    ambiguous_hit = any(normalized.endswith(s) for s in ("部", "厅", "局", "署")) and any(
+    ambiguous_hit = normalized.endswith("部") and any(
         m in normalized for m in _AMBIGUOUS_SUFFIX_EXCLUDE_MARKERS
     )
     if not ambiguous_hit:

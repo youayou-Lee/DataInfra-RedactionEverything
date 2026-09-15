@@ -4,8 +4,6 @@
 （身份证校验位 / 手机号段 / 银行卡 Luhn）、精确映射优先级、无词池回退。
 """
 
-import pytest
-
 from app.models.common import ReplacementMode
 from app.models.entity_schemas import Entity
 from app.services.redaction.replacement_strategy import (
@@ -98,7 +96,7 @@ def test_format_fictional_valid():
         assert len(_fictional_id_card(seq)) == 18
         body, check = _fictional_id_card(seq)[:-1], _fictional_id_card(seq)[-1]
         weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
-        total = sum(int(c) * w for c, w in zip(body, weights))
+        total = sum(int(c) * w for c, w in zip(body, weights, strict=False))
         assert check == "10X98765432"[total % 11]
 
         phone = _fictional_phone(seq)
@@ -150,9 +148,9 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     from app.services import word_pool_service
 
     monkeypatch.setattr(settings, "WORD_POOL_STORE_PATH", str(tmp_path / "wp.json"))
-    # 默认词池可读
+    # 默认词池可读（出厂 derived 策略）
     merged = word_pool_service.load_word_pools()
-    assert "张三" in merged["PERSON"]["words"]
+    assert merged["PERSON"]["strategy"] == "derived"
     # 租户覆盖 + 回退
     svc = word_pool_service
     svc.update_word_pool("PERSON", svc.WordPoolUpdate(
@@ -161,7 +159,7 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     assert view["merged"]["PERSON"]["words"] == ["赵大", "钱二"]
     assert svc.load_word_pools(owner_id="u1")["PERSON"]["custom_map"]["老王"] == "老李"
     # 其它租户不受影响
-    assert "张三" in svc.load_word_pools(owner_id="u2")["PERSON"]["words"]
+    assert svc.load_word_pools(owner_id="u2")["PERSON"]["strategy"] == "derived"
     # 导入导出
     exported = svc.export_word_pools(owner_id="u1")
     count = svc.import_word_pools(exported, owner_id="u3")
@@ -169,7 +167,7 @@ def test_word_pool_service_roundtrip(tmp_path, monkeypatch):
     assert svc.load_word_pools(owner_id="u3")["PERSON"]["custom_map"]["老王"] == "老李"
     # 删除覆盖回退默认
     assert svc.delete_word_pool("PERSON", owner_id="u1") is True
-    assert "张三" in svc.load_word_pools(owner_id="u1")["PERSON"]["words"]
+    assert svc.load_word_pools(owner_id="u1")["PERSON"]["strategy"] == "derived"
 
 
 def test_pool_word_equal_to_entity_text_not_identity_replaced():
@@ -221,13 +219,182 @@ def test_attach_word_pools_normalizes_client_pools():
     # 畸形结构被丢弃，回退加载租户词池（含默认）
     assert isinstance(cfg.word_pools, dict) and "PERSON" in cfg.word_pools
 
+def test_coref_grouping_does_not_merge_different_names():
+    """模型共指误组（不同人同组）不得共享化名——化名语义=同一原文同一化名。
+
+    真实案卷实测：NER 把 6 个不同人名标成同一 coref 组，旧逻辑全组共享一个
+    化名，用户看到"多个人名映射到同一个名字"。
+    """
+    pools = {"PERSON": {"words": ["张三", "李四", "王五"], "strategy": "numbered", "custom_map": {}}}
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("刘美丽", coref="coref_002"))
+    b = ctx.get_replacement(_entity("徐超凡", coref="coref_002"))
+    c = ctx.get_replacement(_entity("罗中洲", coref="coref_002"))
+    assert len({a, b, c}) == 3
+    # 同一原文仍然全文一致（含 coref 混排）
+    assert ctx.get_replacement(_entity("刘美丽")) == a
+    assert ctx.get_replacement(_entity("刘美丽", coref="coref_002")) == a
+
+
+def test_government_institution_text_uses_gov_pool():
+    """机关类机构文本落机关词池，不落公司词池（公安局→某公安局，非某公司）。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {
+            "words": ["某公安局", "某人民法院"], "strategy": "numbered", "custom_map": {},
+        },
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "某公安局"
+    assert ctx.get_replacement(_entity("某县人民法院", type_="INSTITUTION_NAME")) == "某人民法院"
+    # 非机关机构照旧落公司池
+    assert ctx.get_replacement(_entity("某科技有限公司", type_="INSTITUTION_NAME")) == "某公司"
+
+
+def test_bank_institution_text_uses_bank_pool():
+    """银行类机构文本落银行词池。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "BANK_NAME": {"words": ["某银行某支行"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("工商银行某支行", type_="INSTITUTION_NAME")) == "某银行某支行"
+
+
+def test_custom_map_reserve_uses_refined_pool_key():
+    """机关精化池的 custom_map 命中后登记占用，跨池不误伤。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某局"], "strategy": "numbered",
+                              "custom_map": {"某市公安局": "某公安局"}},
+    }
+    ctx = _ctx(pools)
+    a = ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME"))
+    b = ctx.get_replacement(_entity("某县自然资源局", type_="INSTITUTION_NAME"))
+    c = ctx.get_replacement(_entity("某科技有限公司", type_="INSTITUTION_NAME"))
+    assert a == "某公安局"          # 机关池 custom_map 精确映射（非池词）
+    assert b == "某局"              # 某公安局已被占用，机关池顺延
+    assert c == "某公司"            # 公司池不受机关池占用影响
+
+
+def test_gov_text_refinement_no_false_positive():
+    """名字含机关词但以公司后缀结尾的，留在公司池。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某司法鉴定服务有限公司", type_="INSTITUTION_NAME")) == "某公司"
+    assert ctx.get_replacement(_entity("海关咨询有限公司", type_="INSTITUTION_NAME")) == "某公司1"  # 池耗尽顺延编号，仍在公司池
+    assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局"
+
+
+def test_base_pool_custom_map_fallback_for_refined_text():
+    """精化池没有该原文的 custom_map 时，回退查基座池的存量映射（数据兼容）。"""
+    pools = {
+        "INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered",
+                             "custom_map": {"某市公安局": "自定义机关甲"}},
+        "GOVERNMENT_AGENCY": {"words": ["某公安局"], "strategy": "numbered", "custom_map": {}},
+    }
+    ctx = _ctx(pools)
+    assert ctx.get_replacement(_entity("某市公安局", type_="INSTITUTION_NAME")) == "自定义机关甲"
+
+
+# ---------- derived 策略：司法编号式化名（张某1/某公司1，Issue #6 T2） ----------
+
+DERIVED_POOLS = {
+    "PERSON": {"words": [], "strategy": "derived", "custom_map": {}},
+    "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+    "BANK_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+}
+
+
+def test_derived_person_surname_and_per_surname_seq():
+    """人名取原文姓氏 + 某 + 同姓独立序号：陈明飞→陈某1、陈成龙→陈某2、李四光→李某1。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某1"
+    assert ctx.get_replacement(_entity("陈成龙", coref="c2")) == "陈某2"
+    assert ctx.get_replacement(_entity("李四光", coref="c3")) == "李某1"
+    # 同一原文全文一致（含 coref 混排）
+    assert ctx.get_replacement(_entity("陈明飞", coref="c9")) == "陈某1"
+
+
+def test_derived_person_non_cjk_fallback():
+    """非中文人名无法取姓氏时回退「某人N」。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("John Smith", coref="c1")) == "某人1"
+    assert ctx.get_replacement(_entity("A001", coref="c2")) == "某人2"
+
+
+def test_derived_person_text_collision_bumped():
+    """原文恰好等于将生成的编号词时顺延，不能原样替换（陈某1→陈某2）。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("陈某1", coref="c1")) == "陈某2"
+
+
+def test_derived_institution_numbered():
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("宏图贸易有限公司", "INSTITUTION_NAME", "c1")) == "某公司1"
+    assert ctx.get_replacement(_entity("星辰科技", "INSTITUTION_NAME", "c2")) == "某公司2"
+
+
+def test_derived_gov_keyword_and_seq():
+    """机关按名称后缀关键词派生基名并按关键词独立编号。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("某市公安局", "INSTITUTION_NAME", "c1")) == "某公安局1"
+    assert ctx.get_replacement(_entity("乙县公安局", "INSTITUTION_NAME", "c2")) == "某公安局2"
+    assert ctx.get_replacement(_entity("某县人民法院", "INSTITUTION_NAME", "c3")) == "某人民法院1"
+    # 委员会结尾：池键仍归公司池（存量池精化不变），仅派生基名按委员会取
+    assert ctx.get_replacement(_entity("某市监察委员会", "INSTITUTION_NAME", "c4")) == "某委员会1"
+    assert ctx.get_replacement(_entity("某区人大常务委员会", "INSTITUTION_NAME", "c5")) == "某委员会2"
+
+
+def test_derived_person_empty_and_single_char():
+    """空文本/单字人名：无法可靠取姓时回退「某人N」，单字姓氏照常派生。"""
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("", coref="c1")) == "某人1"
+    assert ctx.get_replacement(_entity("陈", coref="c2")) == "陈某1"
+
+
+def test_derived_bank_uniform():
+    ctx = _ctx(DERIVED_POOLS)
+    assert ctx.get_replacement(_entity("工商银行某支行", "INSTITUTION_NAME", "c1")) == "某银行1"
+    assert ctx.get_replacement(_entity("建设银行", "INSTITUTION_NAME", "c2")) == "某银行2"
+
+
+def test_derived_explicit_mapping_still_wins():
+    ctx = _ctx(DERIVED_POOLS)
+    ctx.set_custom_replacements({"陈明飞": "甲方代表"})
+    assert ctx.get_replacement(_entity("陈明飞")) == "甲方代表"
+
+
+def test_derived_avoids_reserved_word():
+    """显式映射占用的词（含已派生词形）不再发给其他实体。"""
+    pools = {"PERSON": {"words": [], "strategy": "derived", "custom_map": {}}}
+    ctx = _ctx(pools)
+    ctx.set_custom_replacements({"甲某": "陈某1"})
+    assert ctx.get_replacement(_entity("甲某")) == "陈某1"
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某2"
+
+
+def test_default_pools_ship_derived_style():
+    """默认词池出厂即 derived：无需配置即得司法编号式化名；租户覆盖仍可换回词池。"""
+    from app.services import word_pool_service as svc
+
+    merged = svc.load_word_pools()
+    for key in ("PERSON", "INSTITUTION_NAME", "GOVERNMENT_AGENCY", "BANK_NAME"):
+        assert merged[key]["strategy"] == "derived"
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=merged)
+    assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某1"
+    assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局1"
+
 
 # ---------- 组织子类型分池 + 公共机构保留（Issue #55 / #56） ----------
 
 ORG_POOLS = {
     "INSTITUTION_NAME": {"words": ["某公司", "某集团"], "strategy": "numbered", "custom_map": {}},
     "LAW_FIRM": {"words": ["某律师事务所"], "strategy": "numbered", "custom_map": {}},
-    "COURT": {"words": ["某人民法院"], "strategy": "numbered", "custom_map": {}},
     "HOSPITAL": {"words": ["某医院"], "strategy": "numbered", "custom_map": {}},
     "SCHOOL": {"words": ["某大学", "某学院", "某学校"], "strategy": "numbered", "custom_map": {}},
 }
@@ -265,15 +432,21 @@ def test_company_entities_still_use_institution_pool():
     assert out in {"某公司", "某集团"}
 
 
+def test_subtype_routing_beats_gov_keyword_refinement():
+    # 律所原文即使含机关关键词也不落机关池（子类型后缀路由优先）
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某司法局律师事务所", type_="ORG"))
+    assert out == "某律师事务所"
+
+
 def test_public_institutions_preserved_verbatim():
     preserved = [
         "中华人民共和国司法部",
         "司法部",
         "中国律师事务中心",
-        "南宁市司法局",
-        "广西壮族自治区公安厅",
-        "南宁市青秀区人民法院",
-        "南宁市人民检察院",
+        "司法所法律援助中心",
+        "国家某公证处",
+        "最高人民法院",
     ]
     for text in preserved:
         ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
@@ -281,24 +454,17 @@ def test_public_institutions_preserved_verbatim():
         assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
 
 
-def test_public_institution_preserved_consistently_and_not_in_placeholder():
-    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
-    a = ctx.get_replacement(_entity("司法部", type_="ORG", coref="c1"))
-    b = ctx.get_replacement(_entity("司法部", type_="ORG"))
-    assert a == b == "司法部"
+def test_local_government_agencies_still_anonymized():
+    # preview2.0.0 已验收行为：地方机关照常匿名化，不在白名单范围
+    for text in ("某市公安局", "南宁市司法局", "南宁市青秀区人民法院"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) != text, text
 
 
 def test_company_named_bu_not_preserved():
     ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
     out = ctx.get_replacement(_entity("某某贸易部", type_="ORG"))
     assert out != "某某贸易部"
-
-
-def test_law_firm_routed_even_when_institution_pool_present_only():
-    pools = {"INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}}}
-    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
-    out = ctx.get_replacement(_entity("北京某律师事务所", type_="ORG"))
-    assert out == "[组织机构一]"
 
 
 def test_public_institution_rules_apply_only_in_pseudonym_mode():

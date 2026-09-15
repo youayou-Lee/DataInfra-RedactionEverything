@@ -2,8 +2,8 @@
 
 import { get, post, put, del } from './api-client';
 
-/** 词池替换词耗尽后的取词策略（与后端 word_pool_service 一致） */
-export type WordPoolStrategy = 'numbered' | 'cycle' | 'generated';
+/** 词池替换词耗尽后的取词策略（与后端 word_pool_service 一致）；derived=从原文派生编号式（陈某1/某公司1） */
+export type WordPoolStrategy = 'numbered' | 'cycle' | 'generated' | 'derived';
 
 export interface WordPool {
   words: string[];

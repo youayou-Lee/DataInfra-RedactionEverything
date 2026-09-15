@@ -1,56 +1,19 @@
 {
   "PERSON": {
-    "words": [
-      "张三",
-      "李四",
-      "王五",
-      "赵六",
-      "孙七",
-      "周八",
-      "吴九",
-      "郑十",
-      "陈一",
-      "林二",
-      "黄三",
-      "徐四",
-      "马五",
-      "朱六",
-      "胡七",
-      "郭八",
-      "何九",
-      "高十"
-    ],
-    "strategy": "numbered"
+    "words": [],
+    "strategy": "derived"
   },
   "INSTITUTION_NAME": {
-    "words": [
-      "某公司",
-      "某贸易有限公司",
-      "某实业有限公司",
-      "某科技有限公司",
-      "某集团有限公司",
-      "某房地产开发有限公司",
-      "某运输有限责任公司",
-      "某商业管理有限责任公司"
-    ],
-    "strategy": "numbered"
+    "words": [],
+    "strategy": "derived"
   },
   "GOVERNMENT_AGENCY": {
-    "words": [
-      "某机关",
-      "某单位"
-    ],
-    "strategy": "numbered",
-    "custom_map": {}
+    "words": [],
+    "strategy": "derived"
   },
   "BANK_NAME": {
-    "words": [
-      "某银行某支行",
-      "某银行营业部",
-      "某银行某分行",
-      "某农村信用合作联社"
-    ],
-    "strategy": "numbered"
+    "words": [],
+    "strategy": "derived"
   },
   "ADDRESS": {
     "words": [
@@ -65,20 +28,6 @@
   "LAW_FIRM": {
     "words": [
       "某律师事务所"
-    ],
-    "strategy": "numbered",
-    "custom_map": {}
-  },
-  "COURT": {
-    "words": [
-      "某人民法院"
-    ],
-    "strategy": "numbered",
-    "custom_map": {}
-  },
-  "PROCURATORATE": {
-    "words": [
-      "某人民检察院"
     ],
     "strategy": "numbered",
     "custom_map": {}

@@ -225,21 +225,19 @@ def test_aggregate_tiers(cells, expect):
 
 # ---------- 离线编排测试（stub API，不打网；抓接线类 bug）----------
 
-def test_run_suite_offline_smoke(tmp_path, monkeypatch):
-    """stub EvalApi 走通 run_suite 全链路：抓接线类 bug（UnboundLocal/AttributeError/
-    fail_class 未归类）；不追求 stub 下业务全 PASS，聚焦结构完整性。"""
-    import run_format_matrix as rfm
+class _R:
+    def __init__(self, status_code=200, payload=None, text="", content=b"CLEAN"):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
+        self.content = content
 
-    class R:
-        def __init__(self, status_code=200, payload=None, text="", content=b"CLEAN"):
-            self.status_code = status_code
-            self._payload = payload or {}
-            self.text = text
-            self.content = content
+    def json(self):
+        return self._payload
 
-        def json(self):
-            return self._payload
 
+def _make_stub_api():
+    """最小桩 EvalApi：doc parse 走兜底，其余全通（供编排类测试复用）。"""
     GT_FLAT = sum(GT_ENTITIES.values(), [])
 
     class StubClient:
@@ -249,27 +247,27 @@ def test_run_suite_offline_smoke(tmp_path, monkeypatch):
         def get(self, url, params=None):
             if "/parse" in url:
                 if "fmt_doc" in url:  # 仅 .doc 的 parse 走兜底（按 file_id 路由，无顺序耦合）
-                    return R(200, {"content": "[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]"})
-                return R(200, {"content": "委托人：" + GT_FLAT[0]})
+                    return _R(200, {"content": "[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]"})
+                return _R(200, {"content": "委托人：" + GT_FLAT[0]})
             if "/download" in url:
-                return R(200, {"file_id": "x"}, content=b"CLEAN")
-            return R(200, {})
+                return _R(200, {"file_id": "x"}, content=b"CLEAN")
+            return _R(200, {})
 
         def post(self, url, json=None):
             if "/files/upload" in url:  # 异常例：结构化 400
-                return R(400, {}, text='{"message":"文件过大，最大支持 50MB"}')
+                return _R(400, {}, text='{"message":"文件过大，最大支持 50MB"}')
             if "/ner/hybrid" in url:
                 ents = [{"id": f"e{i}", "text": t, "type": "PERSON", "start": 0, "end": 1}
                         for i, t in enumerate(GT_FLAT)]
-                return R(200, {"entities": ents, "recognition_failed": False})
+                return _R(200, {"entities": ents, "recognition_failed": False})
             if "/redaction/execute" in url:
-                return R(200, {"output_file_id": "out-1",
-                               "entity_map": {t: f"替{i}" for i, t in enumerate(GT_FLAT)},
-                               "residual_entities": []})
-            return R(200, {})
+                return _R(200, {"output_file_id": "out-1",
+                                "entity_map": {t: f"替{i}" for i, t in enumerate(GT_FLAT)},
+                                "residual_entities": []})
+            return _R(200, {})
 
         def delete(self, url):
-            return R(204, {})
+            return _R(204, {})
 
     class StubApi:
         def __init__(self, *a, **kw):
@@ -295,7 +293,15 @@ def test_run_suite_offline_smoke(tmp_path, monkeypatch):
         def close(self):
             pass
 
-    api = StubApi()
+    return StubApi()
+
+
+def test_run_suite_offline_smoke(tmp_path, monkeypatch):
+    """stub EvalApi 走通 run_suite 全链路：抓接线类 bug（UnboundLocal/AttributeError/
+    fail_class 未归类）；不追求 stub 下业务全 PASS，聚焦结构完整性。"""
+    import run_format_matrix as rfm
+
+    api = _make_stub_api()
     data = rfm.run_suite(api, suite="smoke", workdir=tmp_path, cleanup=True)
 
     assert len(data["cells"]) == 6 and len(data["anomalies"]) == 2
@@ -319,6 +325,27 @@ def test_run_suite_offline_smoke(tmp_path, monkeypatch):
     assert not wiring_errors, f"接线类 bug: {wiring_errors}"
     assert data["summary"]["cells_error"] == 0, \
         f"stub 环境不允许非接线 ERROR: {[c['error'] for c in data['cells'] if c['error']]}"
+
+
+def test_run_suite_rescan_failure_is_hard_fail(tmp_path, monkeypatch):
+    """复审 Critical 回归锁：复扫执行失败必须落到 G4 FAIL(hard)，不得因接线
+    bug（未赋值变量等）逃逸成整格 ERROR——那样泄漏格式会变「待定」而非「前端禁用」。"""
+    import run_format_matrix as rfm
+
+    def _boom(*a, **kw):
+        raise RuntimeError("rescan upload connection reset")
+
+    monkeypatch.setattr(rfm.leak_check, "run_rescan", _boom)
+    data = rfm.run_suite(_make_stub_api(), suite="smoke", workdir=tmp_path, cleanup=True)
+
+    rtf_mask = next(c for c in data["cells"] if c["cell_id"] == "rtf×mask")
+    assert rtf_mask["status"] == gates.STATUS_FAIL and rtf_mask["error"] is None, \
+        f"复扫失败必须 FAIL 而非 ERROR: {rtf_mask}"
+    assert rtf_mask["fail_class"] == "hard"
+    problems = rtf_mask["gates"]["g4"]["detail"]["problems"]
+    assert any("复扫执行失败" in p for p in problems), problems
+    assert data["tiers"]["rtf"] == "前端禁用"
+    assert data["summary"]["cells_error"] == 0
 
 
 # ---------- 报告渲染快照 ----------

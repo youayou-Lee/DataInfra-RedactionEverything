@@ -221,13 +221,12 @@ class CellRunner:
     def _g1(self, sample: Path) -> tuple[str | None, dict]:
         try:
             file_id = self.api.upload(sample)
-            self._touched.append(file_id)
-            return file_id, gates.g1_upload(True, file_id)
         except httpx.HTTPStatusError as exc:  # 服务端明确拒绝（4xx/5xx）→ 格式 FAIL
             detail = {"reason": f"上传被拒: HTTP {exc.response.status_code}: {exc.response.text[:150]}"}
             return None, {"status": gates.STATUS_FAIL, "detail": detail}
-        except Exception:  # 网络/超时等传输层异常 → 冒泡给 run_cell 记 ERROR（重跑裁决）
-            raise
+        # 其他异常（网络/超时等传输层）原样冒泡 → run_cell 记 ERROR（重跑裁决）
+        self._touched.append(file_id)
+        return file_id, gates.g1_upload(True, file_id)
 
     def _g2_parse(self, file_id: str) -> tuple[dict, list[dict]]:
         r = self.api.client.get(f"/api/v1/files/{file_id}/parse")
@@ -326,9 +325,10 @@ class CellRunner:
         try:
             rescan = leak_check.run_rescan(self.api, out_path, mapping_rows)
         except Exception as exc:  # 复扫不可用 = 无法确认零残留，不能给该格式承诺
-            problems.append(f"复扫执行失败，无法确认零残留: {type(exc).__name__}: {str(exc)[:150]}")
-            return gates.gate_result(gates.STATUS_FAIL,
-                                     detail | {"problems": problems} if problems else {"problems": problems})
+            return gates.gate_result(gates.STATUS_FAIL, {
+                "integrity": integrity, "pseudonym": pseudo_check,
+                "problems": problems + [f"复扫执行失败，无法确认零残留: {type(exc).__name__}: {str(exc)[:150]}"],
+            })
         if not rescan.get("clean"):
             findings = [f.get("原文") for f in rescan.get("findings", [])][:3]
             problems.append(f"复扫发现原文残留 {len(rescan.get('findings', []))} 处: {findings}")

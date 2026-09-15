@@ -2,9 +2,13 @@
 文本匿名化模块
 处理 DOCX、PDF、TXT 文档的文本替换逻辑
 """
+import asyncio
 import json
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 from collections import Counter
 from datetime import datetime
 from typing import Any
@@ -547,6 +551,131 @@ class TextRedactorMixin:
 
         return redacted_count
 
+    async def _redact_pdf_via_docx(
+        self,
+        input_path: str,
+        output_path: str,
+        entities: list[Entity],
+        context: RedactionContext,
+    ) -> int:
+        """PDF 文档匿名化（文本型，替换模式主链路，Issue #61）。
+
+        PDF→docx→文本替换→docx→PDF：docx 段落级替换的版面质量远好于
+        PDF 原位替换。任一转换环节失败即回退原位替换（原文仍会从内容流
+        删除，只是版面质量差），不允许因此交付失败或原文泄露。
+        """
+        import tempfile
+
+        workdir = tempfile.mkdtemp(prefix="pdf_redact_")
+        try:
+            docx_path = self._pdf_to_docx(input_path, workdir)
+            redacted_docx_path = os.path.join(workdir, "redacted.docx")
+            if docx_path:
+                count = await self._redact_docx(
+                    docx_path, redacted_docx_path, entities, context
+                )
+                if not await self._docx_to_pdf(redacted_docx_path, output_path):
+                    logger.warning(
+                        "[redact:pdf-docx] docx→PDF 回转失败，回退原位替换: %s", input_path
+                    )
+                    return await self._redact_pdf_text(
+                        input_path, output_path, entities, context
+                    )
+                return count
+            logger.warning(
+                "[redact:pdf-docx] pdf→docx 转换失败，回退原位替换: %s", input_path
+            )
+        except Exception:
+            logger.exception(
+                "[redact:pdf-docx] docx 回转链路异常，回退原位替换: %s", input_path
+            )
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+        return await self._redact_pdf_text(input_path, output_path, entities, context)
+
+    @staticmethod
+    def _pdf_to_docx(input_path: str, workdir: str) -> str | None:
+        """pdf2docx 转换；依赖缺失或转换失败返回 None（调用方回退）。"""
+        try:
+            from pdf2docx import Converter
+        except ImportError:
+            logger.warning("[redact:pdf-docx] pdf2docx 未安装，回退原位替换")
+            return None
+        docx_path = os.path.join(workdir, "source.docx")
+        try:
+            cv = Converter(input_path)
+            try:
+                cv.convert(docx_path)
+            finally:
+                cv.close()
+        except Exception:
+            logger.exception("[redact:pdf-docx] pdf→docx 转换异常: %s", input_path)
+            return None
+        return docx_path if os.path.exists(docx_path) and os.path.getsize(docx_path) > 0 else None
+
+    @staticmethod
+    async def _docx_to_pdf(docx_path: str, output_pdf_path: str) -> bool:
+        """LibreOffice 回转 docx→PDF（doc→docx 先例同一转换器）。
+
+        snap 打包的 LibreOffice 受沙箱限制只能访问 $HOME，读不了 /tmp，
+        所以转换在 ~/.cache 下的暂存目录进行，产物再搬回目标位置。
+        """
+        soffice_candidates = [
+            os.environ.get("SOFFICE_PATH", ""),
+            shutil.which("soffice") or "",
+            shutil.which("libreoffice") or "",
+            "/snap/bin/libreoffice",
+            "/usr/bin/soffice",
+            "/usr/local/bin/soffice",
+            "/opt/libreoffice/program/soffice",
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+        ]
+        soffice = next((p for p in soffice_candidates if p and os.path.exists(p)), None)
+        if not soffice:
+            logger.warning("[redact:pdf-docx] 未找到 LibreOffice (soffice)")
+            return False
+        staging_root = os.path.join(
+            os.path.expanduser("~"), ".cache", "redaction-soffice"
+        )
+        try:
+            os.makedirs(staging_root, exist_ok=True)
+            staging = tempfile.mkdtemp(prefix="conv_", dir=staging_root)
+        except OSError:
+            staging = tempfile.mkdtemp(prefix="redaction_conv_")
+        staged_docx = os.path.join(staging, os.path.basename(docx_path))
+        shutil.copy2(docx_path, staged_docx)
+        try:
+            # soffice 是阻塞进程，丢进线程跑避免卡事件循环；超时防挂死
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                [soffice, "--headless", "--norestore", "--convert-to", "pdf",
+                 "--outdir", staging, staged_docx],
+                capture_output=True,
+                timeout=120,
+            )
+            if proc.returncode != 0:
+                logger.warning(
+                    "[redact:pdf-docx] LibreOffice 退出码 %d: %s",
+                    proc.returncode, (proc.stderr or b"")[:200],
+                )
+        except Exception:
+            logger.exception("[redact:pdf-docx] LibreOffice 转换异常: %s", docx_path)
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+        produced = os.path.join(
+            staging, os.path.splitext(os.path.basename(staged_docx))[0] + ".pdf"
+        )
+        ok = proc.returncode == 0 and os.path.exists(produced) and os.path.getsize(produced) > 0
+        if ok:
+            shutil.move(produced, output_pdf_path)
+        else:
+            logger.warning(
+                "[redact:pdf-docx] LibreOffice 未产出 PDF: %s",
+                (proc.stderr or b"")[:200],
+            )
+        shutil.rmtree(staging, ignore_errors=True)
+        return ok
+
     async def _redact_pdf_text(
         self,
         input_path: str,
@@ -554,7 +683,7 @@ class TextRedactorMixin:
         entities: list[Entity],
         context: RedactionContext,
     ) -> int:
-        """PDF 文档匿名化（文本型）"""
+        """PDF 文档匿名化（文本型）——原位替换（兜底链路）"""
         doc = fitz.open(input_path)
         try:
             redacted_count = 0

@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # pull_request 事件默认检出 refs/pull/N/merge（head×base 合并提交），
+          # 它天然包含 origin/preview，ancestor 检查会恒真放行——必须检出 head 本体
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Feature branches must target preview and include it
         run: |

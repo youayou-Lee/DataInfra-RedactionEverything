@@ -116,13 +116,13 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             mask_boxes, mask_missed = self._entities_to_norm_boxes(file_path, selected_entities)
             if mask_missed:
                 logger.warning(
-                    "[redact:pdf-mask] %d/%d entities not found in text layer, fall back to text mask: %s",
+                    "[redact:pdf-mask] %d/%d entities not locatable, whole file falls back to text mask: %s",
                     len(mask_missed), len(selected_entities), mask_missed[:5],
                 )
-            if mask_boxes:
+                # 只要有定位失败的实体就整份回退文本链路：栅格化会把漏网实体
+                # 变成可读明文像素（比文本层泄露更彻底），零容忍。
+            else:
                 file_type = FileType.PDF_SCANNED
-            # 全部实体都定位失败时保持文本链路：星号替换仍会从内容流删除原文，
-            # 只是形态不是马赛克；漏打码比产物形态问题严重，原文必须消失。
 
         # 创建匿名化上下文
         context = RedactionContext(config.replacement_mode, word_pools=config.word_pools)
@@ -184,13 +184,18 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             except Exception:
                 logger.warning("watermark failed for %s", output_path, exc_info=True)
 
-        # 导出后自检：成品全文中不应再出现任何被替换实体的原文
+        # 导出后自检：成品全文中不应再出现任何被替换实体的原文。
+        # mask_missed 是 MASK 路径无法定位的实体：文本链路（回退）下由
+        # verify 覆盖式重建时也必须保留，栅格化路径下 verify 跳过、由它兜底。
         residual_entities: list[str] = list(mask_missed)
         verify_types = [FileType.PDF, FileType.DOCX, FileType.DOC, FileType.TXT]
         if file_type in verify_types and os.path.exists(output_path):
-            residual_entities = self._verify_export_residuals(
+            verified = self._verify_export_residuals(
                 output_path, context.entity_map, file_type
             )
+            residual_entities = verified + [
+                e for e in residual_entities if e not in verified
+            ]
             if residual_entities:
                 logger.warning(
                     "[export-verify] %d entities still present in output %s: %s",
@@ -223,7 +228,11 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 if not ent.text:
                     continue
                 page_no = int(getattr(ent, "page", 1) or 1)
-                page = doc[page_no - 1] if 0 < page_no <= len(doc) else doc[0]
+                if not (0 < page_no <= len(doc)):
+                    # 页码非法时不能猜页：框打错页=既盖错位置又漏掉真原文
+                    missed.append(ent.text)
+                    continue
+                page = doc[page_no - 1]
                 rects = page.search_for(ent.text)
                 if not rects:
                     missed.append(ent.text)

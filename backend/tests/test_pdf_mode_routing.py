@@ -10,7 +10,7 @@ import fitz
 import pytest
 
 from app.core.config import settings
-from app.models.entity_schemas import Entity
+from app.models.entity_schemas import BoundingBox, Entity
 from app.models.redaction_schemas import RedactionConfig
 from app.services.redactor import Redactor
 
@@ -71,8 +71,8 @@ async def test_pdf_mask_rasterizes_and_mosaics(_dirs):
 
 @pytest.mark.asyncio
 async def test_pdf_mask_missing_entity_falls_back_to_text_mask(_dirs):
-    """实体在文本层定位失败（跨行等）：回退文本掩码链路，原文仍删除，
-    未定位实体进 residual_entities 显性暴露，不允许静默漏打码。"""
+    """实体在文本层定位失败（跨行等）：整份回退文本掩码链路（栅格化会把
+    漏网原文留在可读像素里，零容忍），未定位实体进 residual_entities。"""
     up, _ = _dirs
     src = up / "t.pdf"
     _make_pdf(src)
@@ -85,9 +85,11 @@ async def test_pdf_mask_missing_entity_falls_back_to_text_mask(_dirs):
     doc = fitz.open(result["output_path"])
     try:
         text = doc.load_page(0).get_text()
+        has_imgs = len(doc.load_page(0).get_images(full=True)) > 0
     finally:
         doc.close()
-    assert "陈明飞" not in text, "可定位实体仍被真打码，原文不应在文本层"
+    assert "陈明飞" not in text.replace(" ", ""), "回退文本链路后可定位实体原文必须删除"
+    assert not has_imgs, "存在漏定位实体时禁止栅格化（明文像素泄露）"
     assert "不存在的实体文本XYZ" in result["residual_entities"]
 
 
@@ -122,11 +124,13 @@ async def test_pdf_replacement_prefers_docx_roundtrip(_dirs, monkeypatch):
     def _fake_pdf2docx(src, wd):
         from docx import Document as _Doc
         import shutil as _sh
-        fake_docx = os.path.join(wd, "fake_source.docx")
-        _Doc().save(fake_docx)
+        fake_docx = os.path.join(wd, "source.docx")
+        d = _Doc()
+        for e in _entities():
+            d.add_paragraph(e.text)
+        d.save(fake_docx)
         called["pdf2docx"] = True
-        _sh.move(fake_docx, os.path.join(wd, "source.docx"))
-        return os.path.join(wd, "source.docx")
+        return fake_docx
 
     monkeypatch.setattr(Redactor, "_pdf_to_docx", staticmethod(_fake_pdf2docx))
     async def _fake_docx2pdf(docx, out):
@@ -139,6 +143,43 @@ async def test_pdf_replacement_prefers_docx_roundtrip(_dirs, monkeypatch):
         config=RedactionConfig(replacement_mode="structured"),
     )
     assert called.get("pdf2docx") and called.get("docx2pdf"), "替换模式未走 docx 回转链路"
+
+
+@pytest.mark.asyncio
+async def test_pdf_mask_with_user_boxes_uses_boxes_not_entities(_dirs, monkeypatch):
+    """拉框 + MASK：走用户框（既有行为），不触发实体定位。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    _make_pdf(src)
+    called = {}
+    monkeypatch.setattr(
+        Redactor, "_entities_to_norm_boxes",
+        staticmethod(lambda *a, **k: called.setdefault("located", True) or ([], [])),
+    )
+    boxes = [BoundingBox(id="b1", x=0.1, y=0.1, width=0.3, height=0.05, page=1, type="PERSON", selected=True)]
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=_entities(), bounding_boxes=boxes,
+        config=RedactionConfig(replacement_mode="mask"),
+    )
+    assert "located" not in called, "拉框时不应再做实体定位"
+    assert result["redacted_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pdf_replacement_with_user_boxes_routes_to_image_pipeline(_dirs):
+    """拉框 + 替换模式：拉框是视觉标注信号，走图像管线（既有行为）。"""
+    up, _ = _dirs
+    src = up / "t.pdf"
+    _make_pdf(src)
+    boxes = [BoundingBox(id="b1", x=0.1, y=0.1, width=0.3, height=0.05, page=1, type="PERSON", selected=True)]
+    result = await Redactor().redact(
+        file_info={"file_path": str(src), "file_type": "pdf"},
+        entities=_entities(), bounding_boxes=boxes,
+        config=RedactionConfig(replacement_mode="structured"),
+    )
+    assert result["redacted_count"] == 1
+    assert _page_has_images(result["output_path"]), "拉框路径产物应栅格化"
 
 
 def test_entities_to_norm_boxes_coordinates(_dirs):

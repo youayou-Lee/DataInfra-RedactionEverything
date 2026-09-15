@@ -568,12 +568,24 @@ class TextRedactorMixin:
 
         workdir = tempfile.mkdtemp(prefix="pdf_redact_")
         try:
-            docx_path = self._pdf_to_docx(input_path, workdir)
+            # pdf2docx 是 CPU 密集同步转换，丢线程跑避免卡事件循环
+            docx_path = await asyncio.to_thread(self._pdf_to_docx, input_path, workdir)
             redacted_docx_path = os.path.join(workdir, "redacted.docx")
             if docx_path:
                 count = await self._redact_docx(
                     docx_path, redacted_docx_path, entities, context
                 )
+                expected = len({e.text for e in entities if e.selected and e.text})
+                if count < expected:
+                    # docx 里实体命中率不足（pdf2docx 拆 run 等）＝有原文没被替换，
+                    # 回退原位替换（search_for 对拆分容忍度更高），不交付含原文 PDF
+                    logger.warning(
+                        "[redact:pdf-docx] docx 替换命中 %d/%d 不足，回退原位替换: %s",
+                        count, expected, input_path,
+                    )
+                    return await self._redact_pdf_text(
+                        input_path, output_path, entities, context
+                    )
                 if not await self._docx_to_pdf(redacted_docx_path, output_path):
                     logger.warning(
                         "[redact:pdf-docx] docx→PDF 回转失败，回退原位替换: %s", input_path
@@ -643,12 +655,21 @@ class TextRedactorMixin:
         except OSError:
             staging = tempfile.mkdtemp(prefix="redaction_conv_")
         staged_docx = os.path.join(staging, os.path.basename(docx_path))
-        shutil.copy2(docx_path, staged_docx)
+        try:
+            shutil.copy2(docx_path, staged_docx)
+        except OSError:
+            logger.exception("[redact:pdf-docx] 暂存拷贝失败: %s", docx_path)
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
         try:
             # soffice 是阻塞进程，丢进线程跑避免卡事件循环；超时防挂死
             proc = await asyncio.to_thread(
                 subprocess.run,
-                [soffice, "--headless", "--norestore", "--convert-to", "pdf",
+                [soffice, "--headless", "--norestore",
+                 # 独立 profile：并发转换互不抢锁，否则第二个实例会把参数
+                 # 转发给第一个后立即退出 0，产物丢失
+                 f"-env:UserInstallation=file://{staging}/profile",
+                 "--convert-to", "pdf",
                  "--outdir", staging, staged_docx],
                 capture_output=True,
                 timeout=120,

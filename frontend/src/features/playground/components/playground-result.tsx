@@ -46,6 +46,7 @@ export interface PlaygroundResultProps {
   onBackToEdit: () => void;
   onReset: () => void;
   onDownload: () => void;
+  onDownloadPseudonymCsv?: () => void;
 }
 
 export const PlaygroundResult: FC<PlaygroundResultProps> = ({
@@ -73,6 +74,7 @@ export const PlaygroundResult: FC<PlaygroundResultProps> = ({
   onBackToEdit,
   onReset,
   onDownload,
+  onDownloadPseudonymCsv,
 }) => {
   const t = useT();
   const [mobileTab, setMobileTab] = useState<'original' | 'redacted' | 'mapping'>('original');
@@ -273,6 +275,7 @@ export const PlaygroundResult: FC<PlaygroundResultProps> = ({
         onBackToEdit={onBackToEdit}
         onReset={onReset}
         onDownload={onDownload}
+        onDownloadPseudonymCsv={onDownloadPseudonymCsv}
       />
 
       {redactionReport && (

@@ -31,7 +31,7 @@ import {
 } from '@/services/wordPoolsApi';
 import { triggerDownload } from '@/features/batch/hooks/use-batch-wizard-utils';
 
-const STRATEGIES: WordPoolStrategy[] = ['numbered', 'cycle', 'generated'];
+const STRATEGIES: WordPoolStrategy[] = ['derived', 'numbered', 'cycle', 'generated'];
 
 interface PoolDraft {
   wordsText: string;
@@ -352,8 +352,17 @@ export function WordPoolsSettings() {
                         onChange={(e) => patchDraft(typeId, { wordsText: e.target.value })}
                         placeholder={t('wordPools.wordsPlaceholder')}
                         className="min-h-24 resize-y font-mono text-xs"
+                        disabled={draft.strategy === 'derived'}
                         data-testid={`word-pool-words-${typeId}`}
                       />
+                      {draft.strategy === 'derived' && (
+                        <p
+                          className="text-[11px] leading-4 text-muted-foreground"
+                          data-testid={`word-pool-words-derived-hint-${typeId}`}
+                        >
+                          {t('wordPools.wordsDisabledForDerived')}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-1.5">

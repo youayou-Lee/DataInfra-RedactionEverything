@@ -106,6 +106,19 @@ export function defaultConfig(): BatchWizardPersistedConfig {
   };
 }
 
+// 批量×化名门控：同批多文件化名对齐（T3）上线前批量不放开 pseudonym——
+// 旧路径按文件独立分配化名，同一人在不同文件会分到不同化名。
+// 后端 create_job 同步拒绝（值见 job_management_service）。上线 T3 时与后端一起放开。
+export const BATCH_PSEUDONYM_AVAILABLE = false;
+
+export function sanitizeBatchReplacementMode(
+  mode: BatchWizardPersistedConfig['replacementMode'] | string | null | undefined,
+): BatchWizardPersistedConfig['replacementMode'] {
+  if (mode === 'smart' || mode === 'mask') return mode;
+  if (mode === 'pseudonym' && BATCH_PSEUDONYM_AVAILABLE) return mode;
+  return 'structured';
+}
+
 export function normalizeReviewEntity(e: ReviewEntity): ReviewEntity {
   const start = Math.max(0, Math.floor(Number(e.start) || 0));
   const end = Math.max(start, Math.floor(Number(e.end) || 0));
@@ -163,10 +176,9 @@ export function mergeJobConfigIntoWizardCfg(
     replacementMode:
       jc.replacement_mode === 'smart' ||
       jc.replacement_mode === 'mask' ||
-      jc.replacement_mode === 'structured' ||
-      jc.replacement_mode === 'pseudonym'
-        ? (jc.replacement_mode as BatchWizardPersistedConfig['replacementMode'])
-        : c.replacementMode,
+      jc.replacement_mode === 'structured'
+        ? jc.replacement_mode
+        : sanitizeBatchReplacementMode(c.replacementMode),
     imageRedactionMethod:
       jc.image_redaction_method === 'mosaic' ||
       jc.image_redaction_method === 'blur' ||
@@ -227,7 +239,7 @@ export function applyTextPresetFields(
     presetTextId: p.id,
   };
   if ((p.kind ?? 'full') === 'text') return base;
-  return { ...base, replacementMode: p.replacementMode };
+  return { ...base, replacementMode: sanitizeBatchReplacementMode(p.replacementMode) };
 }
 
 export function applyVisionPresetFields(

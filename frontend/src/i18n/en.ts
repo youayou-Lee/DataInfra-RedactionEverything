@@ -94,7 +94,35 @@ const enBase: Record<string, string> = {
   'mode.mask': 'Mask',
   'mode.structured': 'Structured Tags',
   'mode.pseudonym': 'Pseudonym',
-  'editor.samplePseudonym': 'Alias A',
+
+  'playground.processingMode': 'Processing Method',
+  'playground.processingModeMask': 'Masking',
+  'playground.processingModeMaskDesc': 'Cover sensitive content',
+  'playground.processingModeReplace': 'Replace (Pseudonym)',
+  'playground.processingModeReplaceDesc': 'Fictional words, still readable',
+  'playground.processingModeReplaceUnavailable': 'Unavailable for scanned files / images',
+  'playground.processingModeScannedNotice':
+    'Replacement (pseudonym) is not yet available for scanned PDFs / images; only masking is supported for now.',
+  'playground.pseudonymMap': 'Pseudonym Mapping',
+  'playground.pseudonymMapDesc':
+    'Confirm the replacement for each item before running; the output is exactly what you see. A mapping table is available for download.',
+  'playground.pseudonymLoading': 'Generating default pseudonyms…',
+  'playground.pseudonymNoEntities': 'No selected items yet',
+  'playground.pseudonymInputPlaceholder': 'Replacement',
+  'playground.pseudonymConflictWarning':
+    '{count} items map to the same replacement; adjust to avoid confusion',
+  'playground.downloadPseudonymCsv': 'Download Mapping Table',
+  'playground.pseudonymLoadFailed': 'Failed to generate default pseudonyms',
+  'playground.pseudonymRetry': 'Retry',
+  'playground.pseudonymConfirmRequired':
+    'Confirm all pseudonym mappings first (wait for generation and fill in every row) before running',
+  'playground.pseudonymConfirmRequiredShort':
+    'Confirm the pseudonym mapping first (fill in every row)',
+  'playground.pseudonymCsvColOriginal': 'Original',
+  'playground.pseudonymCsvColType': 'Type',
+  'playground.pseudonymCsvColReplacement': 'Pseudonym',
+  'playground.pseudonymCsvColCount': 'Occurrences',
+  'playground.pseudonymCsvFilePrefix': 'pseudonym-mapping',
 
   'job.status.draft': 'Draft',
   'job.status.queued': 'Queued',
@@ -381,6 +409,7 @@ const enBase: Record<string, string> = {
   'history.col.status': 'Status',
   'history.compareActionHeader': 'Compare',
   'history.continueReview': 'Continue review',
+  'history.resumeSession': 'Resume session',
   'history.viewCompare': 'View comparison',
   'history.deleteFileTitle': 'Delete File',
   'history.deleteFileMsg': 'Delete this file from the server? This action cannot be undone.',
@@ -804,6 +833,7 @@ const enBase: Record<string, string> = {
   'nav.wordPools.sub': 'Pools for pseudonym mode',
 
   'batchWizard.step1.textMethodPseudonym': 'Pseudonym',
+  'batchWizard.step1.textMethodPseudonymUnavailable': 'Pseudonym (coming soon)',
   'batchWizard.step1.textModeBulletPseudonym':
     'Pseudonym - replace text with fictional words from pools, keeping documents readable',
   'batchWizard.step1.wordPoolLink': 'Configure word pools →',
@@ -819,6 +849,9 @@ const enBase: Record<string, string> = {
   'wordPools.strategy_numbered': 'Numbered (Word1, Word2…)',
   'wordPools.strategy_cycle': 'Cycle',
   'wordPools.strategy_generated': 'Auto-generated',
+  'wordPools.strategy_derived': 'Derived numbering (陈某1/某公司1, from original surname/agency suffix)',
+  'wordPools.wordsDisabledForDerived':
+    'With derived numbering, replacements are generated from the original text and this word list is ignored. Switch to another strategy or use the exact map below for fixed words.',
   'wordPools.customMap': 'Exact mapping (original → replacement)',
   'wordPools.customMapOrig': 'Original',
   'wordPools.customMapRepl': 'Replacement',
@@ -1072,6 +1105,12 @@ const enOverrides: Record<string, string> = {
   'playground.recognitionPausedModelServices':
     'Recognition is paused because required model services are unavailable: {services}. Start the services, then run recognition again.',
   'playground.redactFailed': 'Redaction failed.',
+  'playground.restored': 'Last single-file session restored',
+  'playground.restoredFromServer': 'Restored last recognition from server',
+  'playground.restoreFileGone': 'Original file no longer exists; last session cannot be restored',
+  'playground.switchSessionTitle': 'Switch file?',
+  'playground.switchSessionMessage': 'The current single-file session will be replaced; unexecuted edits will be lost.',
+  'playground.switchSessionConfirm': 'Switch anyway',
   'playground.loading.vision': 'Running vision detection...',
   'playground.loading.visionOcr': 'Running vision detection (OCR text)...',
   'playground.loading.visionImage': 'Running vision detection (image features)...',
@@ -1079,7 +1118,9 @@ const enOverrides: Record<string, string> = {
   'playground.loading.text': 'Recognizing sensitive text...',
   'playground.startRedact': 'Start redaction',
   'playground.recommended': 'Recommended',
-  'playground.redactMode': 'Redaction style',
+  'playground.redactMode': 'Masking style',
+  'playground.redactModeHint':
+    'How masked content is rendered. Not used in Replace (Pseudonym) mode.',
   'playground.noResultsTitle': 'No redaction-ready results',
   'playground.noResultsDescText':
     'Run recognition again, adjust text recognition items, or select text in the document to add a manual annotation.',
@@ -1117,7 +1158,6 @@ const enOverrides: Record<string, string> = {
   'playground.redactedEntities': 'Redacted entities',
   'playground.unprocessedEntities': 'Unprocessed entities',
   'playground.sourceDistribution': 'Source distribution',
-  'playground.reportMode': 'Redaction mode',
   'playground.mappingRecords': 'Mapping',
   'playground.noRecords': 'No mapping records yet.',
   'playground.versionHistory': 'Version history',
@@ -2037,6 +2077,8 @@ Object.assign(enOverrides, {
   'entityGroup.visual_mark': 'Visual marks & layout',
   'batchWizard.step1.watermarkPlaceholder': 'e.g. For Project X use only; empty = none',
   'playground.watermarkPlaceholder': 'e.g. For Project X use only; empty = none',
+  'playground.watermarkHint':
+    'Adds a semi-transparent tiled watermark to exported PDF / image files only. Leave empty for none.',
   'structured.files.notice.uploadFailed': 'Upload failed - check the file format',
   'structured.files.deleteDataset': 'Delete this dataset',
   'structured.files.deleteConfirmTitle': 'Delete dataset',

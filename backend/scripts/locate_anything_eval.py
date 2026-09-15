@@ -313,8 +313,14 @@ class LocateAnythingWorker:
         self.tokenizer = AutoTokenizer.from_pretrained(resolved, trust_remote_code=True)
         self.processor = AutoProcessor.from_pretrained(resolved, trust_remote_code=True)
         self._install_transformers5_compat(resolved)
+        from transformers import AutoConfig
+
+        from la_attention_compat import pin_text_attention_to_sdpa
+        config = AutoConfig.from_pretrained(resolved, trust_remote_code=True)
+        pin_text_attention_to_sdpa(config, log=print)
         self.model = AutoModel.from_pretrained(
             resolved,
+            config=config,
             torch_dtype=self.dtype,
             trust_remote_code=True,
         ).to(self.device).eval()

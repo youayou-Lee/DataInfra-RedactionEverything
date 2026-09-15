@@ -26,25 +26,33 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Feature branches must target preview and include it
+        # 分支名经 env 传入而非 ${{ }} 直接插值进 shell——分支名合法字符含
+        # " $ ; ` 等，直接插值存在脚本注入面（评审 Issue 1）
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          # fork PR 的 head_ref 只是 fork 侧分支名，须同仓库才认「晋级」（评审 Issue 2）
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -e
-          BASE="${{ github.base_ref }}"
-          HEAD_REF="${{ github.head_ref }}"
           echo "PR base: $BASE, head: $HEAD_REF"
           if [ -z "$BASE" ]; then
             echo "push/workflow_dispatch 触发，跳过守卫"
             exit 0
           fi
           if [ "$BASE" = "main" ]; then
-            # main 只收晋级（head=preview）与 hotfix（事故教训：PR #58 曾误选
-            # base=main 把功能直接合进 main），其余目标 main 的 PR 一律拒绝
-            if [ "$HEAD_REF" = "preview" ] || [[ "$HEAD_REF" == hotfix/* ]]; then
+            # main 只收晋级（head=preview，须本仓库分支）与 hotfix（事故教训：
+            # PR #58 曾误选 base=main 把功能直接合进 main），其余一律拒绝
+            if { [ "$HEAD_REF" = "preview" ] && [ "$HEAD_REPO" = "$REPO" ]; } || [[ "$HEAD_REF" == hotfix/* ]]; then
               echo "main 晋级/hotfix PR：放行"
               exit 0
             fi
             echo "::error::目标 main 的 PR 只允许 preview 晋级或 hotfix/* 分支（当前 head=$HEAD_REF）。功能分支应以 preview 为 base"
             exit 1
           fi
+          # 触发器限定 base∈{main,preview}，此分支理论不可达——防御性保留，
+          # 若未来放开 pull_request 触发分支则依赖此校验
           if [ "$BASE" != "preview" ]; then
             echo "::error::功能分支必须以 preview 为 base（当前 base=$BASE）"
             exit 1

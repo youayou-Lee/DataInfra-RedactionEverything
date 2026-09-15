@@ -599,6 +599,7 @@ export function usePlayground() {
         replacementMode: recognition.replacementMode,
         watermarkText: recognition.watermarkText,
         pseudonymMap,
+        pseudonymUserEditedKeys: [...pseudonymUserEditedRef.current],
         confirmedPseudonymMap,
         entityMap,
         redactedCount,
@@ -652,6 +653,8 @@ export function usePlayground() {
       setRedactedCount(snapshot.redactedCount);
       setRedactionVersion((version) => version + 1); // 触发 result 阶段脱敏预览图重取
       setPseudonymMap(snapshot.pseudonymMap);
+      pseudonymUserEditedRef.current = new Set(snapshot.pseudonymUserEditedKeys ?? []);
+      pseudonymEntitySigRef.current = '';
       setPseudonymMapLoading(false);
       setPseudonymMapError(null);
       setConfirmedPseudonymMap(snapshot.confirmedPseudonymMap);

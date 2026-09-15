@@ -6,6 +6,7 @@
 
 from app.models.common import ReplacementMode
 from app.models.entity_schemas import Entity
+from app.services.redaction.org_rules import public_service_base
 from app.services.redaction.replacement_strategy import (
     RedactionContext,
     _fictional_bank_card,
@@ -388,3 +389,251 @@ def test_default_pools_ship_derived_style():
     ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=merged)
     assert ctx.get_replacement(_entity("陈明飞", coref="c1")) == "陈某1"
     assert ctx.get_replacement(_entity("某县公安局", type_="INSTITUTION_NAME")) == "某公安局1"
+
+
+# ---------- 组织子类型分池 + 公共机构保留（Issue #55 / #56） ----------
+
+ORG_POOLS = {
+    "INSTITUTION_NAME": {"words": ["某公司", "某集团"], "strategy": "numbered", "custom_map": {}},
+    "LAW_FIRM": {"words": ["某律师事务所"], "strategy": "numbered", "custom_map": {}},
+    "HOSPITAL": {"words": ["某医院"], "strategy": "numbered", "custom_map": {}},
+    "SCHOOL": {"words": ["某大学", "某学院", "某学校"], "strategy": "numbered", "custom_map": {}},
+}
+
+
+def test_law_firm_routed_to_firm_pool_not_company():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("北京德恒（南宁）律师事务所", type_="ORG"))
+    assert out == "某律师事务所"
+
+
+def test_org_subtype_pools_by_suffix():
+    cases = {
+        "广西某律师事务所": ("LEGAL_LAW_FIRM", "某律师事务所"),
+        "协和医院": ("ORG", "某医院"),
+        "清华大学": ("ORG", "某大学"),
+    }
+    for text, (type_, expected) in cases.items():
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_=type_)) == expected, text
+
+
+def test_law_firms_get_distinct_consistent_pseudonyms():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    a = ctx.get_replacement(_entity("甲律师事务所", type_="ORG", coref="c1"))
+    b = ctx.get_replacement(_entity("乙律师事务所", type_="ORG", coref="c2"))
+    assert a != b
+    # 同一律所再次出现复用同一化名
+    assert ctx.get_replacement(_entity("甲律师事务所", type_="ORG")) == a
+
+
+def test_company_entities_still_use_institution_pool():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某某贸易有限公司", type_="ORG"))
+    assert out in {"某公司", "某集团"}
+
+
+def test_subtype_routing_beats_gov_keyword_refinement():
+    # 律所原文即使含机关关键词也不落机关池（子类型后缀路由优先）
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某司法局律师事务所", type_="ORG"))
+    assert out == "某律师事务所"
+
+
+def test_public_institutions_preserved_verbatim():
+    preserved = [
+        "中华人民共和国司法部",
+        "司法部",
+        "中国律师事务中心",
+        "司法所法律援助中心",
+        "国家某公证处",
+        "最高人民法院",
+    ]
+    for text in preserved:
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="GOVERNMENT_AGENCY")) == text, text
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_local_government_agencies_still_anonymized():
+    # preview2.0.0 已验收行为：地方机关照常匿名化，不在白名单范围
+    for text in ("某市公安局", "南宁市司法局", "南宁市青秀区人民法院"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) != text, text
+
+
+def test_company_named_bu_not_preserved():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某某贸易部", type_="ORG"))
+    assert out != "某某贸易部"
+
+
+def test_public_institution_rules_apply_only_in_pseudonym_mode():
+    from app.models.common import ReplacementMode as RM
+
+    ctx = RedactionContext(RM.MASK, word_pools=ORG_POOLS)
+    assert ctx.get_replacement(_entity("司法部", type_="ORG")) == "***"
+
+
+# ---------- 验收反馈回归：出版物 + 党的机关 + 厅级机关（2026-09-15） ----------
+
+
+def test_publications_preserved_verbatim():
+    # NER 常把出版物误判为机构名称；其名公开、无脱敏必要，保留原文
+    for text in (
+        "《首席法务杂志》",
+        "首席法务杂志",
+        "《首席法务官》杂志",
+        "《亚洲法律杂志》",
+        "亚洲法律概况",
+        "2020亚太法律指南",
+        "《商法》",
+        "最高人民法院公报",
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_central_party_organs_preserved_local_organs_anonymized():
+    # 中央级机关保留原文（对齐司法部口径）
+    for text in ("中共中央组织部", "中共中央宣传部"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_provincial_organs_anonymized_with_matched_type():
+    # 厅级/地方党政机关照常匿名化，但派生基名匹配机关类型，不落「某公司」
+    cases = {
+        "广西司法厅": "某司法厅1",
+        "广西壮族自治区司法厅": "某司法厅1",
+        "某省委组织部": "某组织部1",
+        "某市政法委": "某政法委1",
+        "某县委宣传部": "某宣传部1",
+    }
+    for text, expected in cases.items():
+        pools = {
+            **ORG_POOLS,
+            "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+        }
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+def test_publication_and_party_rules_negative_controls():
+    # 经营主体不因后缀相近被误保留
+    for text in (
+        "某某出版集团有限公司",
+        "某某贸易有限公司",
+        "某某贸易部",
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        out = ctx.get_replacement(_entity(text, type_="ORG"))
+        assert out != text, text
+
+
+# ---------- 验收反馈第二轮：国际组织/国资委/公共服务机构/媒体（2026-09-15） ----------
+
+
+def test_international_orgs_preserved_verbatim():
+    for text in ("欧盟", "欧洲联盟", "联合国开发计划署", "世界贸易组织"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_sasac_routed_to_organ_pseudonym():
+    cases = {
+        "国资委": "某国资委1",
+        "广西区国资委": "某国资委1",
+        "南宁市国资委": "某国资委1",
+    }
+    for text, expected in cases.items():
+        pools = {
+            **ORG_POOLS,
+            "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+        }
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+def test_public_service_tail_strips_leading_region():
+    cases = {
+        "广西区政府顾问人才库": "某政府顾问人才库1",
+        "某市法学会": "某法学会1",
+        "南宁市公共资源交易中心": "某公共资源交易中心1",
+    }
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    for text, expected in cases.items():
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+def test_media_and_websites_preserved_verbatim():
+    for text in ("人民网", "中国采购与招标网", "广西新闻网", "某省电视台"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_public_service_rules_negative_controls():
+    # 公司不因词尾相近被误改基名
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("某某贸易有限公司", type_="ORG")) == "某公司1"
+    assert ctx.get_replacement(_entity("某某建工集团", type_="ORG")) == "某公司2"
+
+
+def test_research_institute_strips_national_prefix():
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    for text, expected in (
+        ("中国法治企业研究院", "某法治企业研究院1"),
+        ("中国首席法务官研究院", "某首席法务官研究院1"),
+        ("全国行业研究中心", "某行业研究中心1"),
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+# ---------- 评审修复回归（2026-09-15 独立评审） ----------
+
+
+def test_custom_override_beats_preserved_org():
+    # 用户显式指定的替换词可覆盖白名单保留（误判白名单可手动纠正）
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    ctx.set_custom_replacements({"司法部": "某机关1"})
+    assert ctx.get_replacement(_entity("司法部", type_="ORG")) == "某机关1"
+    # 无显式映射时仍保留
+    ctx2 = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    assert ctx2.get_replacement(_entity("司法部", type_="ORG")) == "司法部"
+
+
+def test_organ_suffix_requires_endswith():
+    # 名称中间含机关词的经营主体不路由到机关池
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("某某党委宣传部印刷厂", type_="ORG")) == "某公司1"
+
+
+def test_hall_suffix_excludes_commercial_venues():
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("绿岛咖啡厅", type_="ORG")) == "某公司1"
+
+
+def test_region_strip_stoplist():
+    # 「都市」形似地区前缀但非行政区划，不剥除
+    assert public_service_base("都市丽人人才库") == "某都市丽人人才库"
+    assert public_service_base("广西区政府顾问人才库") == "某政府顾问人才库"

@@ -13,6 +13,13 @@ from app.models.schemas import (
     ReplacementMode,
 )
 from app.models.type_mapping import canonical_type_id
+from app.services.redaction.org_rules import (
+    is_org_like,
+    is_preserved_org_text,
+    org_pool_key_for,
+    organ_derived_base,
+    public_service_base,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +115,19 @@ class RedactionContext:
             if entity.text not in self.entity_map:
                 self.entity_map[entity.text] = replacement
             return replacement
+
+        # 化名模式：公共机构（国家机关/司法行政类公共机构）默认保留原文，
+        # 不参与匿名化；登记映射保证同一主体全文一致（Issue #56）。
+        # 用户显式指定的替换词优先于保留策略（误判白名单可手动纠正）。
+        if (
+            self.mode == ReplacementMode.PSEUDONYM
+            and is_org_like(type_key)
+            and is_preserved_org_text(entity.text)
+            and not self.custom_replacements.get(entity.text)
+        ):
+            self._coref_map[entity_key] = entity.text
+            self.entity_map[entity.text] = entity.text
+            return entity.text
 
         # 化名模式：同一原文此前已分配过（如无 coref 的正则命中与有 coref 的
         # 模型命中混排），复用既有替换词，保证全文一致
@@ -379,8 +399,15 @@ class RedactionContext:
         if pool_key == "INSTITUTION_NAME":
             if DERIVED_GOV_EXTRA_RE.search(text):
                 return "某委员会"
+            # 公共服务机构（人才库/协会/研究院…）：去开头地区换「某」
+            ps_base = public_service_base(text)
+            if ps_base:
+                return ps_base
             return "某公司"
         if pool_key == "GOVERNMENT_AGENCY":
+            organ_base = organ_derived_base(text)
+            if organ_base:
+                return organ_base
             m = INSTITUTION_GOV_TEXT_RE.search(text)
             if m:
                 return f"某{m.group(1)}"
@@ -394,8 +421,14 @@ class RedactionContext:
         from app.services.word_pool_service import pool_type_for
 
         pool_key = pool_type_for(type_key)
+        if is_org_like(type_key):
+            # 组织子类型分池（Issue #55）：律所/医院/学校等按原文后缀路由
+            # 专属词池，优先于机关/银行关键词精化（律所不落机关池）
+            subtype_pool = org_pool_key_for(text)
+            if subtype_pool:
+                return subtype_pool
         if pool_key == "INSTITUTION_NAME":
-            if INSTITUTION_GOV_TEXT_RE.search(text):
+            if organ_derived_base(text) or INSTITUTION_GOV_TEXT_RE.search(text):
                 return "GOVERNMENT_AGENCY"
             if INSTITUTION_BANK_TEXT_RE.search(text):
                 return "BANK_NAME"

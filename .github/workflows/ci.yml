@@ -12,6 +12,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 基底守卫（Issue #62 评审教训：功能分支误基于旧 main 会悄悄回退
+  # preview 已验收改动）。落后 preview 的分支直接红灯，不靠人眼抓。
+  base-guard:
+    name: Base guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Feature branches must target preview and include it
+        run: |
+          set -e
+          BASE="${{ github.base_ref }}"
+          HEAD_REF="${{ github.head_ref }}"
+          echo "PR base: $BASE, head: $HEAD_REF"
+          if [ -z "$BASE" ]; then
+            echo "push/workflow_dispatch 触发，跳过守卫"
+            exit 0
+          fi
+          if [ "$BASE" = "main" ]; then
+            # main 只收晋级（head=preview）与 hotfix（事故教训：PR #58 曾误选
+            # base=main 把功能直接合进 main），其余目标 main 的 PR 一律拒绝
+            if [ "$HEAD_REF" = "preview" ] || [[ "$HEAD_REF" == hotfix/* ]]; then
+              echo "main 晋级/hotfix PR：放行"
+              exit 0
+            fi
+            echo "::error::目标 main 的 PR 只允许 preview 晋级或 hotfix/* 分支（当前 head=$HEAD_REF）。功能分支应以 preview 为 base"
+            exit 1
+          fi
+          if [ "$BASE" != "preview" ]; then
+            echo "::error::功能分支必须以 preview 为 base（当前 base=$BASE）"
+            exit 1
+          fi
+          git fetch origin preview --quiet
+          if git merge-base --is-ancestor origin/preview HEAD; then
+            echo "OK：分支已包含最新 preview"
+          else
+            echo "::error::分支落后 preview：先执行 git merge origin/preview 再推送（防止合并时回退 preview 已验收改动）"
+            exit 1
+          fi
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest

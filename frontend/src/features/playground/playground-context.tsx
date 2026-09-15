@@ -38,6 +38,13 @@ export interface PlaygroundDataContextValue {
   totalPages: PlaygroundContextValue['totalPages'];
   recognition: PlaygroundContextValue['recognition'];
   dropzone: PlaygroundContextValue['dropzone'];
+  processingMode: PlaygroundContextValue['processingMode'];
+  pseudonymMap: PlaygroundContextValue['pseudonymMap'];
+  pseudonymMapLoading: PlaygroundContextValue['pseudonymMapLoading'];
+  pseudonymMapError: PlaygroundContextValue['pseudonymMapError'];
+  replaceUnready: PlaygroundContextValue['replaceUnready'];
+  pseudonymConflicts: PlaygroundContextValue['pseudonymConflicts'];
+  confirmedPseudonymMap: PlaygroundContextValue['confirmedPseudonymMap'];
 }
 
 export interface PlaygroundActionsContextValue {
@@ -56,10 +63,15 @@ export interface PlaygroundActionsContextValue {
   handleRerunNer: PlaygroundContextValue['handleRerunNer'];
   handleRedact: PlaygroundContextValue['handleRedact'];
   cancelProcessing: PlaygroundContextValue['cancelProcessing'];
+  resumeFromFile: PlaygroundContextValue['resumeFromFile'];
   handleReset: PlaygroundContextValue['handleReset'];
   confirmReset: PlaygroundContextValue['confirmReset'];
   cancelReset: PlaygroundContextValue['cancelReset'];
   handleDownload: PlaygroundContextValue['handleDownload'];
+  handleDownloadPseudonymCsv: PlaygroundContextValue['handleDownloadPseudonymCsv'];
+  setProcessingMode: PlaygroundContextValue['setProcessingMode'];
+  setPseudonymReplacement: PlaygroundContextValue['setPseudonymReplacement'];
+  retryPseudonymLoad: PlaygroundContextValue['retryPseudonymLoad'];
   mergeVisibleBoxes: PlaygroundContextValue['mergeVisibleBoxes'];
   setCurrentPage: PlaygroundContextValue['setCurrentPage'];
   openPopout: PlaygroundContextValue['openPopout'];
@@ -115,6 +127,13 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       totalPages: ctx.totalPages,
       recognition: ctx.recognition,
       dropzone: ctx.dropzone,
+      processingMode: ctx.processingMode,
+      pseudonymMap: ctx.pseudonymMap,
+      pseudonymMapLoading: ctx.pseudonymMapLoading,
+      pseudonymMapError: ctx.pseudonymMapError,
+      replaceUnready: ctx.replaceUnready,
+      pseudonymConflicts: ctx.pseudonymConflicts,
+      confirmedPseudonymMap: ctx.confirmedPseudonymMap,
     }),
     [
       ctx.stage,
@@ -147,6 +166,13 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.totalPages,
       ctx.recognition,
       ctx.dropzone,
+      ctx.processingMode,
+      ctx.pseudonymMap,
+      ctx.pseudonymMapLoading,
+      ctx.pseudonymMapError,
+      ctx.replaceUnready,
+      ctx.pseudonymConflicts,
+      ctx.confirmedPseudonymMap,
     ],
   );
 
@@ -167,13 +193,18 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       handleRerunNer: ctx.handleRerunNer,
       handleRedact: ctx.handleRedact,
       cancelProcessing: ctx.cancelProcessing,
+      resumeFromFile: ctx.resumeFromFile,
       handleReset: ctx.handleReset,
       confirmReset: ctx.confirmReset,
       cancelReset: ctx.cancelReset,
       handleDownload: ctx.handleDownload,
+      handleDownloadPseudonymCsv: ctx.handleDownloadPseudonymCsv,
       mergeVisibleBoxes: ctx.mergeVisibleBoxes,
       setCurrentPage: ctx.setCurrentPage,
       openPopout: ctx.openPopout,
+      setProcessingMode: ctx.setProcessingMode,
+      setPseudonymReplacement: ctx.setPseudonymReplacement,
+      retryPseudonymLoad: ctx.retryPseudonymLoad,
     }),
     [
       ctx.setStage,
@@ -191,13 +222,18 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.handleRerunNer,
       ctx.handleRedact,
       ctx.cancelProcessing,
+      ctx.resumeFromFile,
       ctx.handleReset,
       ctx.confirmReset,
       ctx.cancelReset,
       ctx.handleDownload,
+      ctx.handleDownloadPseudonymCsv,
       ctx.mergeVisibleBoxes,
       ctx.setCurrentPage,
       ctx.openPopout,
+      ctx.setProcessingMode,
+      ctx.setPseudonymReplacement,
+      ctx.retryPseudonymLoad,
     ],
   );
 

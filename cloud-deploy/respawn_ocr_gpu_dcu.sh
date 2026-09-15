@@ -15,7 +15,7 @@ DTK_EXPORT="set +u; source /opt/dtk/env.sh; set -u;"
 tmux has-session -t "$SESSION" 2>/dev/null || tmux new-session -d -s "$SESSION" -n init "sleep infinity"
 tmux kill-window -t "$SESSION:ocr" 2>/dev/null || true
 tmux new-window -d -t "$SESSION" -n ocr "$PROXY_EXPORT $DTK_EXPORT cd '$BACKEND' && \
-  HIP_VISIBLE_DEVICES=0 OCR_VL_ENABLED=0 OCR_REQUIRE_GPU=true OCR_DEVICE=dcu:0 \
+  HIP_VISIBLE_DEVICES=0 OCR_VL_ENABLED=0 OCR_REQUIRE_GPU=true OCR_DEVICE=dcu:0 FLAGS_conv_workspace_size_limit=2000 \
   OCR_STRUCTURE_ENABLED=1 OCR_STRUCTURE_PRIMARY=1 OCR_STRUCTURE_WARMUP=1 \
   OCR_STRUCTURE_RELEASE_AFTER_REQUEST=0 OCR_MAX_IMAGE_SIDE=2048 OCR_MAX_NEW_TOKENS=2048 \
   PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True PADDLE_PDX_DISABLE_DEV_MODEL_WL=true \

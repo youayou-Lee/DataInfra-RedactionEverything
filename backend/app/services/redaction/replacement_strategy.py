@@ -12,6 +12,7 @@ from app.models.schemas import (
     ReplacementMode,
 )
 from app.models.type_mapping import canonical_type_id
+from app.services.redaction.org_rules import is_org_like, is_public_institution, org_pool_key_for
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,17 @@ class RedactionContext:
             if entity.text not in self.entity_map:
                 self.entity_map[entity.text] = replacement
             return replacement
+
+        # 化名模式：公共机构（国家机关/司法行政类公共机构）默认保留原文，
+        # 不参与匿名化；登记映射保证同一主体全文一致（Issue #56）
+        if (
+            self.mode == ReplacementMode.PSEUDONYM
+            and is_org_like(type_key)
+            and is_public_institution(entity.text)
+        ):
+            self._coref_map[entity_key] = entity.text
+            self.entity_map[entity.text] = entity.text
+            return entity.text
 
         # 化名模式：同一原文此前已分配过（如无 coref 的正则命中与有 coref 的
         # 模型命中混排），复用既有替换词，保证全文一致
@@ -266,21 +278,25 @@ class RedactionContext:
         text = (entity.text or "").strip()
         pools = self._resolve_word_pools()
 
-        # 用户显式指定的替换（请求级）优先级最高
-        explicit = self.custom_replacements.get(text)
-        if explicit:
-            self._reserve_pool_word(type_key, explicit)
-            return explicit
-
         from app.services.word_pool_service import pool_type_for
 
         pool_key = pool_type_for(type_key)
+        # 组织子类型分池：律所/法院/医院等按原文后缀路由到专属词池，
+        # 避免落进公司池被替换成「某公司」（Issue #55）
+        if is_org_like(type_key):
+            pool_key = org_pool_key_for(text) or pool_key
         pool = pools.get(pool_key) or {}
+
+        # 用户显式指定的替换（请求级）优先级最高
+        explicit = self.custom_replacements.get(text)
+        if explicit:
+            self._reserve_pool_word(pool_key, explicit)
+            return explicit
 
         # 词池级精确映射（跨文档同套化名的载体）
         exact = (pool.get("custom_map") or {}).get(text)
         if exact:
-            self._reserve_pool_word(type_key, exact)
+            self._reserve_pool_word(pool_key, exact)
             return exact
 
         strategy = pool.get("strategy") or "numbered"
@@ -314,11 +330,9 @@ class RedactionContext:
         assigned.append(word)
         return word
 
-    def _reserve_pool_word(self, type_key: str, word: str) -> None:
+    def _reserve_pool_word(self, pool_key: str, word: str) -> None:
         """精确映射命中的替换词登记占用，避免词池再把同一个词分给别的实体。"""
-        from app.services.word_pool_service import pool_type_for
-
-        assigned = self._pool_assigned.setdefault(pool_type_for(type_key), [])
+        assigned = self._pool_assigned.setdefault(pool_key, [])
         if word not in assigned:
             assigned.append(word)
 

@@ -220,3 +220,89 @@ def test_attach_word_pools_normalizes_client_pools():
     _attach_word_pools(cfg, "someone")
     # 畸形结构被丢弃，回退加载租户词池（含默认）
     assert isinstance(cfg.word_pools, dict) and "PERSON" in cfg.word_pools
+
+
+# ---------- 组织子类型分池 + 公共机构保留（Issue #55 / #56） ----------
+
+ORG_POOLS = {
+    "INSTITUTION_NAME": {"words": ["某公司", "某集团"], "strategy": "numbered", "custom_map": {}},
+    "LAW_FIRM": {"words": ["某律师事务所"], "strategy": "numbered", "custom_map": {}},
+    "COURT": {"words": ["某人民法院"], "strategy": "numbered", "custom_map": {}},
+    "HOSPITAL": {"words": ["某医院"], "strategy": "numbered", "custom_map": {}},
+    "SCHOOL": {"words": ["某大学", "某学院", "某学校"], "strategy": "numbered", "custom_map": {}},
+}
+
+
+def test_law_firm_routed_to_firm_pool_not_company():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("北京德恒（南宁）律师事务所", type_="ORG"))
+    assert out == "某律师事务所"
+
+
+def test_org_subtype_pools_by_suffix():
+    cases = {
+        "广西某律师事务所": ("LEGAL_LAW_FIRM", "某律师事务所"),
+        "协和医院": ("ORG", "某医院"),
+        "清华大学": ("ORG", "某大学"),
+    }
+    for text, (type_, expected) in cases.items():
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_=type_)) == expected, text
+
+
+def test_law_firms_get_distinct_consistent_pseudonyms():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    a = ctx.get_replacement(_entity("甲律师事务所", type_="ORG", coref="c1"))
+    b = ctx.get_replacement(_entity("乙律师事务所", type_="ORG", coref="c2"))
+    assert a != b
+    # 同一律所再次出现复用同一化名
+    assert ctx.get_replacement(_entity("甲律师事务所", type_="ORG")) == a
+
+
+def test_company_entities_still_use_institution_pool():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某某贸易有限公司", type_="ORG"))
+    assert out in {"某公司", "某集团"}
+
+
+def test_public_institutions_preserved_verbatim():
+    preserved = [
+        "中华人民共和国司法部",
+        "司法部",
+        "中国律师事务中心",
+        "南宁市司法局",
+        "广西壮族自治区公安厅",
+        "南宁市青秀区人民法院",
+        "南宁市人民检察院",
+    ]
+    for text in preserved:
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="GOVERNMENT_AGENCY")) == text, text
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_public_institution_preserved_consistently_and_not_in_placeholder():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    a = ctx.get_replacement(_entity("司法部", type_="ORG", coref="c1"))
+    b = ctx.get_replacement(_entity("司法部", type_="ORG"))
+    assert a == b == "司法部"
+
+
+def test_company_named_bu_not_preserved():
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    out = ctx.get_replacement(_entity("某某贸易部", type_="ORG"))
+    assert out != "某某贸易部"
+
+
+def test_law_firm_routed_even_when_institution_pool_present_only():
+    pools = {"INSTITUTION_NAME": {"words": ["某公司"], "strategy": "numbered", "custom_map": {}}}
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    out = ctx.get_replacement(_entity("北京某律师事务所", type_="ORG"))
+    assert out == "[组织机构一]"
+
+
+def test_public_institution_rules_apply_only_in_pseudonym_mode():
+    from app.models.common import ReplacementMode as RM
+
+    ctx = RedactionContext(RM.MASK, word_pools=ORG_POOLS)
+    assert ctx.get_replacement(_entity("司法部", type_="ORG")) == "***"

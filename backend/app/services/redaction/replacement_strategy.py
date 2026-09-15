@@ -16,8 +16,8 @@ from app.models.type_mapping import canonical_type_id
 from app.services.redaction.org_rules import (
     is_org_like,
     is_preserved_org_text,
-    organ_derived_base,
     org_pool_key_for,
+    organ_derived_base,
     public_service_base,
 )
 

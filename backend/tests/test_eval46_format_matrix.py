@@ -69,6 +69,12 @@ def test_rtf_roundtrip_and_magic():
 ])
 def test_image_magic_and_size(ext, magic):
     import tempfile
+    import shutil
+    if not shutil.which("fc-match") and not any(Path(p).exists() for p in [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"]):
+        pytest.skip("环境无 fontconfig 与已知 CJK 字体，无法渲染样图")
     lines = payload_mod.build_payload()["lines"]
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / f"x{ext}"

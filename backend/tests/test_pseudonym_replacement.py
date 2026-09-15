@@ -6,6 +6,7 @@
 
 from app.models.common import ReplacementMode
 from app.models.entity_schemas import Entity
+from app.services.redaction.org_rules import public_service_base
 from app.services.redaction.replacement_strategy import (
     RedactionContext,
     _fictional_bank_card,
@@ -598,3 +599,41 @@ def test_research_institute_strips_national_prefix():
     ):
         ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
         assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+# ---------- 评审修复回归（2026-09-15 独立评审） ----------
+
+
+def test_custom_override_beats_preserved_org():
+    # 用户显式指定的替换词可覆盖白名单保留（误判白名单可手动纠正）
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    ctx.set_custom_replacements({"司法部": "某机关1"})
+    assert ctx.get_replacement(_entity("司法部", type_="ORG")) == "某机关1"
+    # 无显式映射时仍保留
+    ctx2 = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+    assert ctx2.get_replacement(_entity("司法部", type_="ORG")) == "司法部"
+
+
+def test_organ_suffix_requires_endswith():
+    # 名称中间含机关词的经营主体不路由到机关池
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("某某党委宣传部印刷厂", type_="ORG")) == "某公司1"
+
+
+def test_hall_suffix_excludes_commercial_venues():
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("绿岛咖啡厅", type_="ORG")) == "某公司1"
+
+
+def test_region_strip_stoplist():
+    # 「都市」形似地区前缀但非行政区划，不剥除
+    assert public_service_base("都市丽人人才库") == "某都市丽人人才库"
+    assert public_service_base("广西区政府顾问人才库") == "某政府顾问人才库"

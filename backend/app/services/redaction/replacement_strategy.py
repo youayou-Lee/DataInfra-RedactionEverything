@@ -117,11 +117,13 @@ class RedactionContext:
             return replacement
 
         # 化名模式：公共机构（国家机关/司法行政类公共机构）默认保留原文，
-        # 不参与匿名化；登记映射保证同一主体全文一致（Issue #56）
+        # 不参与匿名化；登记映射保证同一主体全文一致（Issue #56）。
+        # 用户显式指定的替换词优先于保留策略（误判白名单可手动纠正）。
         if (
             self.mode == ReplacementMode.PSEUDONYM
             and is_org_like(type_key)
             and is_preserved_org_text(entity.text)
+            and not self.custom_replacements.get(entity.text)
         ):
             self._coref_map[entity_key] = entity.text
             self.entity_map[entity.text] = entity.text

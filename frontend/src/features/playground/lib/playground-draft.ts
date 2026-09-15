@@ -18,6 +18,8 @@ export type DraftSnapshotInput = {
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   watermarkText: string;
   pseudonymMap: Record<string, string>;
+  // 用户手改过的映射键：恢复后刷新自动映射时不被覆盖
+  pseudonymUserEditedKeys?: string[];
   confirmedPseudonymMap: Record<string, string> | null;
   entityMap: Record<string, string>;
   redactedCount: number;

@@ -159,6 +159,10 @@ _LEADING_REGION_RE = __import__("re").compile(r"^[\u4e00-\u9fa5]{1,6}?(?:省|自
 _LEADING_NATIONAL_RE = __import__("re").compile(r"^(?:中国|全国)")
 
 
+# 形似「XX市/区」实为普通词的前缀（都市/商城…），不按地区剥除
+_LEADING_REGION_STOPLIST: tuple[str, ...] = ("都市", "城市", "商城", "超市", "省城")
+
+
 def public_service_base(text: str) -> str | None:
     """公共服务机构（人才库/协会/研究院…）→ 去地区换「某」的派生基名。
 
@@ -170,20 +174,36 @@ def public_service_base(text: str) -> str | None:
     tail = next((t for t in PUBLIC_SERVICE_TAILS if stripped.endswith(t)), None)
     if tail is None:
         return None
-    remainder = _LEADING_REGION_RE.sub("", stripped)
-    remainder = _LEADING_NATIONAL_RE.sub("", remainder)
-    return f"某{remainder}" if remainder and remainder != stripped else f"某{tail}"
+    region_hit = _LEADING_REGION_RE.match(stripped)
+    if region_hit and any(stripped.startswith(w) for w in _LEADING_REGION_STOPLIST):
+        region_hit = None
+    remainder = stripped[region_hit.end():] if region_hit else stripped
+    remainder = _LEADING_NATIONAL_RE.sub("", remainder).strip()
+    # 无地区可剥时保留全名（律师协会→某律师协会），仅空名回退词尾
+    return f"某{remainder}" if remainder else f"某{tail}"
+
+
+# 非机关的「厅」类场所（含经营/娱乐字样），防止「绿岛咖啡厅→某厅」
+_NON_ORG_HALL_MARKERS: tuple[str, ...] = (
+    "咖啡", "餐", "大厅", "歌厅", "舞厅", "茶厅", "澡堂", "浴室", "游戏",
+)
 
 
 def organ_derived_base(text: str) -> str | None:
-    """地方党政机关 → 类型匹配的派生基名；非机关返回 None。"""
+    """地方党政机关 → 类型匹配的派生基名；非机关返回 None。
+
+    后缀按 endswith 匹配：名称中间含机关词的经营主体
+    （某某党委宣传部印刷厂）不路由到机关池。
+    """
     stripped = (text or "").strip()
     if not stripped:
         return None
     for suffix, base in ORGAN_SUFFIX_RE:
-        if suffix in stripped:
+        if stripped.endswith(suffix):
             return base
-    if stripped.endswith("厅"):
+    if stripped.endswith("厅") and not any(
+        m in stripped for m in _NON_ORG_HALL_MARKERS
+    ):
         return "某厅"
     return None
 

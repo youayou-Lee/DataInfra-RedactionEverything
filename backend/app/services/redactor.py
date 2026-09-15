@@ -5,6 +5,7 @@
   - text_redactor: DOCX / PDF / TXT 文本替换
   - image_redactor: 图片区域匿名化
 """
+import asyncio
 import logging
 import os
 import re
@@ -19,6 +20,7 @@ from app.models.schemas import (
     Entity,
     FileType,
     RedactionConfig,
+    ReplacementMode,
 )
 from app.services.redaction.image_redactor import ImageRedactorMixin
 
@@ -98,14 +100,51 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             "[redact:dispatch] raw file_type=%r is_scanned=%r bbox_count=%d",
             file_type, is_scanned_flag, bbox_count,
         )
-        # Route to the image pipeline whenever the caller supplied bounding
-        # boxes for a PDF — that's the unambiguous signal the user annotated
-        # the document visually, regardless of whether the text-density heuristic
-        # flagged it as scanned. Saves us from shipping an unchanged PDF when
-        # upload records stale file_type="pdf" or is_scanned=False but the user
-        # actually redacted via the visual pipeline.
-        if file_type == FileType.PDF and (is_scanned_flag or bbox_count > 0):
+        # 只处理选中的实体
+        selected_entities = [e for e in entities if e.selected]
+        selected_boxes = [b for b in bounding_boxes if b.selected]
+
+        # 文本型 PDF 的双链路路由（Issue #61）：用户拉过框（bbox>0）说明走视觉
+        # 标注，整份转图像管线真打码；MASK 模式同理——伪打码（星号文本）会把
+        # 原文留在文本层里，必须按扫描件逻辑栅格化+马赛克。替换模式仍走文本链路。
+        mask_boxes: list[BoundingBox] = []
+        mask_missed: list[str] = []
+        if file_type == FileType.PDF and (
+            is_scanned_flag or bbox_count > 0
+        ):
             file_type = FileType.PDF_SCANNED
+            if config.replacement_mode == ReplacementMode.MASK and selected_entities:
+                # 拉框路径的 MASK 同样要把选中实体定位成框一并栅格化：
+                # 只吃手拉框会在「选了实体+残留旧框」时产出零打码的栅格化
+                # 成品（评审 I2）。此路径无法整份回退文本链路（用户拉框
+                # 本身要求图像化），定位失败的实体计入 residual 告警透出。
+                mask_boxes, mask_missed = await asyncio.to_thread(
+                    self._entities_to_norm_boxes, file_path, selected_entities
+                )
+                if mask_missed:
+                    logger.warning(
+                        "[redact:pdf-mask] bbox path %d/%d entities not locatable, "
+                        "rasterized with user boxes only (surfaced as residual): %s",
+                        len(mask_missed), len(selected_entities), mask_missed[:5],
+                    )
+        elif (
+            file_type == FileType.PDF
+            and config.replacement_mode == ReplacementMode.MASK
+            and selected_entities
+        ):
+            # fitz 定位是同步密集操作，丢线程跑避免卡事件循环（评审 M2）
+            mask_boxes, mask_missed = await asyncio.to_thread(
+                self._entities_to_norm_boxes, file_path, selected_entities
+            )
+            if mask_missed:
+                logger.warning(
+                    "[redact:pdf-mask] %d/%d entities not locatable, whole file falls back to text mask: %s",
+                    len(mask_missed), len(selected_entities), mask_missed[:5],
+                )
+                # 只要有定位失败的实体就整份回退文本链路：栅格化会把漏网实体
+                # 变成可读明文像素（比文本层泄露更彻底），零容忍。
+            else:
+                file_type = FileType.PDF_SCANNED
 
         # 创建匿名化上下文
         context = RedactionContext(config.replacement_mode, word_pools=config.word_pools)
@@ -119,10 +158,6 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         if file_type == FileType.DOC:
             output_ext = ".docx"
         output_path = os.path.realpath(os.path.join(settings.OUTPUT_DIR, f"{output_file_id}{output_ext}"))
-
-        # 只处理选中的实体
-        selected_entities = [e for e in entities if e.selected]
-        selected_boxes = [b for b in bounding_boxes if b.selected]
 
         redacted_count = 0
 
@@ -151,14 +186,16 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 file_path, output_path, selected_entities, context
             )
         elif file_type == FileType.PDF:
-            # PDF 文档匿名化（文本型）
-            redacted_count = await self._redact_pdf_text(
+            # PDF 文档匿名化（文本型，替换模式）：docx 回转链路，失败回退原位
+            redacted_count = await self._redact_pdf_via_docx(
                 file_path, output_path, selected_entities, context
             )
         elif file_type in [FileType.PDF_SCANNED, FileType.IMAGE]:
-            # 图片/扫描件匿名化
+            # 图片/扫描件匿名化（文本型 PDF 的 MASK 真打码也路由到这里）；
+            # 手拉框与实体定位框合并栅格化（不能 only-or：旧框残留+实体选中
+            # 的组合曾产出零打码成品——评审 I2）
             redacted_count = await self._redact_image(
-                file_path, file_type, selected_boxes, output_path, config
+                file_path, file_type, selected_boxes + mask_boxes, output_path, config
             )
 
         watermark_text = (getattr(config, "watermark_text", None) or "").strip()
@@ -171,13 +208,19 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             except Exception:
                 logger.warning("watermark failed for %s", output_path, exc_info=True)
 
-        # 导出后自检：成品全文中不应再出现任何被替换实体的原文
-        residual_entities: list[str] = []
+        # 导出后自检：成品全文中不应再出现任何被替换实体的原文。
+        # mask_missed 是 MASK 路径无法定位的实体：文本链路（回退）下由
+        # verify 覆盖式重建时也必须保留，栅格化路径下 verify 跳过、由它兜底。
+        residual_entities: list[str] = list(mask_missed)
         verify_types = [FileType.PDF, FileType.DOCX, FileType.DOC, FileType.TXT]
         if file_type in verify_types and os.path.exists(output_path):
-            residual_entities = self._verify_export_residuals(
+            verified = self._verify_export_residuals(
                 output_path, context.entity_map, file_type
             )
+            residual_entities = verified + [
+                e for e in residual_entities
+                if e not in verified and not any(e in v for v in verified)
+            ]
             if residual_entities:
                 logger.warning(
                     "[export-verify] %d entities still present in output %s: %s",
@@ -191,6 +234,58 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             "entity_map": context.entity_map,
             "residual_entities": residual_entities,
         }
+
+    @staticmethod
+    def _entities_to_norm_boxes(
+        file_path: str, entities: list[Entity]
+    ) -> tuple[list[BoundingBox], list[str]]:
+        """文本型 PDF MASK 真打码的实体定位：按实体文本在**所有页**搜索，
+        返回归一化坐标框（与视觉链路 BoundingBox 同构）。
+
+        不信任实体登记页码：NER 漏检重复出现时只按登记页打码，会让其他页
+        的同名原文以可读像素残留（评审 C1）。同一文本多处出现全部打框——
+        多打是安全方向，且与替换模式全量替换语义一致。所有页都找不到的
+        实体（跨行断开等）原样返回给调用方，由调用方决定降级路径——
+        宁可降级不可静默漏打码。
+        """
+        boxes: list[BoundingBox] = []
+        missed: list[str] = []
+        doc = fitz.open(file_path)
+        try:
+            unique_texts: list[str] = []
+            seen: set[str] = set()
+            for ent in entities:
+                if ent.text and ent.text not in seen:
+                    seen.add(ent.text)
+                    unique_texts.append(ent.text)
+            for text in unique_texts:
+                found = False
+                for page_no in range(1, len(doc) + 1):
+                    page = doc[page_no - 1]
+                    rects = page.search_for(text)
+                    if not rects:
+                        continue
+                    found = True
+                    pw, ph = page.rect.width, page.rect.height
+                    for r in rects:
+                        boxes.append(
+                            BoundingBox(
+                                id=f"mask_{len(boxes)}",
+                                x=r.x0 / pw,
+                                y=r.y0 / ph,
+                                width=r.width / pw,
+                                height=r.height / ph,
+                                page=page_no,
+                                type="mask",
+                                text=text,
+                                selected=True,
+                            )
+                        )
+                if not found:
+                    missed.append(text)
+        finally:
+            doc.close()
+        return boxes, missed
 
     def _verify_export_residuals(
         self, output_path: str, entity_map: dict[str, str], file_type: FileType
@@ -212,6 +307,10 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         normalized = re.sub(r"\s+", "", text)
         for orig, repl in entity_map.items():
             if not orig:
+                continue
+            # 设计性保留（替换词==原文，公共机构白名单 org_rules #56）：
+            # 原文留在成品是预期行为，不判残留也不判落盘
+            if orig == repl:
                 continue
             # 原文残留检测（跨节点/跨行提取会插入空白，去空白比对；
             # ASCII 加词边界匹配原始文本以减少短词误报；替换词本身包含

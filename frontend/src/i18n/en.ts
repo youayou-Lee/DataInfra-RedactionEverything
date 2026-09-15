@@ -92,6 +92,7 @@ const enBase: Record<string, string> = {
 
   'mode.smart': 'Smart Replace',
   'mode.mask': 'Mask',
+  'mode.maskPdfOnly': 'Mask mode supports PDF files only',
   'mode.structured': 'Structured Tags',
   'mode.pseudonym': 'Pseudonym',
 
@@ -103,6 +104,8 @@ const enBase: Record<string, string> = {
   'playground.processingModeReplaceUnavailable': 'Unavailable for scanned files / images',
   'playground.processingModeScannedNotice':
     'Replacement (pseudonym) is not yet available for scanned PDFs / images; only masking is supported for now.',
+  'playground.processingModeMaskPdfNotice':
+    'Mask (redaction) supports PDF files only; use Replace for this file.',
   'playground.pseudonymMap': 'Pseudonym Mapping',
   'playground.pseudonymMapDesc':
     'Confirm the replacement for each item before running; the output is exactly what you see. A mapping table is available for download.',
@@ -1355,6 +1358,8 @@ const enOverrides: Record<string, string> = {
     'The current review changes could not be saved, so the file was not changed.',
   'batchWizard.reviewSaveBeforeExportFailed':
     'The current review changes could not be saved. Export was blocked to avoid stale redaction output.',
+  'batchWizard.maskDowngraded':
+    'Mask mode supports PDF files only; this batch contains other formats, switched to Smart mode.',
   'batchWizard.configLocked':
     'This batch recognition list is locked because recognition has already started. Create a new batch job to change the list, item combination, or redaction methods.',
   'batchWizard.noActiveJob': 'No active task is available.',

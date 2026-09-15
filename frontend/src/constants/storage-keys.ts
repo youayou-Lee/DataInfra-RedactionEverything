@@ -13,5 +13,6 @@ export const STORAGE_KEYS = {
   ACTIVE_PRESET_TEXT_ID_LEGACY: 'legalRedaction:activePresetTextId',
   ACTIVE_PRESET_VISION_ID: 'datainfraRedaction:activePresetVisionId',
   ACTIVE_PRESET_VISION_ID_LEGACY: 'legalRedaction:activePresetVisionId',
+  PLAYGROUND_DRAFT: 'datainfraRedaction:playgroundDraft',
   BATCH_WIZ_FURTHEST_PREFIX: 'lr_batch_wiz_furthest_',
 } as const;

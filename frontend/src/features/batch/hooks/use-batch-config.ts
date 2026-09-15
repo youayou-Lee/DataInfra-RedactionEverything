@@ -41,6 +41,7 @@ import {
   applyTextPresetFields,
   applyVisionPresetFields,
   defaultConfig,
+  sanitizeBatchReplacementMode,
 } from './use-batch-wizard-utils';
 
 function localizePresetList(presets: RecognitionPreset[]): RecognitionPreset[] {
@@ -193,7 +194,7 @@ export function useBatchConfig(
           selectedEntityTypeIds,
           ocrHasTypes: ocrHas,
           visualFeatureTypes: visualFeatures,
-          replacementMode: persisted?.replacementMode ?? 'structured',
+          replacementMode: sanitizeBatchReplacementMode(persisted?.replacementMode),
           imageRedactionMethod: persisted?.imageRedactionMethod ?? 'mosaic',
           imageRedactionStrength: persisted?.imageRedactionStrength ?? 75,
           imageFillColor: persisted?.imageFillColor ?? '#000000',

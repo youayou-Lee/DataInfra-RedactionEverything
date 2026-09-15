@@ -1,0 +1,514 @@
+{
+  "per_file": [
+    {
+      "pages": 1,
+      "overall": {
+        "tp": 12,
+        "fp": 2,
+        "fn": 1,
+        "precision": 0.8571428571428571,
+        "recall": 0.9230769230769231,
+        "f1": 0.888888888888889
+      },
+      "per_type": {
+        "地址": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "姓名": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "日期": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "机构名称": {
+          "tp": 2,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "电话": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "身份证号": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "邮箱": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "银行卡号": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "digital": {
+        "身份证号": {
+          "total_gt": 1,
+          "exact_rate": 1.0,
+          "exact": 1,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "电话": {
+          "total_gt": 2,
+          "exact_rate": 1.0,
+          "exact": 2,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "银行卡号": {
+          "total_gt": 1,
+          "exact_rate": 0.0,
+          "exact": 0,
+          "near_miss": 1,
+          "miss": 0,
+          "near_miss_detail": [
+            [
+              "6222 0210 1007 2021",
+              "6222 021010072021"
+            ]
+          ],
+          "miss_detail": []
+        },
+        "邮箱": {
+          "total_gt": 1,
+          "exact_rate": 0.0,
+          "exact": 0,
+          "near_miss": 0,
+          "miss": 1,
+          "near_miss_detail": [],
+          "miss_detail": [
+            "user07.chen@example-corp2.cn"
+          ]
+        }
+      },
+      "latency_sec": {
+        "mean": 11.136,
+        "max": 11.136,
+        "total": 11.136
+      },
+      "digital_gate": {
+        "pass": false,
+        "failures": [
+          "银行卡号: exact 0/1（near_miss 1 / miss 0）"
+        ]
+      },
+      "loose": {
+        "wrong_type": 0,
+        "type_confusion_top": {}
+      },
+      "perf": {
+        "pages_total": 1,
+        "warmup_pages": 1,
+        "steady_pages": 0,
+        "wall_s": {
+          "total": 11.136,
+          "mean": 0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "throughput_pages_per_min": null,
+        "duration_ms": {}
+      },
+      "file": {
+        "id": "syn_contract_1p_mid",
+        "carrier": "scanned_pdf",
+        "doc_type": "contract",
+        "density": "mid",
+        "gt_entities": 13,
+        "eval_wall_s": 11.153
+      },
+      "errors": [
+        {
+          "file": "syn_contract_1p_mid",
+          "page": 1,
+          "type": "银行卡号",
+          "kind": "数字字符噪声",
+          "expect": "6222 0210 1007 2021",
+          "actual": "6222 021010072021",
+          "stage": "OCR"
+        },
+        {
+          "file": "syn_contract_1p_mid",
+          "page": 1,
+          "type": "邮箱",
+          "kind": "漏检",
+          "expect": "user07.chen@example-corp2.cn",
+          "actual": "—",
+          "stage": "NER/OCR"
+        }
+      ]
+    },
+    {
+      "pages": 1,
+      "overall": {
+        "tp": 27,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "per_type": {
+        "地址": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "姓名": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "护照号": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "日期": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "机构名称": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "电话": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "身份证号": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "邮箱": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "银行卡号": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "digital": {
+        "身份证号": {
+          "total_gt": 2,
+          "exact_rate": 1.0,
+          "exact": 2,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "护照号": {
+          "total_gt": 1,
+          "exact_rate": 1.0,
+          "exact": 1,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "电话": {
+          "total_gt": 4,
+          "exact_rate": 1.0,
+          "exact": 4,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "银行卡号": {
+          "total_gt": 2,
+          "exact_rate": 1.0,
+          "exact": 2,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        },
+        "邮箱": {
+          "total_gt": 2,
+          "exact_rate": 1.0,
+          "exact": 2,
+          "near_miss": 0,
+          "miss": 0,
+          "near_miss_detail": [],
+          "miss_detail": []
+        }
+      },
+      "latency_sec": {
+        "mean": 13.073,
+        "max": 13.073,
+        "total": 13.073
+      },
+      "digital_gate": {
+        "pass": true,
+        "failures": []
+      },
+      "loose": {
+        "wrong_type": 0,
+        "type_confusion_top": {}
+      },
+      "perf": {
+        "pages_total": 1,
+        "warmup_pages": 1,
+        "steady_pages": 1,
+        "wall_s": {
+          "total": 13.073,
+          "mean": 13.073,
+          "p50": 13.073,
+          "p95": 13.073
+        },
+        "throughput_pages_per_min": 4.59,
+        "duration_ms": {}
+      },
+      "file": {
+        "id": "syn_contract_2p_mid",
+        "carrier": "docx",
+        "doc_type": "contract",
+        "density": "mid",
+        "gt_entities": 27,
+        "eval_wall_s": 13.093
+      },
+      "errors": []
+    }
+  ],
+  "failed": [],
+  "overall": {
+    "pages": 2,
+    "overall": {
+      "tp": 39,
+      "fp": 2,
+      "fn": 1,
+      "precision": 0.9512195121951219,
+      "recall": 0.975,
+      "f1": 0.9629629629629629
+    },
+    "per_type": {
+      "地址": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "姓名": {
+        "tp": 9,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "护照号": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "日期": {
+        "tp": 6,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "机构名称": {
+        "tp": 6,
+        "fp": 2,
+        "fn": 0,
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571428571428571
+      },
+      "电话": {
+        "tp": 6,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "身份证号": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "邮箱": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1": 0.8
+      },
+      "银行卡号": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "digital": {
+      "身份证号": {
+        "total_gt": 3,
+        "exact": 3,
+        "near_miss": 0,
+        "miss": 0,
+        "near_miss_detail": [],
+        "miss_detail": [],
+        "exact_rate": 1.0
+      },
+      "电话": {
+        "total_gt": 6,
+        "exact": 6,
+        "near_miss": 0,
+        "miss": 0,
+        "near_miss_detail": [],
+        "miss_detail": [],
+        "exact_rate": 1.0
+      },
+      "银行卡号": {
+        "total_gt": 3,
+        "exact": 2,
+        "near_miss": 1,
+        "miss": 0,
+        "near_miss_detail": [
+          [
+            "6222 0210 1007 2021",
+            "6222 021010072021"
+          ]
+        ],
+        "miss_detail": [],
+        "exact_rate": 0.6666666666666666
+      },
+      "邮箱": {
+        "total_gt": 3,
+        "exact": 2,
+        "near_miss": 0,
+        "miss": 1,
+        "near_miss_detail": [],
+        "miss_detail": [
+          "user07.chen@example-corp2.cn"
+        ],
+        "exact_rate": 0.6666666666666666
+      },
+      "护照号": {
+        "total_gt": 1,
+        "exact": 1,
+        "near_miss": 0,
+        "miss": 0,
+        "near_miss_detail": [],
+        "miss_detail": [],
+        "exact_rate": 1.0
+      }
+    },
+    "latency_sec": {
+      "mean": 12.1045,
+      "max": 13.073,
+      "total": 24.209
+    },
+    "digital_gate": {
+      "pass": false,
+      "failures": [
+        "银行卡号: exact 2/3（near_miss 1 / miss 0）"
+      ]
+    },
+    "loose": {
+      "wrong_type": 0,
+      "type_confusion_top": {}
+    }
+  },
+  "rejected": [],
+  "env": {
+    "env_label": "scnet-main-k100",
+    "target_label": "v4-demo2",
+    "level": "e2e",
+    "suite": "synthetic",
+    "git": "unknown",
+    "generated_at": "2026-09-14T03:41:32",
+    "with_perf": false
+  }
+}

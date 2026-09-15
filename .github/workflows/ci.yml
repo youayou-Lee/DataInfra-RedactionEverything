@@ -26,14 +26,21 @@ jobs:
         run: |
           set -e
           BASE="${{ github.base_ref }}"
-          echo "PR base: $BASE"
+          HEAD_REF="${{ github.head_ref }}"
+          echo "PR base: $BASE, head: $HEAD_REF"
           if [ -z "$BASE" ]; then
             echo "push/workflow_dispatch 触发，跳过守卫"
             exit 0
           fi
           if [ "$BASE" = "main" ]; then
-            echo "main 同步/发布类 PR：跳过 ancestor 检查"
-            exit 0
+            # main 只收晋级（head=preview）与 hotfix（事故教训：PR #58 曾误选
+            # base=main 把功能直接合进 main），其余目标 main 的 PR 一律拒绝
+            if [ "$HEAD_REF" = "preview" ] || [[ "$HEAD_REF" == hotfix/* ]]; then
+              echo "main 晋级/hotfix PR：放行"
+              exit 0
+            fi
+            echo "::error::目标 main 的 PR 只允许 preview 晋级或 hotfix/* 分支（当前 head=$HEAD_REF）。功能分支应以 preview 为 base"
+            exit 1
           fi
           if [ "$BASE" != "preview" ]; then
             echo "::error::功能分支必须以 preview 为 base（当前 base=$BASE）"

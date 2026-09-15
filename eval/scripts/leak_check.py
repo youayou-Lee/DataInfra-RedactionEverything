@@ -99,7 +99,7 @@ def run_rescan(api: common_api.EvalApi, target: Path, mapping_rows: list[dict]) 
         elif suffix in (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"):
             page_entities.append(common_api.extract_page_entities(api.vision(file_id, 1)))
             pages = 1
-        elif suffix in (".docx", ".txt", ".md", ".html", ".htm", ".rtf"):
+        elif suffix in (".docx", ".doc", ".txt", ".md", ".html", ".htm", ".rtf"):
             entities, _ = api.parse_and_hybrid_ner(file_id)
             page_entities.append(entities)
             pages = 1

@@ -1319,6 +1319,7 @@
     "suite": "full",
     "env": "scnet-main",
     "started_at": "2026-09-15T16:42:56",
-    "finished_at": "2026-09-15T16:47:54"
+    "finished_at": "2026-09-15T16:47:54",
+    "cleanup": true
   }
 }

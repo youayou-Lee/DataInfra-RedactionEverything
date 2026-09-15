@@ -10,7 +10,8 @@ import json
 from datetime import datetime
 
 _GATE_ORDER = ("g1", "g2", "g3", "g4")
-_TIER_BADGE = {"承诺支持": "✅", "实验性": "⚠️", "前端禁用": "⛔", "无有效格子": "❓"}
+_TIER_BADGE = {"承诺支持": "✅", "实验性": "⚠️", "前端禁用": "⛔", "无有效格子": "❓",
+               "待定（含ERROR未重跑）": "❓"}
 
 
 def _fmt_gates(cell: dict) -> str:
@@ -44,7 +45,7 @@ def render_md(data: dict) -> str:
     lines.append("")
     lines.append(f"- 环境：`{meta.get('env', '?')}`（{meta.get('base_url', '?')}）　"
                  f"suite：{meta.get('suite', '?')}　"
-                 f"执行：{meta.get('started_at', '?', )} → {meta.get('finished_at', '?')}")
+                 f"执行：{meta.get('started_at', '?')} → {meta.get('finished_at', '?')}")
     lines.append(f"- 结果：{summary.get('cells_pass', 0)}/{summary.get('cells_total', 0)} 格 PASS，"
                  f"{summary.get('cells_fail', 0)} FAIL，{summary.get('cells_skip', 0)} SKIP，"
                  f"{summary.get('cells_error', 0)} ERROR；异常例 "
@@ -123,8 +124,9 @@ def render_md(data: dict) -> str:
         lines.append("")
 
     lines.append("---")
+    cleaned = "已清理" if meta.get("cleanup") else "保留（--keep-files）"
     lines.append(f"*由 `eval/scripts/run_format_matrix.py` 生成于 "
-                 f"{datetime.now().strftime('%Y-%m-%d %H:%M')}；样张全合成，任务文件已清理。*")
+                 f"{datetime.now().strftime('%Y-%m-%d %H:%M')}；样张全合成，实例任务文件{cleaned}。*")
     return "\n".join(lines) + "\n"
 
 
@@ -138,7 +140,7 @@ def _ordered_formats(cells: list[dict]) -> list[str]:
 
 def _cell_mark(cell: dict | None) -> str:
     if cell is None:
-        return "—（产品边界）" 
+        return "—（产品边界）"
     return {"PASS": "✅", "FAIL": "❌", "SKIP": "⏭️", "ERROR": "❓"}.get(cell["status"], cell["status"])
 
 
@@ -172,5 +174,6 @@ def _fail_reason(cell: dict) -> str:
 
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
     data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     print(render_md(data))

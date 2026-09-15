@@ -21,6 +21,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common_api  # noqa: E402
 import format_gates as gates  # noqa: E402
@@ -136,14 +138,23 @@ class CellRunner:
                 # 上传成功：看解析/视觉是否给出结构化提示（兜底文案/显式错误）
                 suffix = artifact.suffix.lower()
                 if suffix in (".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"):
-                    try:
-                        resp = self.api.vision(file_id, 1)
-                        texts = _vision_texts(resp)
+                    # 直打端点拿状态码：EvalApi.vision 对非 200 一律抛错，区分不了 4xx/5xx
+                    vr = self.api.client.post(f"/api/v1/redaction/{file_id}/vision",
+                                              params={"page": 1, "force": "true"})
+                    if vr.status_code >= 500:
+                        rec["observations"].append(f"vision HTTP {vr.status_code}（服务崩溃）")
+                        rec["status"] = gates.STATUS_FAIL
+                    elif vr.status_code >= 400:
+                        rec["observations"].append(f"vision HTTP {vr.status_code}（结构化拒绝：{vr.text[:100]}）")
+                        rec["status"] = gates.STATUS_PASS
+                    else:
+                        try:
+                            body = vr.json()
+                        except Exception:
+                            body = {}
+                        texts = _vision_texts(body if isinstance(body, dict) else {})
                         rec["observations"].append(f"vision 200，检出 {len(texts)} 框")
                         rec["status"] = gates.STATUS_FAIL  # 损坏文件静默识别成功
-                    except RuntimeError as exc:
-                        rec["observations"].append(f"vision 结构化错误: {str(exc)[:150]}")
-                        rec["status"] = gates.STATUS_PASS
                 else:
                     pr = self.api.client.get(f"/api/v1/files/{file_id}/parse")
                     content = str(pr.json().get("content") or "") if pr.status_code == 200 else ""
@@ -170,13 +181,13 @@ class CellRunner:
 
     @staticmethod
     def _classify_fail(gr: dict) -> str:
-        """hard = 5xx/解析崩溃/成品损坏/原文残留/解析兜底；其余（化名/召回不足）= soft。"""
-        g2 = gr.get("g2", {})
-        if g2.get("status") == gates.STATUS_FAIL:
+        """hard = 5xx/上传被拒/解析崩溃或兜底/成品损坏/任何原文残留（本地 grep、
+        execute 自检、复扫三路任一）/复扫本身失败；soft = 化名对照或召回不足（无残留）。"""
+        if any(gr.get(g, {}).get("status") == gates.STATUS_FAIL for g in ("g1", "g2")):
             return "hard"
         g4_detail = gr.get("g4", {}).get("detail", {})
         for problem in g4_detail.get("problems", []):
-            if problem.startswith(("成品下载", "成品残留", "载体完整性")):
+            if "残留" in problem or problem.startswith(("成品下载", "载体完整性", "复扫执行失败")):
                 return "hard"
         return "soft"
 
@@ -212,9 +223,11 @@ class CellRunner:
             file_id = self.api.upload(sample)
             self._touched.append(file_id)
             return file_id, gates.g1_upload(True, file_id)
-        except Exception as exc:
-            detail = {"reason": f"上传异常: {str(exc)[:200]}"}
+        except httpx.HTTPStatusError as exc:  # 服务端明确拒绝（4xx/5xx）→ 格式 FAIL
+            detail = {"reason": f"上传被拒: HTTP {exc.response.status_code}: {exc.response.text[:150]}"}
             return None, {"status": gates.STATUS_FAIL, "detail": detail}
+        except Exception:  # 网络/超时等传输层异常 → 冒泡给 run_cell 记 ERROR（重跑裁决）
+            raise
 
     def _g2_parse(self, file_id: str) -> tuple[dict, list[dict]]:
         r = self.api.client.get(f"/api/v1/files/{file_id}/parse")
@@ -292,26 +305,30 @@ class CellRunner:
             if residual:
                 problems.append(f"成品残留原文 {len(residual)} 处: {residual[:3]}")
 
-        # 化名格：对照自证 + 替换词确实写入成品
+        # 化名格：对照自证（复用纯函数）+ 替换词确实写入成品
         pseudo_check: dict | None = None
         if mode == "pseudonym":
             sent_originals = [e["text"] for e in entities_payload if e["text"]]
-            missing = [o for o in sent_originals if not entity_map.get(o)]
-            replaced_in_product = []
+            pseudo_check = gates.check_pseudonym_mapping(entity_map, sent_originals)
             if product_text is not None:
-                replaced_in_product = [o for o, alias in entity_map.items()
-                                       if alias and alias not in product_text]
-            pseudo_check = {"ok": not missing and not replaced_in_product,
-                            "missing": missing, "not_in_product": replaced_in_product,
-                            "mapped": len(entity_map)}
-            if missing:
-                problems.append(f"化名对照缺 {len(missing)} 项: {missing[:3]}")
-            if replaced_in_product:
-                problems.append(f"对照表化名 {len(replaced_in_product)} 项未写入成品: {replaced_in_product[:3]}")
+                not_in_product = [o for o, alias in entity_map.items()
+                                  if alias and alias not in product_text]
+                pseudo_check["not_in_product"] = not_in_product
+                pseudo_check["ok"] = pseudo_check["ok"] and not not_in_product
+            if pseudo_check.get("missing"):
+                problems.append(f"化名对照缺 {len(pseudo_check['missing'])} 项: {pseudo_check['missing'][:3]}")
+            if pseudo_check.get("not_in_product"):
+                problems.append(f"对照表化名 {len(pseudo_check['not_in_product'])} 项未写入成品: "
+                                f"{pseudo_check['not_in_product'][:3]}")
 
         # API 复扫（设计文档 G4 口径）：化名成品扫原文；打码成品扫 GT 原文
         mapping_rows = [{"原文": o, "类型": "", "化名": entity_map.get(o, "")} for o in originals]
-        rescan = leak_check.run_rescan(self.api, out_path, mapping_rows)
+        try:
+            rescan = leak_check.run_rescan(self.api, out_path, mapping_rows)
+        except Exception as exc:  # 复扫不可用 = 无法确认零残留，不能给该格式承诺
+            problems.append(f"复扫执行失败，无法确认零残留: {type(exc).__name__}: {str(exc)[:150]}")
+            return gates.gate_result(gates.STATUS_FAIL,
+                                     detail | {"problems": problems} if problems else {"problems": problems})
         if not rescan.get("clean"):
             findings = [f.get("原文") for f in rescan.get("findings", [])][:3]
             problems.append(f"复扫发现原文残留 {len(rescan.get('findings', []))} 处: {findings}")
@@ -414,7 +431,8 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
         if unknown:
             raise ValueError(f"未知格式: {unknown}（可选: {list(MATRIX)}）")
         formats = formats_filter
-    anomaly_ids = list(_build_anomalies(workdir)) if suite == "full" else SMOKE_ANOMALIES
+    cases = _build_anomalies(workdir)  # 一次性构建（51MB 超限样件带大小缓存）
+    anomaly_ids = list(cases) if suite == "full" else SMOKE_ANOMALIES
     cells: list[dict] = []
     anomalies: list[dict] = []
     for format_id in formats:
@@ -430,6 +448,7 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
                               "fail_class": None, "gates": {}, "g3_recall": None,
                               "wall_s": 0.0, "error": None,
                               "note": "同格式打码格 G1/G2 FAIL，上游不可用"})
+                _persist(cells, anomalies)
                 print(f"  [格] {format_id}×{mode}: SKIP（上游不可用）")
                 continue
             cell = runner.run_cell(format_id, mode)
@@ -438,8 +457,6 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
             _persist(cells, anomalies)
             _print_cell(cell)
 
-    anomalies = []
-    cases = _build_anomalies(workdir)
     if not formats_filter:  # --formats 重跑单格式时不重复异常例
         for cid in (anomaly_ids if suite == "full" else SMOKE_ANOMALIES):
             if cid not in cases:
@@ -527,7 +544,8 @@ def main() -> int:
     json_path = REPORTS_DIR / f"{ts}-{args.env}-format-matrix.json"
     data["meta"] = {"base_url": args.base_url, "suite": args.suite, "env": args.env,
                     "started_at": started.isoformat(timespec="seconds"),
-                    "finished_at": datetime.now().isoformat(timespec="seconds")}
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                    "cleanup": not args.keep_files}
     json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     partial = workdir / "partial-matrix.json"
     if partial.exists():  # 跑批完整结束，逐格落盘的中间态不再需要

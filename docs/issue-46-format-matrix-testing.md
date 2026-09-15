@@ -117,7 +117,7 @@ python eval/scripts/run_format_matrix.py --base-url <实例地址> --suite full
 
 ## 7. 验收标准（DoD）
 
-- [ ] 矩阵报告入库 `eval/reports/`（23 格 + 5 异常例，每格 PASS/FAIL + 证据/数值）；
+- [ ] 矩阵报告入库 `eval/reports/`（25 格 + 5 异常例，每格 PASS/FAIL + 证据/数值）；
 - [ ] 每格式三档结论之一，规则可追溯（报告附每格关卡明细）；
 - [ ] 新增单测绿、既有 eval 单测零回归、CI 三检查通过；
 - [ ] 用户终审结论 → 工作区用户手册第 2 节回写 → 关闭 Issue #46；

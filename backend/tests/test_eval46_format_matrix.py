@@ -166,8 +166,34 @@ def test_g4_residual_is_hard():
 
 
 def test_g4_pseudonym_missing_alias():
-    check = gates.check_pseudonym_mapping({"张三": "李四"}, {"姓名": ["张三", "王五"]})
+    check = gates.check_pseudonym_mapping({"张三": "李四"}, ["张三", "王五"])
     assert not check["ok"] and len(check["missing"]) == 1
+
+
+# ---------- fail_class 分类（评审 Critical：残留/上传拒必须 hard）----------
+
+_G4 = lambda problems: {"status": "FAIL", "detail": {"problems": problems}}
+
+
+@pytest.mark.parametrize("gates_map,expect", [
+    # G1 上传被拒 / G2 解析兜底 → hard
+    ({"g1": {"status": "FAIL", "detail": {"reason": "上传被拒: HTTP 400"}}}, "hard"),
+    ({"g2": {"status": "FAIL", "detail": {"reason": "命中解析兜底文案"}}}, "hard"),
+    # 三路残留任一 → hard（本地 grep / execute 自检 / 复扫）
+    ({"g4": _G4(["成品残留原文 2 处: ['x']"])}, "hard"),
+    ({"g4": _G4(["execute 自检报残留 1 处: ['x']"])}, "hard"),
+    ({"g4": _G4(["复扫发现原文残留 3 处: ['x']"])}, "hard"),
+    # 成品下载失败 / 载体损坏 / 复扫执行失败 → hard
+    ({"g4": _G4(["成品下载失败"])}, "hard"),
+    ({"g4": _G4(["载体完整性校验失败: {...}"])}, "hard"),
+    ({"g4": _G4(["复扫执行失败，无法确认零残留: ValueError"])}, "hard"),
+    # 化名对照/召回不足（无残留）→ soft
+    ({"g3": {"status": "FAIL", "detail": {"reason": "召回 40% < 80%"}},
+      "g4": _G4(["化名对照缺 1 项"])}, "soft"),
+])
+def test_classify_fail(gates_map, expect):
+    from run_format_matrix import CellRunner
+    assert CellRunner._classify_fail(gates_map) == expect
 
 
 def test_grep_residual_normalization():
@@ -189,6 +215,9 @@ def _cell(mode, status, fail_class=None):
     ([_cell("mask", "FAIL", "soft")], "实验性"),
     ([_cell("mask", "FAIL", "hard")], "前端禁用"),
     ([_cell("mask", "SKIP"), _cell("pseudonym", "SKIP")], "无有效格子"),
+    # ERROR 未裁决 ≠ 通过：不得给承诺支持绿灯（评审 Important）
+    ([_cell("mask", "PASS"), _cell("pseudonym", "ERROR")], "待定（含ERROR未重跑）"),
+    ([_cell("mask", "PASS"), _cell("pseudonym", "SKIP"), _cell("mask2", "ERROR")], "待定（含ERROR未重跑）"),
 ])
 def test_aggregate_tiers(cells, expect):
     assert gates.aggregate_format(cells) == expect
@@ -274,6 +303,12 @@ def test_run_suite_offline_smoke(tmp_path, monkeypatch):
     assert doc_mask["status"] == "FAIL" and doc_mask["fail_class"] == "hard", \
         f"G2 兜底必须归类 hard（_classify_fail 接线存在且生效）: {doc_mask}"
     assert data["tiers"]["doc"] == "前端禁用"
+    # 评审 Critical 锁：stub 下 rtf 复扫命中姓名 → 「复扫发现原文残留」必须归类 hard，
+    # 三档结论必须是前端禁用（残留格式不得降级为实验性）
+    rtf_mask = next(c for c in data["cells"] if c["cell_id"] == "rtf×mask")
+    assert rtf_mask["status"] == "FAIL" and rtf_mask["fail_class"] == "hard", \
+        f"复扫残留必须 hard: {rtf_mask['fail_class']} / {rtf_mask['gates'].get('g4', {}).get('detail')}"
+    assert data["tiers"]["rtf"] == "前端禁用"
     doc_pseudo = next(c for c in data["cells"] if c["cell_id"] == "doc×pseudonym")
     assert doc_pseudo["status"] == "SKIP"
     wiring_errors = [c["error"] for c in data["cells"]

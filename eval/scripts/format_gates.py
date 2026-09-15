@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-import re
-
 # 兜底文案标记（file_parser.py 的两个不可解析出口；出现即解析链不可用）
 FALLBACK_MARKERS = ("[无法解析 .doc 文件", "[无法解析文件")
 # 数字保真一票否决的类型（镜像 #23/#37 口径）
@@ -99,24 +97,22 @@ def check_image_integrity(path, *, expect_size: tuple[int, int] | None = None) -
             "expect_size": list(expect_size) if expect_size else None}
 
 
-def check_pseudonym_mapping(entity_map: dict[str, str], gt: dict[str, list[str]]) -> dict:
-    """化名对照自证：每个 GT 原文都在 entity_map 中且化名非空、不等于原文。"""
+def check_pseudonym_mapping(entity_map: dict[str, str], originals: list[str]) -> dict:
+    """化名对照自证：送入 execute 的每个原文都有非空化名且不等于原文。"""
     missing = []
-    for values in gt.values():
-        for value in values:
-            alias = entity_map.get(value)
-            if not alias or alias == value:
-                missing.append({"value": value, "alias": alias})
+    for value in originals:
+        alias = entity_map.get(value)
+        if not alias or alias == value:
+            missing.append({"value": value, "alias": alias})
     return {"ok": not missing, "missing": missing, "mapped": len(entity_map)}
 
 
-_FT_RE = re.compile(r"[，。、；：？！“”‘’（）【】《》\s,.;:?!\"'()\[\]<>\-—_·]")
-
-
 def grep_residual(product_text: str, originals: list[str]) -> list[str]:
-    """归一化 grep（强归一，口径同 leak_check._norm）。"""
-    norm = _FT_RE.sub("", product_text or "").upper()
-    return [o for o in originals if o and _FT_RE.sub("", o).upper() in norm]
+    """归一化 grep（强归一，口径直接复用 leak_check._norm 消除漂移面）。"""
+    from leak_check import _norm
+
+    norm = _norm(product_text or "")
+    return [o for o in originals if o and _norm(o) in norm]
 
 
 def g4_product(*, download_ok: bool, residual_originals: list[str],
@@ -141,9 +137,13 @@ def aggregate_format(cells: list[dict]) -> str:
 
     fail_class：hard = 5xx/解析崩溃/成品损坏/原文残留/解析兜底不可用；
                 soft = 化名格 FAIL 或召回低于门槛但无残留。
-    规则（设计文档 §4）：全 PASS → 承诺支持；任一 hard → 前端禁用；
-    其余（打码可用、软失败）→ 实验性。SKIP/ERROR 格子不参与聚合。
+    规则（设计文档 §4）：该格式全部格子 PASS → 承诺支持；任一 hard → 前端禁用；
+    其余（打码可用、软失败）→ 实验性。
+    含 ERROR 格子时结论不可给绿灯（未裁决 ≠ 通过）→ 返回待定值，重跑后聚合。
+    SKIP 格子不参与聚合。
     """
+    if any(c["status"] == STATUS_ERROR for c in cells):
+        return "待定（含ERROR未重跑）"
     counted = [c for c in cells if c["status"] in (STATUS_PASS, STATUS_FAIL)]
     if not counted:
         return "无有效格子"

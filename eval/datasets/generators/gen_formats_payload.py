@@ -2,7 +2,8 @@
 
 payload：2 人名 + 1 身份证号 + 1 手机号 + 1 地址（设计文档 §3）。
 实体函数复用 backend/scripts/eval/make_ner_gt_corpus.py（校验位合法，D6：import 不复制）；
-确定性：固定序号派生，无随机数，重复运行逐字节一致（.doc 除外，LibreOffice 产物带时间戳）。
+确定性：固定序号派生，无随机数——同工具链重建逐字节一致；跨工具链版本以
+魔数 + 尺寸 + GT 自检为准（.doc/PDF/图片受 LibreOffice/PyMuPDF/PIL 版本影响）。
 
 内容为程序合成假数据，不含任何真实案卷信息，可入库。
 """

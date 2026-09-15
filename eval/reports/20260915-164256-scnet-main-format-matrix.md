@@ -160,4 +160,4 @@
 | mask | g1 PASS ｜ g2 PASS ｜ g3 100% PASS ｜ g4 PASS | PASS | 14.09s |
 
 ---
-*由 `eval/scripts/run_format_matrix.py` 生成于 2026-09-15 16:54；样张全合成，任务文件已清理。*
+*由 `eval/scripts/run_format_matrix.py` 生成于 2026-09-15 17:39；样张全合成，实例任务文件已清理。*

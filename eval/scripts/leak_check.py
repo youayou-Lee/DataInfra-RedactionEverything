@@ -52,8 +52,8 @@ def extract_text(path: Path) -> str:
                 for cell in row.cells:
                     parts.append(cell.text)
         return "\n".join(parts)
-    if suffix == ".txt":
-        return path.read_text(encoding="utf-8")
+    if suffix in (".txt", ".md", ".html", ".htm", ".rtf"):  # Issue #46：纯文本族成品
+        return path.read_bytes().decode("utf-8", errors="replace")
     raise ValueError(f"不支持的文件类型: {path}")
 
 
@@ -83,7 +83,8 @@ def run_check(target: Path, mapping_rows: list[dict]) -> dict:
 def run_rescan(api: common_api.EvalApi, target: Path, mapping_rows: list[dict]) -> dict:
     """保险②：识别化名版，预测实体与原文串求交（归一域）。
 
-    pdf 走逐页 vision；docx/txt 走 parse + hybrid NER（D7：vision 不支持该类载体）。
+    pdf 走逐页 vision；docx/txt 族走 parse + hybrid NER（D7：vision 不支持该类载体）；
+    图片族走单页 vision（Issue #46：打码成品复扫）。
     """
     file_id = api.upload(target)
     try:
@@ -95,7 +96,10 @@ def run_rescan(api: common_api.EvalApi, target: Path, mapping_rows: list[dict]) 
                 pages = doc.page_count
             for page in range(1, pages + 1):
                 page_entities.append(common_api.extract_page_entities(api.vision(file_id, page)))
-        elif suffix in (".docx", ".txt"):
+        elif suffix in (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"):
+            page_entities.append(common_api.extract_page_entities(api.vision(file_id, 1)))
+            pages = 1
+        elif suffix in (".docx", ".doc", ".txt", ".md", ".html", ".htm", ".rtf"):
             entities, _ = api.parse_and_hybrid_ner(file_id)
             page_entities.append(entities)
             pages = 1

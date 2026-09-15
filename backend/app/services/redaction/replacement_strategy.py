@@ -13,7 +13,12 @@ from app.models.schemas import (
     ReplacementMode,
 )
 from app.models.type_mapping import canonical_type_id
-from app.services.redaction.org_rules import is_org_like, is_preserved_org_text, org_pool_key_for
+from app.services.redaction.org_rules import (
+    is_org_like,
+    is_preserved_org_text,
+    organ_derived_base,
+    org_pool_key_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +398,9 @@ class RedactionContext:
                 return "某委员会"
             return "某公司"
         if pool_key == "GOVERNMENT_AGENCY":
+            organ_base = organ_derived_base(text)
+            if organ_base:
+                return organ_base
             m = INSTITUTION_GOV_TEXT_RE.search(text)
             if m:
                 return f"某{m.group(1)}"
@@ -413,7 +421,7 @@ class RedactionContext:
             if subtype_pool:
                 return subtype_pool
         if pool_key == "INSTITUTION_NAME":
-            if INSTITUTION_GOV_TEXT_RE.search(text):
+            if organ_derived_base(text) or INSTITUTION_GOV_TEXT_RE.search(text):
                 return "GOVERNMENT_AGENCY"
             if INSTITUTION_BANK_TEXT_RE.search(text):
                 return "BANK_NAME"

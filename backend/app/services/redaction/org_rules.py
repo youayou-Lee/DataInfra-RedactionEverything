@@ -30,12 +30,6 @@ PUBLIC_INSTITUTION_KEYWORDS: tuple[str, ...] = (
     "最高人民法院",
     "最高人民检察院",
     "中共中央",
-    "政法委",
-    "党委",
-    "党组",
-    "组织部",
-    "宣传部",
-    "统战部",
 )
 
 # 「部」单独作后缀歧义大（如「某某贸易部」），仅限常见部委名组合按机关保留
@@ -63,10 +57,6 @@ MINISTRY_PREFIXES: tuple[str, ...] = (
     "退役",
     "应急",
     "审计",
-    "组织",
-    "宣传",
-    "统战",
-    "政法",
 )
 
 # 后缀歧义保护：命中「部/厅」但含经营主体字样的名称不按机关保留
@@ -92,6 +82,38 @@ PUBLICATION_SUFFIXES: tuple[str, ...] = (
     "汇编",
     "公报",
 )
+
+# 地方党政机关后缀（厅/组织部/政法委…）：不在白名单、照常匿名化，但派生
+# 基名按机关类型（某司法厅N/某组织部N），不落「某公司」（验收反馈 2026-09-15）
+ORGAN_SUFFIX_RE: tuple[tuple[str, str], ...] = (
+    ("司法厅", "某司法厅"),
+    ("公安厅", "某公安厅"),
+    ("财政厅", "某财政厅"),
+    ("教育厅", "某教育厅"),
+    ("审计厅", "某审计厅"),
+    ("农业农村厅", "某农业农村厅"),
+    ("商务厅", "某商务厅"),
+    ("组织部", "某组织部"),
+    ("宣传部", "某宣传部"),
+    ("统战部", "某统战部"),
+    ("政法委", "某政法委"),
+    ("党委", "某党委"),
+    ("党组", "某党组"),
+)
+
+
+def organ_derived_base(text: str) -> str | None:
+    """地方党政机关 → 类型匹配的派生基名；非机关返回 None。"""
+    stripped = (text or "").strip()
+    if not stripped:
+        return None
+    for suffix, base in ORGAN_SUFFIX_RE:
+        if suffix in stripped:
+            return base
+    if stripped.endswith("厅"):
+        return "某厅"
+    return None
+
 
 # 书名号包裹是出版物的强信号
 _QUOTED_PUBLICATION_RE = __import__("re").compile(r"^《[^》]{1,40}》$")
@@ -169,8 +191,5 @@ def is_public_institution(text: str) -> bool:
         if any(keyword in normalized for keyword in PUBLIC_INSTITUTION_KEYWORDS):
             return True
         if any(normalized.endswith(prefix + "部") for prefix in MINISTRY_PREFIXES):
-            return True
-        # 「厅」=省级政府组成部门（司法厅/公安厅/财政厅…），含经营字样时已被上面排除
-        if normalized.endswith("厅"):
             return True
     return False

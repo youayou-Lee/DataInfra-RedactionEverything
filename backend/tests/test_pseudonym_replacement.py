@@ -493,17 +493,29 @@ def test_publications_preserved_verbatim():
         assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
 
 
-def test_party_and_provincial_organs_preserved_verbatim():
-    for text in (
-        "中共中央组织部",
-        "中共中央宣传部",
-        "广西壮族自治区司法厅",
-        "广西司法厅",
-        "某省委组织部",
-        "某市政法委",
-    ):
+def test_central_party_organs_preserved_local_organs_anonymized():
+    # 中央级机关保留原文（对齐司法部口径）
+    for text in ("中共中央组织部", "中共中央宣传部"):
         ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
         assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_provincial_organs_anonymized_with_matched_type():
+    # 厅级/地方党政机关照常匿名化，但派生基名匹配机关类型，不落「某公司」
+    cases = {
+        "广西司法厅": "某司法厅1",
+        "广西壮族自治区司法厅": "某司法厅1",
+        "某省委组织部": "某组织部1",
+        "某市政法委": "某政法委1",
+        "某县委宣传部": "某宣传部1",
+    }
+    for text, expected in cases.items():
+        pools = {
+            **ORG_POOLS,
+            "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+        }
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
 
 
 def test_publication_and_party_rules_negative_controls():

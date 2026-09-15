@@ -528,3 +528,59 @@ def test_publication_and_party_rules_negative_controls():
         ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
         out = ctx.get_replacement(_entity(text, type_="ORG"))
         assert out != text, text
+
+
+# ---------- 验收反馈第二轮：国际组织/国资委/公共服务机构/媒体（2026-09-15） ----------
+
+
+def test_international_orgs_preserved_verbatim():
+    for text in ("欧盟", "欧洲联盟", "联合国开发计划署", "世界贸易组织"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_sasac_routed_to_organ_pseudonym():
+    cases = {
+        "国资委": "某国资委1",
+        "广西区国资委": "某国资委1",
+        "南宁市国资委": "某国资委1",
+    }
+    for text, expected in cases.items():
+        pools = {
+            **ORG_POOLS,
+            "GOVERNMENT_AGENCY": {"words": [], "strategy": "derived", "custom_map": {}},
+        }
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+def test_public_service_tail_strips_leading_region():
+    cases = {
+        "广西区政府顾问人才库": "某政府顾问人才库1",
+        "某市法学会": "某法学会1",
+        "南宁市公共资源交易中心": "某公共资源交易中心1",
+    }
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    for text, expected in cases.items():
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text
+
+
+def test_media_and_websites_preserved_verbatim():
+    for text in ("人民网", "中国采购与招标网", "广西新闻网", "某省电视台"):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=ORG_POOLS)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == text, text
+
+
+def test_public_service_rules_negative_controls():
+    # 公司不因词尾相近被误改基名
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+    assert ctx.get_replacement(_entity("某某贸易有限公司", type_="ORG")) == "某公司1"
+    assert ctx.get_replacement(_entity("某某建工集团", type_="ORG")) == "某公司2"

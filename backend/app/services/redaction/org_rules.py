@@ -32,6 +32,25 @@ PUBLIC_INSTITUTION_KEYWORDS: tuple[str, ...] = (
     "中共中央",
 )
 
+# 国际组织：公开机构名，保留原文（联合国/欧盟/WTO 等）
+INTERNATIONAL_ORG_KEYWORDS: tuple[str, ...] = (
+    "联合国",
+    "欧盟",
+    "欧洲联盟",
+    "东盟",
+    "北约",
+    "非盟",
+    "阿盟",
+    "世贸组织",
+    "世界贸易组织",
+    "WTO",
+    "世界银行",
+    "国际货币基金",
+    "亚太经合",
+    "红十字",
+    "奥委会",
+)
+
 # 「部」单独作后缀歧义大（如「某某贸易部」），仅限常见部委名组合按机关保留
 MINISTRY_PREFIXES: tuple[str, ...] = (
     "司法",
@@ -81,11 +100,17 @@ PUBLICATION_SUFFIXES: tuple[str, ...] = (
     "指南",
     "汇编",
     "公报",
+    "网",
+    "传媒",
+    "电视台",
+    "广播电台",
+    "电台",
 )
 
 # 地方党政机关后缀（厅/组织部/政法委…）：不在白名单、照常匿名化，但派生
 # 基名按机关类型（某司法厅N/某组织部N），不落「某公司」（验收反馈 2026-09-15）
 ORGAN_SUFFIX_RE: tuple[tuple[str, str], ...] = (
+    ("国资委", "某国资委"),
     ("司法厅", "某司法厅"),
     ("公安厅", "某公安厅"),
     ("财政厅", "某财政厅"),
@@ -100,6 +125,50 @@ ORGAN_SUFFIX_RE: tuple[tuple[str, str], ...] = (
     ("党委", "某党委"),
     ("党组", "某党组"),
 )
+
+
+# 公共服务机构词尾：命中后派生基名=去开头地区+行政区划、换「某」
+# （广西区政府顾问人才库 → 某政府顾问人才库）
+PUBLIC_SERVICE_TAILS: tuple[str, ...] = (
+    "人才库",
+    "专家库",
+    "智库",
+    "管委会",
+    "办公室",
+    "协会",
+    "学会",
+    "联合会",
+    "基金会",
+    "促进会",
+    "研究会",
+    "研究院",
+    "研究所",
+    "交流中心",
+    "服务中心",
+    "信息中心",
+    "交易中心",
+    "评审中心",
+    "培训中心",
+    "指导中心",
+)
+
+# 开头地区+行政区划（广西区/南宁市/某省/桂林县…），非贪婪到第一个行政区划字
+_LEADING_REGION_RE = __import__("re").compile(r"^[\u4e00-\u9fa5]{1,6}?(?:省|自治区|市|县|区|旗|盟|州)")
+
+
+def public_service_base(text: str) -> str | None:
+    """公共服务机构（人才库/协会/研究院…）→ 去地区换「某」的派生基名。
+
+    广西区政府顾问人才库 → 某政府顾问人才库；某市法学会 → 某法学会。
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return None
+    tail = next((t for t in PUBLIC_SERVICE_TAILS if stripped.endswith(t)), None)
+    if tail is None:
+        return None
+    remainder = _LEADING_REGION_RE.sub("", stripped)
+    return f"某{remainder}" if remainder and remainder != stripped else f"某{tail}"
 
 
 def organ_derived_base(text: str) -> str | None:
@@ -189,6 +258,8 @@ def is_public_institution(text: str) -> bool:
         if any(normalized.endswith(suffix) for suffix in PUBLIC_INSTITUTION_SUFFIXES):
             return True
         if any(keyword in normalized for keyword in PUBLIC_INSTITUTION_KEYWORDS):
+            return True
+        if any(keyword in normalized for keyword in INTERNATIONAL_ORG_KEYWORDS):
             return True
         if any(normalized.endswith(prefix + "部") for prefix in MINISTRY_PREFIXES):
             return True

@@ -18,6 +18,7 @@ from app.services.redaction.org_rules import (
     is_preserved_org_text,
     organ_derived_base,
     org_pool_key_for,
+    public_service_base,
 )
 
 logger = logging.getLogger(__name__)
@@ -396,6 +397,10 @@ class RedactionContext:
         if pool_key == "INSTITUTION_NAME":
             if DERIVED_GOV_EXTRA_RE.search(text):
                 return "某委员会"
+            # 公共服务机构（人才库/协会/研究院…）：去开头地区换「某」
+            ps_base = public_service_base(text)
+            if ps_base:
+                return ps_base
             return "某公司"
         if pool_key == "GOVERNMENT_AGENCY":
             organ_base = organ_derived_base(text)

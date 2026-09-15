@@ -146,6 +146,7 @@ PUBLIC_SERVICE_TAILS: tuple[str, ...] = (
     "交流中心",
     "服务中心",
     "信息中心",
+    "研究中心",
     "交易中心",
     "评审中心",
     "培训中心",
@@ -154,6 +155,8 @@ PUBLIC_SERVICE_TAILS: tuple[str, ...] = (
 
 # 开头地区+行政区划（广西区/南宁市/某省/桂林县…），非贪婪到第一个行政区划字
 _LEADING_REGION_RE = __import__("re").compile(r"^[\u4e00-\u9fa5]{1,6}?(?:省|自治区|市|县|区|旗|盟|州)")
+# 「中国/全国」级前缀同样剥掉（中国法治企业研究院 → 某法治企业研究院）
+_LEADING_NATIONAL_RE = __import__("re").compile(r"^(?:中国|全国)")
 
 
 def public_service_base(text: str) -> str | None:
@@ -168,6 +171,7 @@ def public_service_base(text: str) -> str | None:
     if tail is None:
         return None
     remainder = _LEADING_REGION_RE.sub("", stripped)
+    remainder = _LEADING_NATIONAL_RE.sub("", remainder)
     return f"某{remainder}" if remainder and remainder != stripped else f"某{tail}"
 
 

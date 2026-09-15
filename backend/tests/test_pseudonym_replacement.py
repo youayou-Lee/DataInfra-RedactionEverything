@@ -584,3 +584,17 @@ def test_public_service_rules_negative_controls():
     ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
     assert ctx.get_replacement(_entity("某某贸易有限公司", type_="ORG")) == "某公司1"
     assert ctx.get_replacement(_entity("某某建工集团", type_="ORG")) == "某公司2"
+
+
+def test_research_institute_strips_national_prefix():
+    pools = {
+        **ORG_POOLS,
+        "INSTITUTION_NAME": {"words": [], "strategy": "derived", "custom_map": {}},
+    }
+    for text, expected in (
+        ("中国法治企业研究院", "某法治企业研究院1"),
+        ("中国首席法务官研究院", "某首席法务官研究院1"),
+        ("全国某行业研究中心", "某行业研究中心1"),
+    ):
+        ctx = RedactionContext(ReplacementMode.PSEUDONYM, word_pools=pools)
+        assert ctx.get_replacement(_entity(text, type_="ORG")) == expected, text

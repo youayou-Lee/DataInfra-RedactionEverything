@@ -175,6 +175,7 @@ class CellRunner:
         if gr["g1"]["status"] != gates.STATUS_PASS:
             return gr
 
+        boxes: list[dict] = []
         if kind in ("text", "pdf_text"):
             gr["g2"], raw_entities = self._g2_parse(file_id)
         else:
@@ -372,11 +373,17 @@ def _build_anomalies(workdir: Path) -> dict[str, tuple[Path, str]]:
     return cases
 
 
-def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bool) -> dict:
+def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bool,
+              formats_filter: list[str] | None = None) -> dict:
     gt = json.loads((FORMATS_DIR / "gt.json").read_text(encoding="utf-8"))
     runner = CellRunner(api, gt, workdir, cleanup=cleanup)
 
     formats = list(MATRIX) if suite == "full" else SMOKE_FORMATS
+    if formats_filter:
+        unknown = [f for f in formats_filter if f not in MATRIX]
+        if unknown:
+            raise ValueError(f"未知格式: {unknown}（可选: {list(MATRIX)}）")
+        formats = formats_filter
     anomaly_ids = list(_build_anomalies(workdir)) if suite == "full" else SMOKE_ANOMALIES
     cells: list[dict] = []
     for format_id in formats:
@@ -401,14 +408,15 @@ def run_suite(api: common_api.EvalApi, *, suite: str, workdir: Path, cleanup: bo
 
     anomalies = []
     cases = _build_anomalies(workdir)
-    for cid in (anomaly_ids if suite == "full" else SMOKE_ANOMALIES):
-        if cid not in cases:
-            continue
-        path, expect = cases[cid]
-        rec = runner.run_anomaly(cid, path, expect)
-        anomalies.append(rec)
-        print(f"  [异常] {cid}: {rec['status']}"
-              + (f"（{rec['observations'][-1]}）" if rec["observations"] else ""))
+    if not formats_filter:  # --formats 重跑单格式时不重复异常例
+        for cid in (anomaly_ids if suite == "full" else SMOKE_ANOMALIES):
+            if cid not in cases:
+                continue
+            path, expect = cases[cid]
+            rec = runner.run_anomaly(cid, path, expect)
+            anomalies.append(rec)
+            print(f"  [异常] {cid}: {rec['status']}"
+                  + (f"（{rec['observations'][-1]}）" if rec["observations"] else ""))
 
     tiers = {}
     for format_id, cells_of in _group_by_format(cells).items():
@@ -459,6 +467,7 @@ def main() -> int:
     parser.add_argument("--suite", choices=["smoke", "full"], default="smoke")
     parser.add_argument("--env", default="scnet-main", help="报告文件名环境段")
     parser.add_argument("--workdir", default=None, help="成品/异常样件目录（默认 eval/.format-matrix-tmp）")
+    parser.add_argument("--formats", default=None, help="逗号分隔格式过滤（如 rtf,doc），重跑用")
     parser.add_argument("--keep-files", action="store_true", help="保留实例测试文件（默认用完即删）")
     args = parser.parse_args()
 
@@ -474,7 +483,8 @@ def main() -> int:
     started = datetime.now()
     print(f"== Issue #46 格式矩阵 suite={args.suite} -> {args.base_url} ==")
     try:
-        data = run_suite(api, suite=args.suite, workdir=workdir, cleanup=not args.keep_files)
+        data = run_suite(api, suite=args.suite, workdir=workdir, cleanup=not args.keep_files,
+                         formats_filter=args.formats.split(",") if args.formats else None)
     finally:
         api.close()
 

@@ -19,7 +19,11 @@ import {
   usePlaygroundUIContext,
 } from './playground-context';
 import { needsSwitchConfirm, splitVirtualPages } from './lib/playground-draft';
-import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
+import {
+  isMaskAllowedForFile,
+  previewEntityHoverRingClass,
+  previewEntityMarkStyle,
+} from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
 
 /** 超长单页文本的虚拟分页窗口大小（字符） */
@@ -125,6 +129,14 @@ const PlaygroundInner: FC = () => {
     startResume(resumeFileId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startResume 稳定引用由 useCallback 保证
   }, [resumeFileId, fileInfo?.file_id]);
+
+  // Issue #57: 打码（MASK）模式仅对 PDF 开放；文本格式自动切回「替换」
+  const maskAllowed = isMaskAllowedForFile(fileInfo?.file_type);
+  useEffect(() => {
+    if (!maskAllowed && processingMode === 'mask') {
+      setProcessingMode('replace');
+    }
+  }, [maskAllowed, processingMode, setProcessingMode]);
 
   const pagesArr = fileInfo?.pages;
   // 虚拟分页（Issue #33 验收反馈）：MinerU 转出的 markdown 单页可达数十万字符、
@@ -402,6 +414,7 @@ const PlaygroundInner: FC = () => {
               setReplacementMode={recognition.setReplacementMode}
               processingMode={processingMode}
               setProcessingMode={setProcessingMode}
+              maskDisabled={!maskAllowed}
               pseudonymMap={pseudonymMap}
               onPseudonymChange={setPseudonymReplacement}
               pseudonymMapLoading={pseudonymMapLoading}

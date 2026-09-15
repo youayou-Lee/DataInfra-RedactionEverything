@@ -36,6 +36,7 @@ export interface PlaygroundEntityPanelProps {
   displayStats?: Record<string, { total: number; selected: number }>;
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  maskDisabled?: boolean;
   processingMode: 'mask' | 'replace';
   setProcessingMode: (mode: 'mask' | 'replace') => void;
   pseudonymMap: Record<string, string>;
@@ -75,6 +76,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     setReplacementMode,
     processingMode,
     setProcessingMode,
+    maskDisabled = false,
     pseudonymMap,
     onPseudonymChange,
     pseudonymMapLoading,
@@ -200,10 +202,12 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               mode={isImageMode ? 'mask' : processingMode}
               onModeChange={(mode) => {
                 if (isImageMode && mode !== 'mask') return;
+                if (maskDisabled && mode === 'mask') return;
                 clearPlaygroundTextPresetTracking();
                 setProcessingMode(mode);
               }}
               replaceDisabled={isImageMode}
+              maskDisabled={maskDisabled}
             />
             {!isImageMode &&
               (processingMode === 'mask' ? (
@@ -379,7 +383,8 @@ const ProcessingModeSelector: FC<{
   mode: 'mask' | 'replace';
   onModeChange: (mode: 'mask' | 'replace') => void;
   replaceDisabled?: boolean;
-}> = ({ mode, onModeChange, replaceDisabled = false }) => {
+  maskDisabled?: boolean;
+}> = ({ mode, onModeChange, replaceDisabled = false, maskDisabled = false }) => {
   const t = useT();
   const modes: {
     value: 'mask' | 'replace';
@@ -390,7 +395,8 @@ const ProcessingModeSelector: FC<{
     {
       value: 'mask',
       label: t('playground.processingModeMask'),
-      desc: t('playground.processingModeMaskDesc'),
+      desc: maskDisabled ? t('mode.maskPdfOnly') : t('playground.processingModeMaskDesc'),
+      disabled: maskDisabled,
     },
     {
       value: 'replace',
@@ -439,6 +445,14 @@ const ProcessingModeSelector: FC<{
           );
         })}
       </div>
+      {maskDisabled && (
+        <p
+          className="text-[11px] leading-4 text-muted-foreground"
+          data-testid="playground-processing-mode-mask-notice"
+        >
+          {t('playground.processingModeMaskPdfNotice')}
+        </p>
+      )}
       {replaceDisabled && (
         <p
           className="text-[11px] leading-4 text-muted-foreground"

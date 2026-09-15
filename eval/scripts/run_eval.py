@@ -624,8 +624,9 @@ def _perf_agg_safe(per_file: list[dict]) -> dict:
 
 
 def _frontmatter(env: dict) -> list[str]:
+    kind = "NER 引擎层评测" if env.get("level") == "ner" else "端到端评测"
     return ["---",
-            f"title: 端到端评测：{_fm_escape(env.get('target_label', '?'))}",
+            f"title: {kind}：{_fm_escape(env.get('target_label', '?'))}",
             f"date: {str(env.get('generated_at', ''))[:10]}",
             "tags:",
             "  - 评测报告",

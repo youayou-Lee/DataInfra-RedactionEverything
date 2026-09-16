@@ -22,7 +22,7 @@ import {
   serializeDraft,
   type PlaygroundDraftSnapshot,
 } from '../lib/playground-draft';
-import { safeJson, buildPseudonymCsv, triggerDownload, isVisualPreviewMode } from '../utils';
+import { safeJson, buildPseudonymCsv, triggerDownload, boxesForRedactPayload, isVisualPreviewMode } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
 import { usePlaygroundFile } from './use-playground-file';
@@ -447,7 +447,14 @@ export function usePlayground() {
         body: JSON.stringify({
           file_id: fileId,
           entities: entityCtx.entities,
-          bounding_boxes: imageCtx.boundingBoxes,
+          // Issue #66 A 案：文本型文件在替换模式下不携带拉框——后端见到
+          // 「文本 PDF + 有框」会整份转图像管线栅格化，替换请求会产出错误
+          // 成品。框保留在前端状态里，切回打码原样恢复参与执行。
+          bounding_boxes: boxesForRedactPayload(
+            fileCtx.isImageMode,
+            recognition.processingMode,
+            imageCtx.boundingBoxes,
+          ),
           config: {
             replacement_mode: effectiveReplacementMode,
             entity_types: [],

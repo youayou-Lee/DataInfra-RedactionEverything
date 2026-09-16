@@ -54,6 +54,17 @@ export function isVisualPreviewMode(
   return normalized === 'pdf' && processingMode === 'mask';
 }
 
+// Issue #66 A 案：文本型文件在替换模式下不携带拉框——后端见到「文本 PDF +
+// 有框」会整份转图像管线栅格化，替换请求会产出错误成品；框保留在前端状态，
+// 切回打码原样恢复参与执行。扫描件/图片两种模式都照发（既有行为）。
+export function boxesForRedactPayload(
+  isImageMode: boolean,
+  processingMode: 'mask' | 'replace',
+  boxes: BoundingBox[],
+): BoundingBox[] {
+  return isImageMode || processingMode === 'mask' ? boxes : [];
+}
+
 export function getModePreview(
   mode: string,
   sampleEntity?: Entity,

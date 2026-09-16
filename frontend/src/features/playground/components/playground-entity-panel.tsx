@@ -708,7 +708,9 @@ const BoxList: FC<{
             ? t('playground.sourceOcr')
             : box.source === 'visual_features'
               ? t('playground.sourceImage')
-              : t('playground.sourceManual');
+              : box.source === 'ner'
+                ? t('playground.sourceNer')
+                : t('playground.sourceManual');
 
         return (
           <div

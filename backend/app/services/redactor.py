@@ -248,21 +248,52 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         实体（跨行断开等）原样返回给调用方，由调用方决定降级路径——
         宁可降级不可静默漏打码。
         """
+        # 执行路径框类型恒为 mask（既有语义）；实体类型仅预览定位端点使用
+        return Redactor.locate_entity_texts(
+            file_path, [(e.text, "mask") for e in entities if e.text], box_type="mask"
+        )
+
+    @staticmethod
+    def locate_entity_texts(
+        file_path: str,
+        text_type_pairs: list[tuple[str, str]],
+        box_type: str = "mask",
+        source: str | None = None,
+    ) -> tuple[list[BoundingBox], list[str]]:
+        """实体文本 → 页面归一化框（#62 执行定位与 #66 预览定位共用同一核心，
+        保证「所见框」与「执行时打码位置」零漂移）。
+
+        text_type_pairs: [(实体文本, 实体类型)]，按唯一文本去重后全文所有页
+        定位；返回 (boxes, 全文未命中的文本列表)。
+
+        空白鲁棒（#66 验收反馈）：WPS/LibreOffice 产物的文本层常带怪空格
+        （"2022 年1 月25 日"），NER 文本形态与之稍有差异就 0 命中、命中则
+        返回逐字块碎矩形（一个日期 6 个框）。三段式定位：
+        ①search_for 原样；②search_for 去空白形态；③字符级映射兜底
+        （无空白页文本 find → 字符 bbox 回映）。命中后一律做行内合并——
+        同一行内水平间隙 ≤ 平均字高 60% 的相邻碎块并成一个整框。
+        """
         boxes: list[BoundingBox] = []
         missed: list[str] = []
         doc = fitz.open(file_path)
         try:
-            unique_texts: list[str] = []
+            unique: list[tuple[str, str]] = []
             seen: set[str] = set()
-            for ent in entities:
-                if ent.text and ent.text not in seen:
-                    seen.add(ent.text)
-                    unique_texts.append(ent.text)
-            for text in unique_texts:
+            for text, etype in text_type_pairs:
+                if text and text not in seen:
+                    seen.add(text)
+                    unique.append((text, etype))
+            # 每页字符索引惰性构建一次、全部实体复用（增量评审 I2：此前每
+            # (实体×页) 都全量 rawdict 遍历，千实体大文档为分钟级 CPU）
+            indices: dict[int, dict] = {}
+            for text, etype in unique:
                 found = False
                 for page_no in range(1, len(doc) + 1):
                     page = doc[page_no - 1]
-                    rects = page.search_for(text)
+                    if page_no not in indices:
+                        indices[page_no] = Redactor._build_page_char_index(page)
+                    idx = indices[page_no]
+                    rects = Redactor._locate_text_on_page(page, text, idx)
                     if not rects:
                         continue
                     found = True
@@ -270,15 +301,16 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                     for r in rects:
                         boxes.append(
                             BoundingBox(
-                                id=f"mask_{len(boxes)}",
+                                id=f"{box_type}_{len(boxes)}",
                                 x=r.x0 / pw,
                                 y=r.y0 / ph,
                                 width=r.width / pw,
                                 height=r.height / ph,
                                 page=page_no,
-                                type="mask",
+                                type=etype or box_type,
                                 text=text,
                                 selected=True,
+                                source=source,
                             )
                         )
                 if not found:
@@ -286,6 +318,164 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         finally:
             doc.close()
         return boxes, missed
+
+    @staticmethod
+    def _merge_rects_rowwise(rects: list[fitz.Rect]) -> list[fitz.Rect]:
+        """同行相邻碎矩形合并：按 y 中心聚类成行，行内 x 排序后间隙
+        ≤ 平均字高 60% 的相邻块并成整框；跨行保留多框（跨行实体本需多框）。"""
+        if len(rects) <= 1:
+            return list(rects)
+        avg_h = sum(r.height for r in rects) / len(rects)
+        rows: list[list[fitz.Rect]] = []
+        for r in sorted(rects, key=lambda x: (x.y0 + x.y1) / 2):
+            placed = False
+            for row in rows:
+                cy = (r.y0 + r.y1) / 2
+                row_cy = sum((x.y0 + x.y1) / 2 for x in row) / len(row)
+                if abs(cy - row_cy) <= avg_h * 0.6:
+                    row.append(r)
+                    placed = True
+                    break
+            if not placed:
+                rows.append([r])
+        merged: list[fitz.Rect] = []
+        for row in rows:
+            row.sort(key=lambda x: x.x0)
+            cur = fitz.Rect(row[0])
+            for nxt in row[1:]:
+                if nxt.x0 - cur.x1 <= avg_h * 0.6:
+                    cur |= nxt
+                else:
+                    merged.append(cur)
+                    cur = fitz.Rect(nxt)
+            merged.append(cur)
+        return merged
+
+    @staticmethod
+    def _build_page_char_index(page: fitz.Page) -> dict:
+        """页字符索引（惰性构建、同页全部实体复用——增量评审 I2）：
+        hay = 无空白页文本（供字符串预判与 char-map 查找）；
+        nospace_chars = [(字符, bbox, 行号)]；lines = 全字符行分组（数字锚点用）。"""
+        try:
+            raw = page.get_text("rawdict")
+        except Exception:
+            return {"hay": "", "nospace_chars": [], "lines": []}
+        nospace_chars: list[tuple[str, fitz.Rect, int]] = []
+        lines: list[list[tuple[str, fitz.Rect]]] = []
+        for block in raw.get("blocks", []):
+            for line in block.get("lines", []):
+                line_chars: list[tuple[str, fitz.Rect]] = []
+                for span in line.get("spans", []):
+                    for ch in span.get("chars", []):
+                        c = ch.get("c", "")
+                        bbox = ch.get("bbox")
+                        if not bbox:
+                            continue
+                        rect = fitz.Rect(bbox)
+                        line_chars.append((c, rect))
+                        if c.strip():
+                            nospace_chars.append((c, rect, len(lines)))
+                if line_chars:
+                    lines.append(line_chars)
+        return {
+            "hay": "".join(c for c, _, _ in nospace_chars),
+            "nospace_chars": nospace_chars,
+            "lines": lines,
+        }
+
+    @staticmethod
+    def _locate_text_on_page(
+        page: fitz.Page,
+        text: str,
+        char_index: dict | None = None,
+    ) -> list[fitz.Rect]:
+        """单页定位一个实体文本：页索引 hay 预判 + 字符映射 + 数字锚点，
+        结果行内合并。
+
+        多形态合并不短路（#66 复验反馈）：同一实体文本在页面上可能以多种
+        空格/换行形态出现多次——字符映射按无空白归一化查找可一次覆盖全部
+        形态与位置；数字锚点仅在字面全空时兜底（NER 改写文本专用）。"""
+        nospace = "".join(text.split())
+        if not nospace:
+            return []
+        idx = char_index if char_index is not None else Redactor._build_page_char_index(page)
+        if nospace not in idx["hay"]:
+            # 页面无空白文本里没有该实体的任何形态：字面必不命中，
+            # 直接走数字锚点（仅改写文本类），其余页跳过——这是性能闸门
+            return Redactor._locate_via_numeric_anchor_idx(idx, text)
+        rects = list(page.search_for(text))
+        if nospace != text:
+            rects += list(page.search_for(nospace))
+        rects += Redactor._char_map_from_index(idx, nospace)
+        return Redactor._merge_rects_rowwise(Redactor._dedupe_contained(rects))
+
+    @staticmethod
+    def _char_map_from_index(idx: dict, nospace_query: str) -> list[fitz.Rect]:
+        """基于页索引的字符映射：无空白 hay 中找 query 的每次出现，
+        命中字符按行号分段（跨行实体每行一个窄框，不做跨行并集）。"""
+        if not nospace_query:
+            return []
+        rects: list[fitz.Rect] = []
+        pos = idx["hay"].find(nospace_query)
+        while pos != -1:
+            hit = idx["nospace_chars"][pos : pos + len(nospace_query)]
+            segments: dict[int, list[fitz.Rect]] = {}
+            for _, r, ln in hit:
+                segments.setdefault(ln, []).append(r)
+            for seg in segments.values():
+                union = fitz.Rect(seg[0])
+                for r in seg[1:]:
+                    union |= r
+                rects.append(union)
+            pos = idx["hay"].find(nospace_query, pos + 1)
+        return rects
+
+    @staticmethod
+    def _locate_via_numeric_anchor_idx(idx: dict, text: str) -> list[fitz.Rect]:
+        runs = re.findall(r"[0-9A-Za-z]{6,}", text)
+        if len(runs) != 1:
+            return []
+        anchor = runs[0]
+        hits: list[fitz.Rect] = []
+        for line_chars in idx["lines"]:
+            hay = "".join(c for c, _ in line_chars)
+            if anchor in hay:
+                union = fitz.Rect(line_chars[0][1])
+                for _, r in line_chars[1:]:
+                    union |= r
+                hits.append(union)
+        return hits
+
+    @staticmethod
+    def _locate_via_char_map(page: fitz.Page, text: str) -> list[fitz.Rect]:
+        """兼容入口：无索引时临时构建。"""
+        return Redactor._char_map_from_index(
+            Redactor._build_page_char_index(page), "".join(text.split())
+        )
+
+    @staticmethod
+    def _locate_via_numeric_anchor(page: fitz.Page, text: str) -> list[fitz.Rect]:
+        return Redactor._locate_via_numeric_anchor_idx(
+            Redactor._build_page_char_index(page), text
+        )
+
+    @staticmethod
+    def _dedupe_contained(rects: list[fitz.Rect]) -> list[fitz.Rect]:
+        """去重：被更大框包含（≥80% 面积）的矩形丢弃（search 与字符映射
+        会对同一处出现各报一个框）。"""
+        if len(rects) <= 1:
+            return list(rects)
+        kept: list[fitz.Rect] = []
+        for r in sorted(rects, key=lambda x: -abs(x)):
+            dup = False
+            for k in kept:
+                inter = fitz.Rect(r) & k
+                if not inter.is_empty and abs(inter) >= 0.8 * abs(r):
+                    dup = True
+                    break
+            if not dup:
+                kept.append(r)
+        return kept
 
     def _verify_export_residuals(
         self, output_path: str, entity_map: dict[str, str], file_type: FileType

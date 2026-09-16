@@ -366,3 +366,118 @@ def test_soffice_staging_root_snap_vs_nonsnap():
     assert TextRedactorMixin._soffice_staging_root("/usr/bin/soffice") == os.path.join(
         _tmp.gettempdir(), "redaction-soffice"
     )
+
+
+def test_locate_merges_fragmented_rects_and_handles_spaces(_dirs):
+    """定位核心空白鲁棒（#66 验收反馈）：WPS/LibreOffice 文本层的怪空格
+    会让 search_for 返回逐字块碎矩形（一个日期 6 框）或 0 命中——
+    ①行内合并成整框；②双向空白归一化兜底。"""
+    up, _ = _dirs
+    src = up / "sp.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    # 模拟 WPS 产物：日期带怪空格
+    page.insert_text((72, 130), "签署日期：2022 年1 月25 日 由双方确认", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    # ① NER 返回带空格形态（与页面一致）→ 原样命中，碎矩形行内合并为 1 框
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) == 1, f"碎矩形应行内合并为 1 框，实际 {len(boxes)}"
+
+    # ② NER 返回无空格形态（与页面不一致）→ 字符映射兜底仍命中
+    boxes2, missed2 = Redactor.locate_entity_texts(
+        str(src), [("2022年1月25日", "DATE")], "ner", "ner"
+    )
+    assert not missed2, "无空格形态应经字符映射兜底命中"
+    assert len(boxes2) == 1
+
+    # ③ source 透传
+    assert boxes[0].source == "ner"
+
+
+def test_locate_numeric_anchor_for_rewritten_case_number(_dirs):
+    """数字锚点兜底（#66 复验反馈）：NER 改写案号文本（"英检"→"英德"、
+    括号全半角规范化）后字面搜索永远失败——用唯一长数字串锚定整行。"""
+    up, _ = _dirs
+    src = up / "case.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 130), "案件编号（审查起诉）：英检刑诉受[2022]441881000050 号", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    # NER 改写形态：全角六角括号 + "英德"补全——字面无命中，数字锚点兜底
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("英德刑诉受〔2022〕441881000050 号", "CASE_NUMBER")], "ner", "ner"
+    )
+    assert not missed, "案号应经数字锚点兜底命中"
+    assert len(boxes) == 1
+    assert boxes[0].source == "ner"
+
+    # 多个/无长数字串的文本不走锚点（防误匹配）
+    boxes2, missed2 = Redactor.locate_entity_texts(
+        str(src), [("2022 年01 月25 日受理", "DATE")], "ner", "ner"
+    )
+    assert "2022 年01 月25 日受理" in missed2, "多数字串文本不得用锚点乱框"
+
+
+def test_locate_finds_all_occurrences_across_forms(_dirs):
+    """同页多形态不短路（#66 复验反馈）：同一日期同页出现两种空格形态
+    （收案行紧排 + 正文跨行），必须全部框出——原样命中一处就停会漏掉
+    其余出现位置。"""
+    up, _ = _dirs
+    src = up / "multi.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "收案时间：2022 年1 月25 日", fontsize=12, fontname="china-s")
+    page.insert_text((72, 200), "我院于2022 年01 月25 日受理该案", fontsize=12, fontname="china-s")
+    # 正文：跨行形态（行尾 2022 年1 月 / 行首 25 日）
+    page.insert_text((72, 300), "于2022 年1 月", fontsize=12, fontname="china-s")
+    page.insert_text((72, 330), "25 日告知当事人", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) >= 2, f"同页多处出现应全部框出（含跨行），实际 {len(boxes)} 框"
+    # 收案行（y≈100）必须有框
+    assert any(b.y < 0.5 for b in boxes), "第一处（收案行）应有框"
+
+
+def test_locate_crossline_hits_split_per_line(_dirs):
+    """跨行命中按行分段（#66 复验反馈）：跨行日期若做并集框会把两行之间
+    的无关内容全部盖住（可读性骤降）——必须每行一个窄框。"""
+    up, _ = _dirs
+    src = up / "cross.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 300), "于2022 年1 月", fontsize=12, fontname="china-s")
+    page.insert_text((72, 330), "25 日告知当事人依法享有的诉讼权利；", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) == 2, f"跨行应产出 2 个按行分段的框，实际 {len(boxes)}"
+    # 两框各在自己那一行（y 中心差应接近行距，不重叠）
+    ys = sorted(b.y for b in boxes)
+    assert ys[1] - ys[0] > 0.02, "两框应分处两行"
+    # 每个框都是窄框（只盖本行的日期片段，不含整行宽度）
+    for b in boxes:
+        assert b.width < 0.5, f"框宽 {b.width} 异常，疑似整行并集"

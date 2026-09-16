@@ -78,7 +78,11 @@ export function usePlaygroundHistory(options: UsePlaygroundHistoryOptions) {
       setBoundingBoxes((prev) =>
         prev.map((b) => ({
           ...b,
-          selected: visibleIds.has(b.id) ? allSelectedVisionTypes.includes(b.type) : b.selected,
+          // 手拉框（source=manual，type=CUSTOM 不在管线类型表里）必须保持
+          // 选中——全选若把它翻成未选中=静默漏掉用户补标的打码区域（评审 I3）
+          selected: visibleIds.has(b.id)
+            ? b.source === 'manual' || allSelectedVisionTypes.includes(b.type)
+            : b.selected,
         })),
       );
     } else {

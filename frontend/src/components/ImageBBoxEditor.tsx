@@ -20,7 +20,7 @@ export interface BoundingBox {
   text?: string;
   selected: boolean;
   confidence?: number;
-  source?: 'ocr_has' | 'visual_features' | 'manual';
+  source?: 'ocr_has' | 'visual_features' | 'manual' | 'ner';
   evidence_source?: 'ocr_has' | 'visual_feature_model' | 'local_fallback' | 'manual';
   source_detail?: string;
   warnings?: string[];
@@ -167,7 +167,9 @@ function BBoxOverlayBoxInner({
             ? t('playground.sourceOcr')
             : box.source === 'visual_features'
               ? t('playground.sourceImage')
-              : t('playground.sourceManual')}
+              : box.source === 'ner'
+                ? t('playground.sourceNer')
+                : t('playground.sourceManual')}
         </span>
         <span className="text-[9px] leading-tight font-normal truncate opacity-90">
           {labelText}

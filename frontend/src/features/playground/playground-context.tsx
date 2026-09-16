@@ -32,6 +32,7 @@ export interface PlaygroundDataContextValue {
   entityHistory: PlaygroundContextValue['entityHistory'];
   imageHistory: PlaygroundContextValue['imageHistory'];
   imageUrl: PlaygroundContextValue['imageUrl'];
+  staticPageUrl: PlaygroundContextValue['staticPageUrl'];
   redactedImageUrl: PlaygroundContextValue['redactedImageUrl'];
   redactedImageError: PlaygroundContextValue['redactedImageError'];
   currentPage: PlaygroundContextValue['currentPage'];
@@ -121,6 +122,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       entityHistory: ctx.entityHistory,
       imageHistory: ctx.imageHistory,
       imageUrl: ctx.imageUrl,
+      staticPageUrl: ctx.staticPageUrl,
       redactedImageUrl: ctx.redactedImageUrl,
       redactedImageError: ctx.redactedImageError,
       currentPage: ctx.currentPage,
@@ -160,6 +162,7 @@ export const PlaygroundProvider: FC<{ children: ReactNode }> = ({ children }) =>
       ctx.entityHistory,
       ctx.imageHistory,
       ctx.imageUrl,
+      ctx.staticPageUrl,
       ctx.redactedImageUrl,
       ctx.redactedImageError,
       ctx.currentPage,

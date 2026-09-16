@@ -51,7 +51,7 @@ export interface BoundingBox {
   text?: string;
   selected: boolean;
   confidence?: number;
-  source?: 'ocr_has' | 'visual_features' | 'manual';
+  source?: 'ocr_has' | 'visual_features' | 'manual' | 'ner';
   evidence_source?: 'ocr_has' | 'visual_feature_model' | 'local_fallback' | 'manual';
   source_detail?: string;
   warnings?: string[];

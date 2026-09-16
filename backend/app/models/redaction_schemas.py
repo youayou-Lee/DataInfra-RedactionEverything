@@ -18,6 +18,8 @@ __all__ = [
     "PreviewEntityMapResponse",
     "PreviewImageRequest",
     "PreviewImageResponse",
+    "LocateEntitiesRequest",
+    "LocateEntitiesResponse",
     "NERRequest",
     "VisionDetectRequest",
     "RedactionReport",
@@ -80,6 +82,17 @@ class PreviewEntityMapResponse(BaseModel):
 class PreviewImageRequest(BaseModel):
     bounding_boxes: list[BoundingBox] = Field(default_factory=list)
     config: RedactionConfig = Field(default_factory=RedactionConfig)
+
+
+class LocateEntitiesRequest(BaseModel):
+    """文本型 PDF 打码模式：把 NER 实体定位为页面归一化框（#66 预览叠加）"""
+
+    entities: list[Entity] = Field(default_factory=list)
+
+
+class LocateEntitiesResponse(BaseModel):
+    boxes: list[BoundingBox] = Field(default_factory=list)
+    missed: list[str] = Field(default_factory=list)
 
 
 class PreviewImageResponse(BaseModel):

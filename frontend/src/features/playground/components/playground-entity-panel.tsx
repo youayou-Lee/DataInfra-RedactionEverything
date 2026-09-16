@@ -21,7 +21,11 @@ import { computeEntityStats, getModePreview } from '../utils';
 import type { BoundingBox, Entity } from '../types';
 
 export interface PlaygroundEntityPanelProps {
+  /** 视觉工作台（真图像文件，或文本 PDF 打码模式）：区域列表/计数走框 */
   isImageMode: boolean;
+  /** 替换锁定：仅真·图像文件（扫描件/图片）为 true——文本 PDF 打码工作台
+      必须保留替换切换（#66 第三轮验收反馈：isVisualPreview 不能混入此语义） */
+  replacementLocked?: boolean;
   isLoading: boolean;
   recognitionIssue?: string | null;
   entities: Entity[];
@@ -61,6 +65,7 @@ export interface PlaygroundEntityPanelProps {
 export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
   ({
     isImageMode,
+    replacementLocked = false,
     isLoading,
     recognitionIssue,
     entities,
@@ -197,19 +202,21 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               </Button>
             </div>
 
-            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因 */}
+            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因。
+                replacementLocked 只看真·图像文件（扫描件/图片）；文本型 PDF 的打码
+                工作台（视觉工作台）必须保留替换切换——#66 第三轮验收反馈 */}
             <ProcessingModeSelector
-              mode={isImageMode ? 'mask' : processingMode}
+              mode={replacementLocked ? 'mask' : processingMode}
               onModeChange={(mode) => {
-                if (isImageMode && mode !== 'mask') return;
+                if (replacementLocked && mode !== 'mask') return;
                 if (maskDisabled && mode === 'mask') return;
                 clearPlaygroundTextPresetTracking();
                 setProcessingMode(mode);
               }}
-              replaceDisabled={isImageMode}
+              replaceDisabled={replacementLocked}
               maskDisabled={maskDisabled}
             />
-            {!isImageMode &&
+            {!replacementLocked &&
               (processingMode === 'mask' ? (
                 <MaskModeSelector
                   entities={entities}
@@ -701,7 +708,9 @@ const BoxList: FC<{
             ? t('playground.sourceOcr')
             : box.source === 'visual_features'
               ? t('playground.sourceImage')
-              : t('playground.sourceManual');
+              : box.source === 'ner'
+                ? t('playground.sourceNer')
+                : t('playground.sourceManual');
 
         return (
           <div

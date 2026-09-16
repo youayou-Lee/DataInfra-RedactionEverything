@@ -40,6 +40,96 @@ export function isMaskAllowedForFile(fileType?: string): boolean {
   return normalized === 'pdf' || normalized === 'image' || normalized === 'pdf_scanned';
 }
 
+// Issue #66：预览范式跟随处理模式——文本型 PDF 在打码模式下切到图像工作台
+// （页面图+拉框，与扫描件一致），替换模式保持文本范式。docx/txt 打码被
+// #59 门控不可能出现，扫描件替换被门控恒为图像，故不存在两头落空的组合。
+export function isVisualPreviewMode(
+  fileType?: string,
+  isScanned?: boolean,
+  processingMode?: 'mask' | 'replace',
+): boolean {
+  if (!fileType) return false;
+  const normalized = fileType.toLowerCase();
+  if (normalized === 'image' || normalized === 'pdf_scanned' || isScanned) return true;
+  return normalized === 'pdf' && processingMode === 'mask';
+}
+
+// Issue #66 A 案：文本型文件在替换模式下不携带拉框——后端见到「文本 PDF +
+// 有框」会整份转图像管线栅格化，替换请求会产出错误成品；框保留在前端状态，
+// 切回打码原样恢复参与执行。扫描件/图片两种模式都照发（既有行为）。
+export function boxesForRedactPayload(
+  isImageMode: boolean,
+  processingMode: 'mask' | 'replace',
+  boxes: BoundingBox[],
+): BoundingBox[] {
+  return isImageMode || processingMode === 'mask' ? boxes : [];
+}
+
+// Issue #66：识别实体自动定位为框（与扫描件同体验）。重新定位时替换全部
+// ner 框、保留用户手拉框（manual 是用户工作成果，识别重跑不应清掉）。
+// 勾选继承（增量评审 I3）：新 ner 框的 selected 继承两条来源——
+//   ①实体侧（entityByText）：用户在替换模式实体列表取消勾选的文本，切回
+//     打码不得被翻回选中；②旧 ner 框：打码模式下手动取消的框，重定位后
+//   保持未选。任一来源为 false 即 false；全新文本默认选中。
+export function mergeNerBoxes(
+  prevBoxes: BoundingBox[],
+  locatedBoxes: BoundingBox[],
+  entityByText?: Map<string, { selected?: boolean }> | null,
+): BoundingBox[] {
+  const isNer = (b: BoundingBox) => b.source === 'ner' || !!b.id?.startsWith('ner_');
+  const prevNerByText = new Map(
+    prevBoxes.filter((b) => isNer(b)).map((b) => [b.text ?? '', b]),
+  );
+  const located = locatedBoxes.map((b) => {
+    const text = b.text ?? '';
+    const prev = prevNerByText.get(text);
+    const entitySelected = entityByText?.get(text)?.selected;
+    const selected =
+      entitySelected !== false && (prev ? prev.selected !== false : true);
+    return { ...b, selected };
+  });
+  return [...prevBoxes.filter((b) => !isNer(b)), ...located];
+}
+
+// Issue #66：mask 模式执行时的实体选中同步——实体在图像工作台里的选中
+// 状态由它的 ner 框代表（框即实体的 UI）；没有框的实体（定位失败）保持
+// 原选中态交给后端 residual 兜底，绝不允许「看着没框却悄悄不打码」。
+export function syncEntitiesWithNerBoxes<T extends { text: string; selected?: boolean }>(
+  entities: T[],
+  boxes: BoundingBox[],
+): T[] {
+  const isNer = (b: BoundingBox) => b.source === 'ner' || !!b.id?.startsWith('ner_');
+  const nerSelectedTexts = new Set(
+    boxes.filter((b) => isNer(b) && b.selected !== false).map((b) => b.text ?? ''),
+  );
+  const nerAllTexts = new Set(boxes.filter((b) => isNer(b)).map((b) => b.text ?? ''));
+  return entities.map((e) => ({
+    ...e,
+    selected: nerAllTexts.has(e.text) ? nerSelectedTexts.has(e.text) : e.selected,
+  }));
+}
+
+export async function locateEntityBoxes(
+  fileId: string,
+  entities: Entity[],
+): Promise<{ boxes: BoundingBox[]; missed: string[] }> {
+  // 大文档定位可达数十秒（后端 to_thread + 页索引已优化），仍设硬超时防挂死
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await authFetch(`/api/v1/redaction/${fileId}/locate-entities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entities }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export function getModePreview(
   mode: string,
   sampleEntity?: Entity,

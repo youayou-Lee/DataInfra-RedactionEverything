@@ -1134,6 +1134,7 @@ const enOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     'All results are currently deselected. Select at least one item, or confirm that nothing needs redaction.',
   'playground.sourceOcr': 'OCR',
+  'playground.sourceNer': 'NER',
   'playground.needsReview': 'Needs review',
   'playground.confidenceHint':
     'How sure the model was about this box, from the per-token probabilities it emitted while drawing it. Below 50% it was guessing — worth a human look.',
@@ -1190,6 +1191,9 @@ const enOverrides: Record<string, string> = {
   'playground.toast.redactDone': 'Redaction complete with {count} items processed.',
   'playground.noContent': 'No content available yet.',
   'playground.previewHint.image': 'Adjust regions, then choose what should be redacted.',
+  'playground.previewHint.pdfMask': 'Mask mode: recognized entities are auto-located as boxes you can toggle or adjust; draw extra boxes to cover anything missed.',
+  'playground.locateMissed': '{n} entities could not be auto-located (split across lines etc.); draw boxes manually as fallback.',
+  'playground.locateFailed': 'Entity location failed; draw boxes manually or retry later.',
   'playground.previewHint.text':
     'Review highlights, select text, and refine annotations before export.',
   'playground.updateAnnotation': 'Update annotation',

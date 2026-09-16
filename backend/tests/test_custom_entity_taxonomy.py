@@ -61,9 +61,9 @@ class CustomEntityTaxonomyTests(unittest.TestCase):
         default_ids = {item.id for item in get_default_generic_types()}
 
         self.assertIn("ADDRESS", default_ids)
-        # BIRTH_DATE / DOCUMENT_NUMBER remain first-class L3 atoms but are
-        # opt-in: the default generic schema was narrowed to the core 9 types.
-        self.assertNotIn("BIRTH_DATE", default_ids)
+        # Issue #66 验收决策（2026-09-16，用户拍板"质量优先"）：BIRTH_DATE
+        # 进入默认集（法律文书当事人段高频）；DOCUMENT_NUMBER 仍 opt-in。
+        self.assertIn("BIRTH_DATE", default_ids)
         self.assertNotIn("DOCUMENT_NUMBER", default_ids)
         self.assertTrue(PRESET_ENTITY_TYPES["BIRTH_DATE"].enabled)
         self.assertTrue(PRESET_ENTITY_TYPES["DOCUMENT_NUMBER"].enabled)

@@ -1036,6 +1036,7 @@ const zhOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     '当前所有结果都已取消选择。请至少勾选一项，或返回列表确认是否需要匿名化。',
   'playground.sourceOcr': '图片文字',
+  'playground.sourceNer': '识别',
   'playground.needsReview': '待确认',
   'playground.confidenceHint':
     '模型对这个框的把握程度(由识别时的逐词概率算出)。低于50%表示模型自己也在猜，建议人工过一眼。',
@@ -1087,6 +1088,9 @@ const zhOverrides: Record<string, string> = {
   'playground.toast.redactDone': '匿名化完成，共处理 {count} 处。',
   'playground.noContent': '暂时还没有可展示的内容。',
   'playground.previewHint.image': '调整或补充区域，再决定哪些内容需要匿名化。',
+  'playground.previewHint.pdfMask': '打码模式：识别实体已自动定位为框，可勾选/调整；遗漏处可直接在页面上拉框补充。',
+  'playground.locateMissed': '{n} 个实体未能自动定位（跨行断开等），可在页面上手动拉框兜底。',
+  'playground.locateFailed': '实体定位失败，可手动拉框兜底或稍后重试。',
   'playground.previewHint.text': '查看高亮、选取文本并修正标注后再导出。',
   'playground.updateAnnotation': '更新标注',
   'playground.addAnnotation': '添加标注',

@@ -225,12 +225,16 @@ class HybridNERService:
             except Exception as e:
                 logger.error("  HaS recognition failed: %s", e)
 
-        custom_regex_types = self._select_custom_regex_types(entity_types)
+        custom_regex_types = self._select_regex_types(entity_types)
         if custom_regex_types:
-            logger.info("Stage 2: user-defined regex fallback...")
+            logger.info("Stage 2: regex fallback (builtin guarantee + user-defined)...")
             regex_entities = self._custom_regex_extract(text, custom_regex_types)
+            # 去重：正则命中与 HaS 已有实体 span 重叠时丢弃正则侧（#66 复验：
+            # DATE 加正则保证层后，HaS 已检出的日期不能重复出框；HaS 漏检的
+            # （如跨行 2022-1-26）由正则补齐）
+            regex_entities = self._drop_overlapping(regex_entities, all_entities)
             all_entities.extend(regex_entities)
-            logger.info("  Custom regex found %d entities", len(regex_entities))
+            logger.info("  Regex found %d entities (after dedupe)", len(regex_entities))
         else:
             logger.info("Stage 2: user-defined regex skipped")
 
@@ -246,18 +250,41 @@ class HybridNERService:
 
         return validated_entities
 
-    def _select_custom_regex_types(
+    def _select_regex_types(
         self,
         entity_types: list[EntityTypeConfig],
     ) -> list[EntityTypeConfig]:
+        """Stage 2 选择：凡请求类型中带 regex_pattern 的都跑正则兜底——
+        不再限定 custom_ 前缀（#66 复验：内置 DATE 无正则保证层时，HaS 漏检
+        的日期在识别阶段无从补齐；案号/车牌的 #43 保证层同理应覆盖识别）。"""
         selected: list[EntityTypeConfig] = []
         for entity_type in entity_types:
-            raw_type_id = str(getattr(entity_type, "id", "") or "").strip()
             pattern = str(getattr(entity_type, "regex_pattern", "") or "").strip()
-            if not raw_type_id.lower().startswith("custom_") or not pattern:
+            if not pattern:
                 continue
             selected.append(entity_type)
         return selected
+
+    @staticmethod
+    def _drop_overlapping(
+        regex_entities: list[Entity],
+        existing_entities: list[Entity],
+    ) -> list[Entity]:
+        """丢弃与已有实体 span 重叠的正则实体（同一处出现不重复出框）。"""
+        spans = [
+            (e.start, e.end)
+            for e in existing_entities
+            if getattr(e, "start", None) is not None and getattr(e, "end", None) is not None
+        ]
+        kept: list[Entity] = []
+        for e in regex_entities:
+            if e.start is None or e.end is None:
+                kept.append(e)
+                continue
+            overlap = any(e.start < end and e.end > start for start, end in spans)
+            if not overlap:
+                kept.append(e)
+        return kept
 
     def _custom_regex_extract(
         self,

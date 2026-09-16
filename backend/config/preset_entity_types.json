@@ -672,7 +672,7 @@
       "2025-01至2025-12"
     ],
     "color": "#64748B",
-    "regex_pattern": null,
+    "regex_pattern": "\\d{4}\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日",
     "use_llm": true,
     "enabled": true,
     "order": 200,

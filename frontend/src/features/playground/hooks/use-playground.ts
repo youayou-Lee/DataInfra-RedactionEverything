@@ -131,18 +131,30 @@ export function usePlayground() {
     getRecognitionBlocker,
   });
 
-  const imageCtx = usePlaygroundImage({
-    fileInfo: fileCtx.fileInfo,
-    redactionVersion,
-    showRedactedPreview: fileCtx.stage === 'result',
-    // Issue #66：文本型 PDF 打码模式切图像工作台（页面图+拉框）
-    staticPagePreview:
+  // Issue #66：文本型 PDF + 打码 = 图像工作台。派生一次多处复用（评审 M7：
+  // 三处独立重算会漂移——工作台/历史语义/执行阈值必须同源）
+  const textPdfMaskMode = useMemo(
+    () =>
       !fileCtx.isImageMode &&
       isVisualPreviewMode(
         fileCtx.fileInfo?.file_type,
         Boolean(fileCtx.fileInfo?.is_scanned),
         recognition.processingMode,
       ),
+    [
+      fileCtx.isImageMode,
+      fileCtx.fileInfo?.file_type,
+      fileCtx.fileInfo?.is_scanned,
+      recognition.processingMode,
+    ],
+  );
+
+  const imageCtx = usePlaygroundImage({
+    fileInfo: fileCtx.fileInfo,
+    redactionVersion,
+    showRedactedPreview: fileCtx.stage === 'result',
+    // Issue #66：文本型 PDF 打码模式切图像工作台（页面图+拉框）
+    staticPagePreview: textPdfMaskMode,
   });
 
   const { setTypeTab } = recognition;
@@ -170,13 +182,7 @@ export function usePlayground() {
   const historyCtx = usePlaygroundHistory({
     // Issue #66：视觉工作台（含文本型 PDF 打码模式）下撤销/重做/全选作用于
     // 拉框；实体勾选仍走右侧面板逐条切换
-    isImageMode:
-      fileCtx.isImageMode ||
-      isVisualPreviewMode(
-        fileCtx.fileInfo?.file_type,
-        Boolean(fileCtx.fileInfo?.is_scanned),
-        recognition.processingMode,
-      ),
+    isImageMode: fileCtx.isImageMode || textPdfMaskMode,
     entities: entityCtx.entities,
     setEntities: entityCtx.setEntities,
     boundingBoxes: imageCtx.boundingBoxes,
@@ -412,17 +418,10 @@ export function usePlayground() {
       const selectedEntities = entityCtx.entities.filter((e) => e.selected !== false);
       const selectedBoxes = imageCtx.boundingBoxes.filter((b) => b.selected !== false);
       // Issue #66：文本型 PDF 打码模式=实体+拉框双通道（后端合并栅格化），
-      // 只拉框不选实体也应可执行
-      const textPdfMask =
-        !fileCtx.isImageMode &&
-        isVisualPreviewMode(
-          fileCtx.fileInfo?.file_type,
-          Boolean(fileCtx.fileInfo?.is_scanned),
-          recognition.processingMode,
-        );
+      // 只拉框不选实体也应可执行（textPdfMaskMode 派生一次多处同源）
       const requestedRedactionItemCount = fileCtx.isImageMode
         ? selectedBoxes.length
-        : textPdfMask
+        : textPdfMaskMode
           ? selectedEntities.length + selectedBoxes.length
           : selectedEntities.length;
 

@@ -147,14 +147,19 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
     let alive = true;
     loadOriginalPreviewPage(fileId, currentPage)
       .then((url) => {
-        if (alive) setStaticPageUrl(url);
+        if (!alive) return;
+        setStaticPageUrl(url);
+        // 与扫描件流一致：空闲时预取相邻页，翻页零等待
+        scheduleNeighborPrefetch(fileId, currentPage);
       })
       .catch(() => {
-        if (alive) setStaticPageUrl('');
+        // 失败保留上一张图（与扫描件 imageUrl 路径同语义），不闪空白
       });
     return () => {
       alive = false;
     };
+    // scheduleNeighborPrefetch 稳定（useCallback 依赖均稳定），不列入避免重触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staticPagePreview, fileInfo?.file_id, currentPage, loadOriginalPreviewPage]);
 
   const loadRedactedPreviewPage = useCallback(

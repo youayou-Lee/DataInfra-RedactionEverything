@@ -44,6 +44,7 @@ const PlaygroundInner: FC = () => {
     isImageMode,
     entities,
     setBoundingBoxes,
+    boundingBoxes,
     visibleBoxes,
     isLoading,
     loadingMessage,
@@ -220,6 +221,12 @@ const PlaygroundInner: FC = () => {
     [previewCoverageStats],
   );
 
+  // Issue #66 双通道计数进 UI（评审 I2）：文本 PDF 打码模式的执行按钮计数/
+  // 禁用门槛=实体+拉框（与 handleRedact 的阈值同源），纯拉框（0 实体）可执行
+  const selectedBoxCount = boundingBoxes.filter((b) => b.selected !== false).length;
+  const dualSelectedCount = previewCoverageSelectedCount + selectedBoxCount;
+  const dualTotalCount = previewCoverageTotalCount + boundingBoxes.length;
+
   const renderMarkedContent = () => {
     if (!previewContent) {
       return <p className="text-muted-foreground">{t('playground.noContent')}</p>;
@@ -327,6 +334,9 @@ const PlaygroundInner: FC = () => {
         <div className="page-shell !max-w-[min(100%,2048px)] !px-3 !py-3 sm:!px-4 sm:!py-4 2xl:!px-6">
           <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_20.75rem] xl:grid-cols-[minmax(0,1fr)_21.5rem]">
             <div className="saas-panel flex min-w-0 flex-1 flex-col overflow-hidden">
+              {/* popout 尚不支持静态页面图协议（文本 PDF 打码模式只能拿到原始
+                  PDF 下载地址当 img src，会开出坏窗口）——评审 I1：回退仅
+                  扫描件/图片开放独立窗口，待 popout 支持静态页后再放开 */}
               <PlaygroundToolbar
                 filename={fileInfo?.filename}
                 isImageMode={isVisualPreview}
@@ -342,7 +352,7 @@ const PlaygroundInner: FC = () => {
                       ? t('playground.previewHint.image')
                       : t('playground.previewHint.text')
                 }
-                onPopout={isVisualPreview ? openPopout : undefined}
+                onPopout={isImageMode ? openPopout : undefined}
               />
 
               <div
@@ -419,8 +429,20 @@ const PlaygroundInner: FC = () => {
               visionTypes={visionTypes}
               visibleBoxes={visibleBoxes}
               selectedCount={selectedCount}
-              displaySelectedCount={isImageMode ? undefined : previewCoverageSelectedCount}
-              displayTotalCount={isImageMode ? undefined : previewCoverageTotalCount}
+              displaySelectedCount={
+                isImageMode
+                  ? undefined
+                  : visualMaskPreview
+                    ? dualSelectedCount
+                    : previewCoverageSelectedCount
+              }
+              displayTotalCount={
+                isImageMode
+                  ? undefined
+                  : visualMaskPreview
+                    ? dualTotalCount
+                    : previewCoverageTotalCount
+              }
               displayStats={
                 Object.keys(previewCoverageStats).length > 0 ? previewCoverageStats : undefined
               }

@@ -343,11 +343,11 @@ class HybridNERService:
                 continue
             has_regex = bool(getattr(entity_type, "regex_pattern", None))
             is_custom = raw_type_id.lower().startswith("custom_") or type_id.startswith("CUSTOM_")
-            should_send_to_has = (
-                type_id in self.HAS_SEMANTIC_TYPE_IDS
-                or is_custom
-                or not has_regex
-            )
+            # 正则保证层是"增量补漏"不是"替代 HaS"（增量评审 I1）：内置 LLM
+            # 类型即使带 pattern 也要送 HaS——正则只覆盖单一形态，斜杠/横杠
+            # 等变体仍靠 HaS；两边重叠由 _drop_overlapping 去重。
+            # 仅"自定义且带正则"的类型（无语义模型）豁免 HaS。
+            should_send_to_has = not (is_custom and has_regex)
             if not should_send_to_has or type_id in seen_type_ids:
                 continue
             selected.append(SimpleNamespace(

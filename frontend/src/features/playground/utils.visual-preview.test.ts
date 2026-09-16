@@ -80,3 +80,24 @@ describe('syncEntitiesWithNerBoxes', () => {
     expect(synced[0].selected).toBe(true); // manual 框不算实体的 UI
   });
 });
+
+describe('mergeNerBoxes 勾选继承（增量评审 I3）', () => {
+  const located = [{ id: 'ner_new', source: 'ner', text: '张三', selected: true } as never];
+
+  it('实体侧取消勾选 → 新框保持未选（替换模式的选择不被翻转）', () => {
+    const entityByText = new Map([['张三', { selected: false }]]);
+    const merged = mergeNerBoxes([], located, entityByText);
+    expect(merged[0].selected).toBe(false);
+  });
+
+  it('旧 ner 框未选（用户在打码模式取消）→ 重定位后保持未选', () => {
+    const prev = [{ id: 'ner_old', source: 'ner', text: '张三', selected: false } as never];
+    const merged = mergeNerBoxes(prev, located);
+    expect(merged[0].selected).toBe(false);
+  });
+
+  it('两来源都未明确取消 → 默认选中', () => {
+    const merged = mergeNerBoxes([], located, new Map());
+    expect(merged[0].selected).toBe(true);
+  });
+});

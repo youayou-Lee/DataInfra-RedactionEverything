@@ -67,13 +67,28 @@ export function boxesForRedactPayload(
 
 // Issue #66：识别实体自动定位为框（与扫描件同体验）。重新定位时替换全部
 // ner 框、保留用户手拉框（manual 是用户工作成果，识别重跑不应清掉）。
+// 勾选继承（增量评审 I3）：新 ner 框的 selected 继承两条来源——
+//   ①实体侧（entityByText）：用户在替换模式实体列表取消勾选的文本，切回
+//     打码不得被翻回选中；②旧 ner 框：打码模式下手动取消的框，重定位后
+//   保持未选。任一来源为 false 即 false；全新文本默认选中。
 export function mergeNerBoxes(
   prevBoxes: BoundingBox[],
   locatedBoxes: BoundingBox[],
+  entityByText?: Map<string, { selected?: boolean }> | null,
 ): BoundingBox[] {
-  // 双保险：source 或 id 前缀任一标记为 ner 即识别框（老部署的框可能缺 source）
   const isNer = (b: BoundingBox) => b.source === 'ner' || !!b.id?.startsWith('ner_');
-  return [...prevBoxes.filter((b) => !isNer(b)), ...locatedBoxes];
+  const prevNerByText = new Map(
+    prevBoxes.filter((b) => isNer(b)).map((b) => [b.text ?? '', b]),
+  );
+  const located = locatedBoxes.map((b) => {
+    const text = b.text ?? '';
+    const prev = prevNerByText.get(text);
+    const entitySelected = entityByText?.get(text)?.selected;
+    const selected =
+      entitySelected !== false && (prev ? prev.selected !== false : true);
+    return { ...b, selected };
+  });
+  return [...prevBoxes.filter((b) => !isNer(b)), ...located];
 }
 
 // Issue #66：mask 模式执行时的实体选中同步——实体在图像工作台里的选中
@@ -98,13 +113,21 @@ export async function locateEntityBoxes(
   fileId: string,
   entities: Entity[],
 ): Promise<{ boxes: BoundingBox[]; missed: string[] }> {
-  const res = await authFetch(`/api/v1/redaction/${fileId}/locate-entities`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entities }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  // 大文档定位可达数十秒（后端 to_thread + 页索引已优化），仍设硬超时防挂死
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await authFetch(`/api/v1/redaction/${fileId}/locate-entities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entities }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export function getModePreview(

@@ -180,13 +180,18 @@ export function usePlayground() {
         ? fileId + ':' + [...new Set(entities.map((e) => e.text))].join('\u0001')
         : null;
     if (signature === locatedSignatureRef.current) return;
-    locatedSignatureRef.current = signature;
     if (!signature) return;
     const epoch = ++locateEpochRef.current;
+    const entityByText = new Map(entities.map((e) => [e.text, e]));
     locateEntityBoxes(fileId!, entities)
       .then(({ boxes, missed }) => {
         if (epoch !== locateEpochRef.current) return;
-        imageCtx.setBoundingBoxes((prev) => mergeNerBoxes(prev, boxes));
+        // 签名只在成功后写入——失败的定位（超时等）在实体/模式下次变化时
+        // 会自动重试，不会因签名已占位而永远沉默
+        locatedSignatureRef.current = signature;
+        imageCtx.setBoundingBoxes((prev) =>
+          mergeNerBoxes(prev, boxes, entityByText),
+        );
         if (missed.length) {
           showToast(
             t('playground.locateMissed').replace('{n}', String(missed.length)),

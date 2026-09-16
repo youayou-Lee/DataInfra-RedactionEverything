@@ -342,7 +342,7 @@
     "tag_template": "<开户行[{index}]>",
     "data_domain": "account_transaction",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "account_like",
       "organization_like"
@@ -487,7 +487,7 @@
     "tag_template": "<公司名称[{index}]>",
     "data_domain": "organization_subject",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "organization_like"
     ],
@@ -536,7 +536,7 @@
     "tag_template": "<机关单位[{index}]>",
     "data_domain": "organization_subject",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "organization_like"
     ],
@@ -560,7 +560,7 @@
     "tag_template": "<工作单位[{index}]>",
     "data_domain": "organization_subject",
     "coref_enabled": true,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "organization_like"
     ],
@@ -727,7 +727,7 @@
     "tag_template": "<年龄[{index}]>",
     "data_domain": "pii",
     "coref_enabled": false,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [],
     "entity_type_ids": [],
     "generic_target": "GEN_ATTRIBUTE_STATUS"
@@ -1315,7 +1315,7 @@
     "tag_template": "<出生日期[{index}]>",
     "data_domain": "pii",
     "coref_enabled": false,
-    "default_enabled": false,
+    "default_enabled": true,
     "linkage_groups": [
       "date_like"
     ],

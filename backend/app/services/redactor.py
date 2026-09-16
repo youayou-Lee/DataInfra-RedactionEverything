@@ -416,8 +416,9 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
     @staticmethod
     def _locate_via_char_map(page: fitz.Page, text: str) -> list[fitz.Rect]:
         """字符级兜底：无空白页文本中找无空白 query 的每次出现，
-        再把命中字符的 bbox 行内合并回矩形（双向空白归一化，覆盖
-        search_for 因空格形态差异失效的全部场景）。"""
+        命中字符**按行分段**合并回矩形——跨行实体产出每行一段的框，
+        不做跨行并集（并集会把两行之间的无关内容全盖住，复验反馈：
+        跨行日期把两行大面积打码、可读性骤降）。"""
         nospace_query = "".join(text.split())
         if not nospace_query:
             return []
@@ -425,7 +426,9 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
             raw = page.get_text("rawdict")
         except Exception:
             return []
-        chars: list[tuple[str, fitz.Rect]] = []
+        # 保留行结构：[(字符, bbox, 行号)]，行号用于跨行分段
+        chars: list[tuple[str, fitz.Rect, int]] = []
+        line_no = 0
         for block in raw.get("blocks", []):
             for line in block.get("lines", []):
                 for span in line.get("spans", []):
@@ -433,18 +436,23 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                         c = ch.get("c", "")
                         bbox = ch.get("bbox")
                         if bbox:
-                            chars.append((c, fitz.Rect(bbox)))
+                            chars.append((c, fitz.Rect(bbox), line_no))
+                line_no += 1
         if not chars:
             return []
-        nospace_chars = [(c, r) for c, r in chars if c.strip()]
-        hay = "".join(c for c, _ in nospace_chars)
+        nospace_chars = [(c, r, ln) for c, r, ln in chars if c.strip()]
+        hay = "".join(c for c, _, _ in nospace_chars)
         rects: list[fitz.Rect] = []
         pos = hay.find(nospace_query)
         while pos != -1:
             hit = nospace_chars[pos : pos + len(nospace_query)]
-            if hit:
-                union = fitz.Rect(hit[0][1])
-                for _, r in hit[1:]:
+            # 命中字符按行号分段（保持顺序），每段行内并集成一个框
+            segments: dict[int, list[fitz.Rect]] = {}
+            for _, r, ln in hit:
+                segments.setdefault(ln, []).append(r)
+            for seg in segments.values():
+                union = fitz.Rect(seg[0])
+                for r in seg[1:]:
                     union |= r
                 rects.append(union)
             pos = hay.find(nospace_query, pos + 1)

@@ -454,3 +454,30 @@ def test_locate_finds_all_occurrences_across_forms(_dirs):
     assert len(boxes) >= 2, f"同页多处出现应全部框出（含跨行），实际 {len(boxes)} 框"
     # 收案行（y≈100）必须有框
     assert any(b.y < 0.5 for b in boxes), "第一处（收案行）应有框"
+
+
+def test_locate_crossline_hits_split_per_line(_dirs):
+    """跨行命中按行分段（#66 复验反馈）：跨行日期若做并集框会把两行之间
+    的无关内容全部盖住（可读性骤降）——必须每行一个窄框。"""
+    up, _ = _dirs
+    src = up / "cross.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 300), "于2022 年1 月", fontsize=12, fontname="china-s")
+    page.insert_text((72, 330), "25 日告知当事人依法享有的诉讼权利；", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) == 2, f"跨行应产出 2 个按行分段的框，实际 {len(boxes)}"
+    # 两框各在自己那一行（y 中心差应接近行距，不重叠）
+    ys = sorted(b.y for b in boxes)
+    assert ys[1] - ys[0] > 0.02, "两框应分处两行"
+    # 每个框都是窄框（只盖本行的日期片段，不含整行宽度）
+    for b in boxes:
+        assert b.width < 0.5, f"框宽 {b.width} 异常，疑似整行并集"

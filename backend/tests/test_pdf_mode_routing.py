@@ -399,3 +399,31 @@ def test_locate_merges_fragmented_rects_and_handles_spaces(_dirs):
 
     # ③ source 透传
     assert boxes[0].source == "ner"
+
+
+def test_locate_numeric_anchor_for_rewritten_case_number(_dirs):
+    """数字锚点兜底（#66 复验反馈）：NER 改写案号文本（"英检"→"英德"、
+    括号全半角规范化）后字面搜索永远失败——用唯一长数字串锚定整行。"""
+    up, _ = _dirs
+    src = up / "case.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 130), "案件编号（审查起诉）：英检刑诉受[2022]441881000050 号", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    # NER 改写形态：全角六角括号 + "英德"补全——字面无命中，数字锚点兜底
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("英德刑诉受〔2022〕441881000050 号", "CASE_NUMBER")], "ner", "ner"
+    )
+    assert not missed, "案号应经数字锚点兜底命中"
+    assert len(boxes) == 1
+    assert boxes[0].source == "ner"
+
+    # 多个/无长数字串的文本不走锚点（防误匹配）
+    boxes2, missed2 = Redactor.locate_entity_texts(
+        str(src), [("2022 年01 月25 日受理", "DATE")], "ner", "ner"
+    )
+    assert "2022 年01 月25 日受理" in missed2, "多数字串文本不得用锚点乱框"

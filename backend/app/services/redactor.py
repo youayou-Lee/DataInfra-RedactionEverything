@@ -347,7 +347,8 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
 
     @staticmethod
     def _locate_text_on_page(page: fitz.Page, text: str) -> list[fitz.Rect]:
-        """单页定位一个实体文本：search_for 两趟 + 字符映射兜底，结果行内合并。"""
+        """单页定位一个实体文本：search_for 两趟 + 字符映射 + 数字锚点，
+        结果行内合并。"""
         rects = list(page.search_for(text))
         if not rects:
             nospace = "".join(text.split())
@@ -355,7 +356,41 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                 rects = list(page.search_for(nospace))
         if not rects:
             rects = Redactor._locate_via_char_map(page, text)
+        if not rects:
+            rects = Redactor._locate_via_numeric_anchor(page, text)
         return Redactor._merge_rects_rowwise(rects)
+
+    @staticmethod
+    def _locate_via_numeric_anchor(page: fitz.Page, text: str) -> list[fitz.Rect]:
+        """数字锚点兜底：NER 有时会改写实体文本（如案号"英检"补全为"英德"、
+        括号全半角规范化），字面搜索永远失败。取 query 中唯一的长数字/字母
+        串（≥6 位，案号/证件号/统一社会信用代码类）作锚，命中含该串的整行
+        （整行框多打了行首标签文字——安全方向，且仅字面全失败才走到这层）。"""
+        runs = re.findall(r"[0-9A-Za-z]{6,}", text)
+        if len(runs) != 1:
+            return []
+        anchor = runs[0]
+        try:
+            raw = page.get_text("rawdict")
+        except Exception:
+            return []
+        hits: list[fitz.Rect] = []
+        for block in raw.get("blocks", []):
+            for line in block.get("lines", []):
+                line_chars: list[tuple[str, fitz.Rect]] = []
+                for span in line.get("spans", []):
+                    for ch in span.get("chars", []):
+                        if ch.get("c", "").strip() and ch.get("bbox"):
+                            line_chars.append((ch["c"], fitz.Rect(ch["bbox"])))
+                if not line_chars:
+                    continue
+                hay = "".join(c for c, _ in line_chars)
+                if anchor in hay:
+                    union = fitz.Rect(line_chars[0][1])
+                    for _, r in line_chars[1:]:
+                        union |= r
+                    hits.append(union)
+        return hits
 
     @staticmethod
     def _locate_via_char_map(page: fitz.Page, text: str) -> list[fitz.Rect]:

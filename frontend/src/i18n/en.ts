@@ -1134,6 +1134,7 @@ const enOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     'All results are currently deselected. Select at least one item, or confirm that nothing needs redaction.',
   'playground.sourceOcr': 'OCR',
+  'playground.sourceNer': 'NER',
   'playground.needsReview': 'Needs review',
   'playground.confidenceHint':
     'How sure the model was about this box, from the per-token probabilities it emitted while drawing it. Below 50% it was guessing — worth a human look.',

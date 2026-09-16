@@ -167,7 +167,9 @@ function BBoxOverlayBoxInner({
             ? t('playground.sourceOcr')
             : box.source === 'visual_features'
               ? t('playground.sourceImage')
-              : t('playground.sourceManual')}
+              : box.source === 'ner'
+                ? t('playground.sourceNer')
+                : t('playground.sourceManual')}
         </span>
         <span className="text-[9px] leading-tight font-normal truncate opacity-90">
           {labelText}

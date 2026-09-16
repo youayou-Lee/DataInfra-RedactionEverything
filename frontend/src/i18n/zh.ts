@@ -1036,6 +1036,7 @@ const zhOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     '当前所有结果都已取消选择。请至少勾选一项，或返回列表确认是否需要匿名化。',
   'playground.sourceOcr': '图片文字',
+  'playground.sourceNer': '识别',
   'playground.needsReview': '待确认',
   'playground.confidenceHint':
     '模型对这个框的把握程度(由识别时的逐词概率算出)。低于50%表示模型自己也在猜，建议人工过一眼。',

@@ -22,7 +22,7 @@ import {
   serializeDraft,
   type PlaygroundDraftSnapshot,
 } from '../lib/playground-draft';
-import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
+import { safeJson, buildPseudonymCsv, triggerDownload, isVisualPreviewMode } from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
 import { usePlaygroundFile } from './use-playground-file';
@@ -135,6 +135,14 @@ export function usePlayground() {
     fileInfo: fileCtx.fileInfo,
     redactionVersion,
     showRedactedPreview: fileCtx.stage === 'result',
+    // Issue #66：文本型 PDF 打码模式切图像工作台（页面图+拉框）
+    staticPagePreview:
+      !fileCtx.isImageMode &&
+      isVisualPreviewMode(
+        fileCtx.fileInfo?.file_type,
+        Boolean(fileCtx.fileInfo?.is_scanned),
+        recognition.processingMode,
+      ),
   });
 
   const { setTypeTab } = recognition;
@@ -160,7 +168,15 @@ export function usePlayground() {
   );
 
   const historyCtx = usePlaygroundHistory({
-    isImageMode: fileCtx.isImageMode,
+    // Issue #66：视觉工作台（含文本型 PDF 打码模式）下撤销/重做/全选作用于
+    // 拉框；实体勾选仍走右侧面板逐条切换
+    isImageMode:
+      fileCtx.isImageMode ||
+      isVisualPreviewMode(
+        fileCtx.fileInfo?.file_type,
+        Boolean(fileCtx.fileInfo?.is_scanned),
+        recognition.processingMode,
+      ),
     entities: entityCtx.entities,
     setEntities: entityCtx.setEntities,
     boundingBoxes: imageCtx.boundingBoxes,
@@ -395,9 +411,20 @@ export function usePlayground() {
     try {
       const selectedEntities = entityCtx.entities.filter((e) => e.selected !== false);
       const selectedBoxes = imageCtx.boundingBoxes.filter((b) => b.selected !== false);
+      // Issue #66：文本型 PDF 打码模式=实体+拉框双通道（后端合并栅格化），
+      // 只拉框不选实体也应可执行
+      const textPdfMask =
+        !fileCtx.isImageMode &&
+        isVisualPreviewMode(
+          fileCtx.fileInfo?.file_type,
+          Boolean(fileCtx.fileInfo?.is_scanned),
+          recognition.processingMode,
+        );
       const requestedRedactionItemCount = fileCtx.isImageMode
         ? selectedBoxes.length
-        : selectedEntities.length;
+        : textPdfMask
+          ? selectedEntities.length + selectedBoxes.length
+          : selectedEntities.length;
 
       const isPseudonym = recognition.processingMode === 'replace' && !fileCtx.isImageMode;
       // 双保险：打码分支永远不透传 pseudonym（防御残留状态），回落结构化标签
@@ -847,6 +874,7 @@ export function usePlayground() {
     handleDownload,
     dropzone: fileCtx.dropzone,
     imageUrl: imageCtx.imageUrl,
+    staticPageUrl: imageCtx.staticPageUrl,
     redactedImageUrl: imageCtx.redactedImageUrl,
     redactedImageError: imageCtx.redactedImageError,
     currentPage: imageCtx.currentPage,

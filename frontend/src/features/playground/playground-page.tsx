@@ -21,6 +21,7 @@ import {
 import { needsSwitchConfirm, splitVirtualPages } from './lib/playground-draft';
 import {
   isMaskAllowedForFile,
+  isVisualPreviewMode,
   previewEntityHoverRingClass,
   previewEntityMarkStyle,
 } from './utils';
@@ -85,6 +86,7 @@ const PlaygroundInner: FC = () => {
     cancelReset,
     handleDownload,
     imageUrl,
+    staticPageUrl,
     redactedImageUrl,
     redactedImageError,
     currentPage,
@@ -137,6 +139,14 @@ const PlaygroundInner: FC = () => {
       setProcessingMode('replace');
     }
   }, [maskAllowed, processingMode, setProcessingMode]);
+
+  // Issue #66：预览范式跟随处理模式——文本型 PDF 打码=图像工作台（页面图+
+  // 拉框，与扫描件一致），替换=文本范式。手拉框存于 boundingBoxes 草稿态，
+  // 切换模式不清理（A 案：打码/替换各管各的，切回打码框原样恢复）。
+  const visualMaskPreview =
+    !isImageMode &&
+    isVisualPreviewMode(fileInfo?.file_type, Boolean(fileInfo?.is_scanned), processingMode);
+  const isVisualPreview = isImageMode || visualMaskPreview;
 
   const pagesArr = fileInfo?.pages;
   // 虚拟分页（Issue #33 验收反馈）：MinerU 转出的 markdown 单页可达数十万字符、
@@ -319,16 +329,20 @@ const PlaygroundInner: FC = () => {
             <div className="saas-panel flex min-w-0 flex-1 flex-col overflow-hidden">
               <PlaygroundToolbar
                 filename={fileInfo?.filename}
-                isImageMode={isImageMode}
+                isImageMode={isVisualPreview}
                 canUndo={canUndo}
                 canRedo={canRedo}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 onReset={handleReset}
                 hintText={
-                  isImageMode ? t('playground.previewHint.image') : t('playground.previewHint.text')
+                  visualMaskPreview
+                    ? t('playground.previewHint.pdfMask')
+                    : isImageMode
+                      ? t('playground.previewHint.image')
+                      : t('playground.previewHint.text')
                 }
-                onPopout={isImageMode ? openPopout : undefined}
+                onPopout={isVisualPreview ? openPopout : undefined}
               />
 
               <div
@@ -337,11 +351,11 @@ const PlaygroundInner: FC = () => {
                 onKeyUp={ui.handleTextSelect}
                 className="flex min-h-0 flex-1 flex-col overflow-hidden select-text"
               >
-                {isImageMode ? (
+                {isVisualPreview ? (
                   <div className="flex-1 min-h-0">
                     {fileInfo && (
                       <ImageBBoxEditor
-                        imageSrc={imageUrl}
+                        imageSrc={visualMaskPreview ? staticPageUrl : imageUrl}
                         boxes={visibleBoxes}
                         onBoxesChange={(nextBoxes) =>
                           setBoundingBoxes(mergeVisibleBoxes(nextBoxes))
@@ -390,8 +404,8 @@ const PlaygroundInner: FC = () => {
                   </div>
                 )}
 
-                {!isImageMode && <PlaygroundTextSelectionPopover entityTypes={entityTypes} />}
-                {!isImageMode && <PlaygroundEntityPopover />}
+                {!isVisualPreview && <PlaygroundTextSelectionPopover entityTypes={entityTypes} />}
+                {!isVisualPreview && <PlaygroundEntityPopover />}
               </div>
             </div>
 

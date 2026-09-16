@@ -13,6 +13,8 @@ export interface UsePlaygroundImageOptions {
   fileInfo: FileInfo | null;
   redactionVersion?: number;
   showRedactedPreview?: boolean;
+  /** Issue #66：文本型 PDF 打码模式的静态页面图（不跑 vision，直接渲染页面） */
+  staticPagePreview?: boolean;
 }
 
 interface PreviewImageResponse {
@@ -43,11 +45,12 @@ function setCacheWithLimit(cache: Map<string, string>, key: string, value: strin
 }
 
 export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
-  const { fileInfo, redactionVersion = 0, showRedactedPreview } = options;
+  const { fileInfo, redactionVersion = 0, showRedactedPreview, staticPagePreview } = options;
 
   const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [imageUrl, setImageUrl] = useState('');
+  const [staticPageUrl, setStaticPageUrl] = useState('');
   const [redactedImageUrl, setRedactedImageUrl] = useState('');
   const [redactedImageError, setRedactedImageError] = useState<string | null>(null);
   const imageHistory = useUndoRedo<BoundingBox[]>();
@@ -132,6 +135,27 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
     pageImageRequestRef.current.set(key, request);
     return request;
   }, []);
+
+  // Issue #66：文本型 PDF 打码模式——页面图直接渲染（不跑 vision/OCR），
+  // 复用 loadOriginalPreviewPage 的缓存，翻页即时
+  useEffect(() => {
+    const fileId = fileInfo?.file_id;
+    if (!staticPagePreview || !fileId) {
+      setStaticPageUrl('');
+      return;
+    }
+    let alive = true;
+    loadOriginalPreviewPage(fileId, currentPage)
+      .then((url) => {
+        if (alive) setStaticPageUrl(url);
+      })
+      .catch(() => {
+        if (alive) setStaticPageUrl('');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [staticPagePreview, fileInfo?.file_id, currentPage, loadOriginalPreviewPage]);
 
   const loadRedactedPreviewPage = useCallback(
     (
@@ -621,6 +645,7 @@ export function usePlaygroundImage(options: UsePlaygroundImageOptions) {
     setCurrentPage,
     totalPages,
     imageUrl,
+    staticPageUrl,
     redactedImageUrl,
     redactedImageError,
     imageHistory,

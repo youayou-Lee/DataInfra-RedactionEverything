@@ -40,6 +40,20 @@ export function isMaskAllowedForFile(fileType?: string): boolean {
   return normalized === 'pdf' || normalized === 'image' || normalized === 'pdf_scanned';
 }
 
+// Issue #66：预览范式跟随处理模式——文本型 PDF 在打码模式下切到图像工作台
+// （页面图+拉框，与扫描件一致），替换模式保持文本范式。docx/txt 打码被
+// #59 门控不可能出现，扫描件替换被门控恒为图像，故不存在两头落空的组合。
+export function isVisualPreviewMode(
+  fileType?: string,
+  isScanned?: boolean,
+  processingMode?: 'mask' | 'replace',
+): boolean {
+  if (!fileType) return false;
+  const normalized = fileType.toLowerCase();
+  if (normalized === 'image' || normalized === 'pdf_scanned' || isScanned) return true;
+  return normalized === 'pdf' && processingMode === 'mask';
+}
+
 export function getModePreview(
   mode: string,
   sampleEntity?: Entity,

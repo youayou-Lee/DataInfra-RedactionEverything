@@ -1087,6 +1087,7 @@ const zhOverrides: Record<string, string> = {
   'playground.toast.redactDone': '匿名化完成，共处理 {count} 处。',
   'playground.noContent': '暂时还没有可展示的内容。',
   'playground.previewHint.image': '调整或补充区域，再决定哪些内容需要匿名化。',
+  'playground.previewHint.pdfMask': '打码模式：识别实体执行时自动定位打码；遗漏处可直接在页面上拉框补充。',
   'playground.previewHint.text': '查看高亮、选取文本并修正标注后再导出。',
   'playground.updateAnnotation': '更新标注',
   'playground.addAnnotation': '添加标注',

@@ -1,6 +1,6 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Search, ShieldAlert } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -75,11 +75,19 @@ export function ConsolePage() {
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const selectUser = (username: string) => {
-    setSelectedUser((prev) => {
-      if (prev !== username) setPage(1);
-      return username;
-    });
+    if (selectedUser !== username) {
+      setSelectedUser(username);
+      setPage(1);
+    }
   };
+
+  // 数据收缩（并行操作删文件/换用户）导致当前页越界时收敛回最后一页，
+  // 避免「第 2 / 1 页」+ 误导性空态。
+  useEffect(() => {
+    if (filesData && page > lastPage) {
+      setPage(lastPage);
+    }
+  }, [filesData, page, lastPage]);
 
   const handleDownload = async (file: AdminUserFile) => {
     if (!selectedUser) return;

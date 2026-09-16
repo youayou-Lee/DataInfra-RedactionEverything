@@ -185,6 +185,31 @@ def test_admin_user_files_unknown_user_404():
     assert r.status_code == 404
 
 
+def test_admin_user_files_tie_order_stable_across_updates():
+    """created_at 并列时翻页顺序必须确定（file_store 的 INSERT OR REPLACE 会变更
+    rowid，表扫描序不稳定——评审 I-1 回归锁）。"""
+    boss = _seed_user("boss", role="super_admin")
+    _seed_user("alice")
+    same_ts = "2026-09-17T00:00:00+00:00"
+    _seed_file("t1", owner="alice", created_at=same_ts)
+    _seed_file("t2", owner="alice", created_at=same_ts)
+
+    r = client.get(
+        "/api/v1/admin/users/alice/files", headers=boss, params={"page": 1, "page_size": 1}
+    )
+    first_page_items = [it["file_id"] for it in r.json()["items"]]
+
+    # 更新其中一条（触发 INSERT OR REPLACE → rowid 变化），并列序不得翻转
+    info = dict(fms.file_store.get("t1"))
+    info["output_path"] = str(pathlib.Path(settings.UPLOAD_DIR) / "out.txt")
+    fms.file_store.set("t1", info)
+
+    r2 = client.get(
+        "/api/v1/admin/users/alice/files", headers=boss, params={"page": 1, "page_size": 1}
+    )
+    assert [it["file_id"] for it in r2.json()["items"]] == first_page_items
+
+
 # ---------------------------------------------------------------------------
 # 原文件下载
 # ---------------------------------------------------------------------------

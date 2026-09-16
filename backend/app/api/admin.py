@@ -31,7 +31,7 @@ def _require_existing_user(username: str) -> str:
     """规范化并校验用户存在；不存在一律 404（不区分禁用账号，禁用用户文件仍可查）。"""
     subject = normalize_username(username)
     if auth.get_user(subject) is None:
-        raise HTTPException(status_code=404, detail="user not found")
+        raise HTTPException(status_code=404, detail="用户不存在")
     return subject
 
 
@@ -67,7 +67,9 @@ async def admin_list_user_files(
         if not isinstance(info, dict) or info.get("deleted_at"):
             continue
         entries.append((fid, info))
-    entries.sort(key=lambda pair: str(pair[1].get("created_at") or ""), reverse=True)
+    # (created_at, file_id) 全序：created_at 并列时翻页顺序仍确定
+    # （file_store 是 INSERT OR REPLACE，rowid 会变，不能依赖表扫描序）
+    entries.sort(key=lambda pair: (str(pair[1].get("created_at") or ""), pair[0]), reverse=True)
 
     total = len(entries)
     start = (page - 1) * page_size
@@ -108,12 +110,14 @@ async def admin_download_user_file(
     subject = _require_existing_user(username)
 
     snapshot = await _fms.get_file_snapshot(file_id)
+    # 软删除文件不在清单/计数中，但保留可下载：对齐用户本人
+    # /files/{id}/download 的回收站行为，复现「文件找不到了」类反馈需要。
     if not snapshot or _fms.file_owner_id(snapshot) != subject:
-        raise HTTPException(status_code=404, detail="file not found")
+        raise HTTPException(status_code=404, detail="文件不存在")
 
     file_path = snapshot.get("file_path")
     if not file_path:
-        raise HTTPException(status_code=404, detail="original file path missing")
+        raise HTTPException(status_code=404, detail="原文件路径缺失")
 
     # 路径遍历保护（与 /files/{id}/download 同源）
     if not _fms.safe_path_in_dir(file_path, settings.UPLOAD_DIR):

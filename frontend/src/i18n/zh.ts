@@ -2441,6 +2441,11 @@ Object.assign(zhOverrides, {
 
   // entity-type-list.tsx
   'settings.entityList.systemManaged': '系统配置',
+  'settings.override.enabled': '启用',
+  'settings.override.includeDefault': '纳入默认识别范围',
+  'settings.override.disabledBadge': '已停用',
+  'settings.override.disabledHint': '已在本账号停用：所有识别路径（默认范围、任何清单、扫描件）均不再识别该类型',
+  'settings.overrideFailed': '识别项设置失败',
 });
 
 export const zh: Record<string, string> = {

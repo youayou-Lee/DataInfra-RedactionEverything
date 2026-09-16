@@ -36,6 +36,10 @@ class EntityTypeConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the type is enabled")
     order: int = Field(default=100, description="Sort order")
     tag_template: str | None = Field(None, description="Structured replacement tag template")
+    # Issue #78：内置项的系统默认值快照（仅 list_types 对内置项填充，自定义项为 None）。
+    # 供前端区分"账号覆盖值"与"系统默认"，不参与持久化。
+    system_enabled: bool | None = Field(default=None, description="System-default enabled (built-ins only, list-only)")
+    system_default_enabled: bool | None = Field(default=None, description="System-default default_enabled (built-ins only, list-only)")
 
 
 class EntityTypesResponse(BaseModel):
@@ -89,6 +93,12 @@ class CreateEntityTypeRequest(BaseModel):
         if not str(self.data_domain or "").strip():
             self.data_domain = "custom_extension"
         return self
+
+
+class EntityTypeOverrideRequest(BaseModel):
+    """Issue #78：内置识别项账号覆盖位（部分更新，None=不改动该位）"""
+    enabled: bool | None = None
+    default_enabled: bool | None = None
 
 
 class UpdateEntityTypeRequest(BaseModel):
@@ -335,6 +345,23 @@ def _default_entity_types() -> dict[str, EntityTypeConfig]:
     }
 
 
+# Issue #78：内置项在 owner 存储中的覆盖位行——键只允许这三个，
+# 据此区分"覆盖位行"（缺省位跟随系统）与旧格式的整行快照。
+_OVERRIDE_ROW_KEYS = {"id", "enabled", "default_enabled"}
+
+
+def _apply_builtin_override(preset: EntityTypeConfig, row: dict) -> EntityTypeConfig:
+    """把 owner 覆盖位套到源码预设上，定义字段永远以源码为准。"""
+    updates: dict = {}
+    if preset.enabled:
+        # 系统级停用的类型保持停用；仅系统启用类型的账号选择有意义。
+        if isinstance(row.get("enabled"), bool):
+            updates["enabled"] = row["enabled"]
+    if isinstance(row.get("default_enabled"), bool):
+        updates["default_enabled"] = row["default_enabled"]
+    return preset.model_copy(update=updates) if updates else preset
+
+
 def _load_entity_types(owner_id: str | None = None) -> dict[str, EntityTypeConfig]:
     """Load entity types from disk, merging with presets."""
     raw = load_json(_entity_types_store_path(owner_id), default=None)
@@ -342,15 +369,22 @@ def _load_entity_types(owner_id: str | None = None) -> dict[str, EntityTypeConfi
         return _default_entity_types()
     merged: dict[str, EntityTypeConfig] = {}
     for key, preset in PRESET_ENTITY_TYPES.items():
-        if key in raw:
-            try:
-                loaded = EntityTypeConfig(**raw[key]) if isinstance(raw[key], dict) else preset
-                # Built-in definitions are source-controlled. Preserve only the
-                # user's enabled/disabled choice, so corrected regex/LLM/default
-                # boundaries are not kept stale by old runtime snapshots.
-                merged[key] = preset.model_copy(update={"enabled": loaded.enabled if preset.enabled else False})
-            except Exception:
-                merged[key] = preset
+        row = raw.get(key)
+        if isinstance(row, dict):
+            if set(row.keys()) <= _OVERRIDE_ROW_KEYS:
+                # Issue #78 覆盖位行：enabled / default_enabled 缺省即跟随系统。
+                merged[key] = _apply_builtin_override(preset, row)
+            else:
+                # 旧格式整行快照：内置定义以源码为准，仅保留停用选择；
+                # default_enabled 无法区分"显式设置"与"快照镜像"，一律跟随源码，
+                # 避免系统默认调整被陈旧快照冻结。
+                try:
+                    loaded = EntityTypeConfig(**row)
+                    merged[key] = preset.model_copy(
+                        update={"enabled": loaded.enabled if preset.enabled else False}
+                    )
+                except Exception:
+                    merged[key] = preset
         else:
             merged[key] = preset
     for key, val in raw.items():
@@ -363,11 +397,33 @@ def _load_entity_types(owner_id: str | None = None) -> dict[str, EntityTypeConfi
     return merged
 
 
+def _builtin_override_row(config: EntityTypeConfig) -> dict | None:
+    """计算内置项相对源码预设的偏差位；无偏差返回 None（不落盘）。"""
+    preset = PRESET_ENTITY_TYPES.get(config.id)
+    if preset is None:
+        return None
+    row: dict = {"id": config.id}
+    if preset.enabled and config.enabled != preset.enabled:
+        row["enabled"] = config.enabled
+    if config.default_enabled != preset.default_enabled:
+        row["default_enabled"] = config.default_enabled
+    return row if len(row) > 1 else None
+
+
 def _persist_entity_types(
     db: dict[str, EntityTypeConfig] | None = None,
     owner_id: str | None = None,
 ) -> None:
-    save_json(_entity_types_store_path(owner_id), db if db is not None else entity_types_db)
+    db = db if db is not None else entity_types_db
+    payload: dict = {}
+    for key, config in db.items():
+        if key in PRESET_ENTITY_TYPES:
+            row = _builtin_override_row(config)
+            if row is not None:
+                payload[key] = row
+        else:
+            payload[key] = config.model_dump()
+    save_json(_entity_types_store_path(owner_id), payload)
 
 
 # 内存存储（启动时从磁盘恢复）
@@ -435,6 +491,10 @@ def resolve_requested_entity_types(
             type_config = db.get(canonical_type_id(direct_id))
         if type_config is None:
             continue
+        # Issue #78：账号停用的类型是本账号一切识别路径的上限——
+        # 显式清单勾了也不查（与默认范围、OCR 链路口径一致）。
+        if not type_config.enabled:
+            continue
 
         add(type_config)
     return resolved
@@ -451,6 +511,22 @@ def list_types(
     types = list(_db_for_owner(owner_id).values())
     if enabled_only:
         types = [t for t in types if t.enabled]
+    # Issue #78：内置项附带系统默认快照，前端据此区分"账号覆盖"与"跟随默认"。
+    enriched: list[EntityTypeConfig] = []
+    for t in types:
+        preset = PRESET_ENTITY_TYPES.get(t.id)
+        if preset is not None:
+            enriched.append(
+                t.model_copy(
+                    update={
+                        "system_enabled": preset.enabled,
+                        "system_default_enabled": preset.default_enabled,
+                    }
+                )
+            )
+        else:
+            enriched.append(t)
+    types = enriched
     types.sort(key=lambda x: x.order)
     total = len(types)
     if page_size <= 0:
@@ -584,6 +660,40 @@ def toggle_type(type_id: str, owner_id: str | None = None) -> bool | None:
             entity_types_db = db
         _persist_entity_types(db, owner_id)
         return db[type_id].enabled
+
+
+def set_type_override(
+    type_id: str,
+    *,
+    enabled: bool | None = None,
+    default_enabled: bool | None = None,
+    owner_id: str | None = None,
+) -> EntityTypeConfig | None:
+    """Issue #78：设置内置识别项的账号覆盖位（None=不改动该位）。
+
+    仅内置项可覆盖；自定义项没有"系统默认"概念，走 update_type。
+    未知类型返回 None。改回系统默认值时偏差位自动消失（回归"跟随默认"）。
+    """
+    global entity_types_db
+    if type_id not in PRESET_ENTITY_TYPES:
+        if type_id in _db_for_owner(owner_id):
+            raise ValueError("自定义识别项没有账号覆盖位，请使用编辑接口")
+        return None
+    with store_lock(_entity_types_store_path(owner_id)):
+        db = _db_for_owner(owner_id)
+        if type_id not in db:
+            return None
+        config = db[type_id]
+        if enabled is not None:
+            config.enabled = enabled
+        if default_enabled is not None:
+            # 停用的类型不进默认范围：两位保持一致语义。
+            config.default_enabled = default_enabled and config.enabled
+        db[type_id] = config
+        if owner_id is None:
+            entity_types_db = db
+        _persist_entity_types(db, owner_id)
+        return config
 
 
 def reset_types(owner_id: str | None = None) -> None:

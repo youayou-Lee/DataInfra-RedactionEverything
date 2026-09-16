@@ -25,6 +25,7 @@ export interface RedactionPresetDialogProps {
   saving: boolean;
   regexTypes: RedactionState['regexTypes'];
   semanticTypes: RedactionState['semanticTypes'];
+  accountDisabledIds: RedactionState['accountDisabledIds'];
   effectivePipelines: RedactionState['effectivePipelines'];
   presetKindLabel: (kind?: PresetKind) => string;
   setPresetForm: RedactionState['setPresetForm'];
@@ -39,6 +40,7 @@ export function RedactionPresetDialog({
   saving,
   regexTypes,
   semanticTypes,
+  accountDisabledIds,
   effectivePipelines,
   presetKindLabel,
   setPresetForm,
@@ -126,6 +128,7 @@ export function RedactionPresetDialog({
                   onSelectAll={selectTextIds}
                   onClear={clearTextIds}
                   variant="semantic"
+                  accountDisabledIds={accountDisabledIds}
                 />
                 <TypeCheckboxGrid
                   title={t('settings.redaction.regexGroup')}
@@ -142,6 +145,7 @@ export function RedactionPresetDialog({
                   onSelectAll={selectTextIds}
                   onClear={clearTextIds}
                   variant="regex"
+                  accountDisabledIds={accountDisabledIds}
                 />
               </>
             )}
@@ -171,6 +175,7 @@ export function RedactionPresetDialog({
                     }
                     onSelectAll={setPipelineIds}
                     onClear={(mode) => setPipelineIds(mode, [])}
+                    accountDisabledIds={accountDisabledIds}
                   />
                 ))}
           </div>

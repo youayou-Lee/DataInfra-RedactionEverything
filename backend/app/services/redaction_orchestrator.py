@@ -421,7 +421,11 @@ async def detect_vision(
     owner_id = owner_id or str(snapshot.get("owner_id") or "local_user")
 
     # 获取两个 Pipeline 的类型配置
-    from app.services.pipeline_service import get_pipeline, get_pipeline_types_for_mode
+    from app.services.pipeline_service import (
+        filter_types_by_account_enabled,
+        get_pipeline,
+        get_pipeline_types_for_mode,
+    )
 
     all_ocr_has_types = get_pipeline_types_for_mode("ocr_has", owner_id=owner_id)
     default_ocr_has_types = _default_pipeline_types(all_ocr_has_types)
@@ -480,6 +484,10 @@ async def detect_vision(
                 "selected visual feature types contain no valid IDs; fallback to default enabled visual feature types."
             )
             visual_feature_types = default_visual_feature_types
+
+    # Issue #78：账号停用的识别项是一切识别路径的上限——显式勾选与默认清单
+    # 都在此收口过滤；过滤后为空不再回退默认清单（否则账号停用会被复活）。
+    ocr_has_types = filter_types_by_account_enabled(ocr_has_types, owner_id=owner_id)
 
     ocr_pipeline = get_pipeline("ocr_has", owner_id=owner_id)
     visual_pipeline = get_pipeline("visual_features", owner_id=owner_id)

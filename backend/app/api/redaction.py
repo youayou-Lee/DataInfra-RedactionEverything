@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 import app.services.file_management_service as _fms
 import app.services.redaction_orchestrator as _orch
-from app.services.redactor import Redactor
 from app.core.audit import audit_log
 from app.core.auth import require_auth
 from app.core.idempotency import check_idempotency, save_idempotency
@@ -34,6 +33,7 @@ from app.models.schemas import (
     VisionDetectRequest,
     VisionResult,
 )
+from app.services.redactor import Redactor
 
 router = APIRouter()
 

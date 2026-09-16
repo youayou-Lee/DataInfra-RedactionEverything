@@ -15,10 +15,23 @@ const checkboxGridClass =
   'grid grid-cols-2 gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6';
 const checkboxTileClass =
   'flex min-h-9 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs leading-4 transition-colors';
+const disabledTileClass =
+  'flex min-h-9 min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-xs leading-4 opacity-50';
 
 function getPipelineLabel(pipelineMode: PipelineConfig['mode'], t: (key: string) => string) {
   if (pipelineMode === 'ocr_has') return t('settings.redaction.ocrGroup');
   return t('settings.redaction.imageGroup');
+}
+
+function DisabledMark({ t }: { t: (key: string) => string }) {
+  return (
+    <span
+      title={t('settings.override.disabledHint')}
+      className="shrink-0 rounded border border-border/70 bg-muted/60 px-1 py-px text-[10px] leading-none text-muted-foreground"
+    >
+      {t('settings.override.disabledBadge')}
+    </span>
+  );
 }
 
 export function TypeCheckboxGrid({
@@ -29,6 +42,7 @@ export function TypeCheckboxGrid({
   onSelectAll,
   onClear,
   variant,
+  accountDisabledIds = [],
 }: {
   title: string;
   types: EntityTypeConfig[];
@@ -37,9 +51,15 @@ export function TypeCheckboxGrid({
   onSelectAll?: (ids: string[]) => void;
   onClear?: (ids: string[]) => void;
   variant: SelectionVariant;
+  /** Issue #78：账号停用的识别项——灰显、不可勾选（已勾选的保留展示，运行时后端兜底过滤） */
+  accountDisabledIds?: string[];
 }) {
   const t = useT();
-  const visibleIds = types.map((type) => type.id);
+  const disabledSet = new Set(accountDisabledIds);
+  // 全选/清空只作用于账号可用的识别项
+  const visibleIds = types
+    .filter((type) => !disabledSet.has(type.id))
+    .map((type) => type.id);
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -79,8 +99,29 @@ export function TypeCheckboxGrid({
           </div>
         ) : (
           types.map((type) => {
+            const disabled = disabledSet.has(type.id);
             const checked = selectedIds.includes(type.id);
             const label = localizeRecognitionTypeName(type, t);
+            if (disabled) {
+              return (
+                <div
+                  key={type.id}
+                  title={t('settings.override.disabledHint')}
+                  aria-disabled
+                  className={cn(disabledTileClass, 'cursor-not-allowed bg-muted/20 text-muted-foreground')}
+                  data-testid={`type-tile-disabled-${type.id}`}
+                >
+                  <span
+                    className={cn(
+                      'size-3.5 shrink-0 rounded-sm border border-border/70',
+                      checked && 'bg-muted-foreground/50',
+                    )}
+                  />
+                  <span className="min-w-0 truncate font-medium">{label}</span>
+                  <DisabledMark t={t} />
+                </div>
+              );
+            }
             return (
               <label
                 key={type.id}
@@ -110,6 +151,7 @@ export function PipelineCheckboxGrid({
   onToggle,
   onSelectAll,
   onClear,
+  accountDisabledIds = [],
 }: {
   pipeline: PipelineConfig;
   selectedOcr: string[];
@@ -117,6 +159,8 @@ export function PipelineCheckboxGrid({
   onToggle: (mode: string, id: string) => void;
   onSelectAll?: (mode: string, ids: string[]) => void;
   onClear?: (mode: string, ids: string[]) => void;
+  /** Issue #78：账号停用的语义识别项（仅影响 OCR+HaS 网格中的同名类型） */
+  accountDisabledIds?: string[];
 }) {
   const t = useT();
   const variant: SelectionVariant = pipeline.mode === 'ocr_has' ? 'semantic' : 'visual';
@@ -124,7 +168,11 @@ export function PipelineCheckboxGrid({
   const pipelineLabel = getPipelineLabel(pipeline.mode, t);
   const imageHintId = pipeline.mode === 'visual_features' ? 'settings-has-image-types-hint' : undefined;
   const visibleTypes = pipeline.types;
-  const visibleIds = visibleTypes.map((type) => type.id);
+  const disabledSet = new Set(accountDisabledIds);
+  const selectableIds = visibleTypes
+    .filter((type) => !disabledSet.has(type.id))
+    .map((type) => type.id);
+  const visibleIds = selectableIds;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -180,8 +228,29 @@ export function PipelineCheckboxGrid({
           </div>
         ) : (
           visibleTypes.map((type) => {
+            const disabled = disabledSet.has(type.id);
             const active = selectedIds.includes(type.id);
             const label = localizeRecognitionTypeName(type, t);
+            if (disabled) {
+              return (
+                <div
+                  key={type.id}
+                  title={t('settings.override.disabledHint')}
+                  aria-disabled
+                  className={cn(disabledTileClass, 'cursor-not-allowed bg-muted/20 text-muted-foreground')}
+                  data-testid={`type-tile-disabled-${type.id}`}
+                >
+                  <span
+                    className={cn(
+                      'size-3.5 shrink-0 rounded-sm border border-border/70',
+                      active && 'bg-muted-foreground/50',
+                    )}
+                  />
+                  <span className="min-w-0 truncate font-medium">{label}</span>
+                  <DisabledMark t={t} />
+                </div>
+              );
+            }
             return (
               <label
                 key={type.id}

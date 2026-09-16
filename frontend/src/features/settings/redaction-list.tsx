@@ -161,6 +161,7 @@ export function RedactionList() {
         saving={state.saving}
         regexTypes={state.regexTypes}
         semanticTypes={state.semanticTypes}
+        accountDisabledIds={state.accountDisabledIds}
         effectivePipelines={state.effectivePipelines}
         presetKindLabel={state.presetKindLabel}
         setPresetForm={state.setPresetForm}

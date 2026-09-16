@@ -65,6 +65,45 @@ export function boxesForRedactPayload(
   return isImageMode || processingMode === 'mask' ? boxes : [];
 }
 
+// Issue #66：识别实体自动定位为框（与扫描件同体验）。重新定位时替换全部
+// ner 框、保留用户手拉框（manual 是用户工作成果，识别重跑不应清掉）。
+export function mergeNerBoxes(
+  prevBoxes: BoundingBox[],
+  locatedBoxes: BoundingBox[],
+): BoundingBox[] {
+  return [...prevBoxes.filter((b) => b.source !== 'ner'), ...locatedBoxes];
+}
+
+// Issue #66：mask 模式执行时的实体选中同步——实体在图像工作台里的选中
+// 状态由它的 ner 框代表（框即实体的 UI）；没有框的实体（定位失败）保持
+// 原选中态交给后端 residual 兜底，绝不允许「看着没框却悄悄不打码」。
+export function syncEntitiesWithNerBoxes<T extends { text: string; selected?: boolean }>(
+  entities: T[],
+  boxes: BoundingBox[],
+): T[] {
+  const nerSelectedTexts = new Set(
+    boxes.filter((b) => b.source === 'ner' && b.selected !== false).map((b) => b.text ?? ''),
+  );
+  const nerAllTexts = new Set(boxes.filter((b) => b.source === 'ner').map((b) => b.text ?? ''));
+  return entities.map((e) => ({
+    ...e,
+    selected: nerAllTexts.has(e.text) ? nerSelectedTexts.has(e.text) : e.selected,
+  }));
+}
+
+export async function locateEntityBoxes(
+  fileId: string,
+  entities: Entity[],
+): Promise<{ boxes: BoundingBox[]; missed: string[] }> {
+  const res = await authFetch(`/api/v1/redaction/${fileId}/locate-entities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entities }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export function getModePreview(
   mode: string,
   sampleEntity?: Entity,

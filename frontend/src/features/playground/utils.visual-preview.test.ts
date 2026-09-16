@@ -1,7 +1,12 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
 import { describe, expect, it } from 'vitest';
-import { boxesForRedactPayload, isVisualPreviewMode } from './utils';
+import {
+  boxesForRedactPayload,
+  isVisualPreviewMode,
+  mergeNerBoxes,
+  syncEntitiesWithNerBoxes,
+} from './utils';
 
 // Issue #66：预览范式跟随处理模式
 describe('isVisualPreviewMode', () => {
@@ -42,5 +47,36 @@ describe('boxesForRedactPayload', () => {
   it('扫描件/图片：两种模式都携带（既有行为不变）', () => {
     expect(boxesForRedactPayload(true, 'mask', boxes)).toEqual(boxes);
     expect(boxesForRedactPayload(true, 'replace', boxes)).toEqual(boxes);
+  });
+});
+
+// Issue #66：识别实体自动成框的合并与执行同步
+describe('mergeNerBoxes', () => {
+  it('重新定位替换全部 ner 框、保留手拉框', () => {
+    const manual = { id: 'm1', source: 'manual', text: '手工框' } as never;
+    const oldNer = { id: 'n1', source: 'ner', text: '旧实体' } as never;
+    const newNer = [{ id: 'n2', source: 'ner', text: '新实体' } as never];
+    const merged = mergeNerBoxes([manual, oldNer], newNer);
+    expect(merged.map((b: never) => (b as { id: string }).id)).toEqual(['m1', 'n2']);
+  });
+});
+
+describe('syncEntitiesWithNerBoxes', () => {
+  const entities = [
+    { text: '张三', selected: true },
+    { text: '李四', selected: true }, // 无框实体（定位失败）
+  ];
+  it('实体选中跟随其 ner 框；无框实体保持原选中（后端兜底）', () => {
+    const boxes = [
+      { text: '张三', source: 'ner', selected: false } as never,
+    ];
+    const synced = syncEntitiesWithNerBoxes(entities, boxes);
+    expect(synced[0].selected).toBe(false); // 框被取消勾选 → 实体不选
+    expect(synced[1].selected).toBe(true); // 无框 → 保持
+  });
+  it('manual 框不影响实体同步', () => {
+    const boxes = [{ text: '张三', source: 'manual', selected: false } as never];
+    const synced = syncEntitiesWithNerBoxes(entities, boxes);
+    expect(synced[0].selected).toBe(true); // manual 框不算实体的 UI
   });
 });

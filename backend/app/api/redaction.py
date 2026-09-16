@@ -5,6 +5,7 @@
 Thin routing layer — business logic lives in
 app.services.redaction_orchestrator.
 """
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,11 +15,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 import app.services.file_management_service as _fms
 import app.services.redaction_orchestrator as _orch
+from app.services.redactor import Redactor
 from app.core.audit import audit_log
 from app.core.auth import require_auth
 from app.core.idempotency import check_idempotency, save_idempotency
 from app.models.schemas import (
     CompareData,
+    LocateEntitiesRequest,
+    LocateEntitiesResponse,
     PreviewEntityMapRequest,
     PreviewEntityMapResponse,
     PreviewImageRequest,
@@ -94,6 +98,36 @@ async def preview_image_redaction(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/redaction/{file_id}/locate-entities", response_model=LocateEntitiesResponse)
+async def locate_entities(
+    file_id: str,
+    body: LocateEntitiesRequest,
+    owner_id: str = Depends(require_auth),
+):
+    """文本型 PDF 打码模式（#66）：把 NER 实体定位为页面归一化框。
+
+    与执行链路共用 locate_entity_texts 核心——预览所见框与执行打码位置
+    零漂移；全文未命中的实体文本返回 missed（前端提示用户手拉框兜底）。
+    """
+    snapshot = await _fms.get_file_snapshot(file_id)
+    if not snapshot or _fms.file_owner_id(snapshot) != owner_id:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    file_path = snapshot.get("file_path")
+    ft = str(snapshot.get("file_type", "")).lower()
+    if not file_path or ft != "pdf":
+        raise HTTPException(status_code=400, detail="仅文本型 PDF 支持实体定位")
+    try:
+        boxes, missed = await asyncio.to_thread(
+            Redactor.locate_entity_texts,
+            file_path,
+            [(e.text, e.type) for e in body.entities if e.text],
+            "ner",
+        )
+    except Exception as exc:  # 加密/损坏 PDF 等，统一 400 供前端提示
+        raise HTTPException(status_code=400, detail=str(exc))
+    return LocateEntitiesResponse(boxes=boxes, missed=missed)
 
 
 @router.get("/redaction/{file_id}/compare", response_model=CompareData)

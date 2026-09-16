@@ -1190,7 +1190,9 @@ const enOverrides: Record<string, string> = {
   'playground.toast.redactDone': 'Redaction complete with {count} items processed.',
   'playground.noContent': 'No content available yet.',
   'playground.previewHint.image': 'Adjust regions, then choose what should be redacted.',
-  'playground.previewHint.pdfMask': 'Mask mode: recognized entities are located and masked on export; draw boxes on the page to cover anything missed.',
+  'playground.previewHint.pdfMask': 'Mask mode: recognized entities are auto-located as boxes you can toggle or adjust; draw extra boxes to cover anything missed.',
+  'playground.locateMissed': '{n} entities could not be auto-located (split across lines etc.); draw boxes manually as fallback.',
+  'playground.locateFailed': 'Entity location failed; draw boxes manually or retry later.',
   'playground.previewHint.text':
     'Review highlights, select text, and refine annotations before export.',
   'playground.updateAnnotation': 'Update annotation',

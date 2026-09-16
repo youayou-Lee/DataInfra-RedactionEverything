@@ -44,7 +44,6 @@ const PlaygroundInner: FC = () => {
     isImageMode,
     entities,
     setBoundingBoxes,
-    boundingBoxes,
     visibleBoxes,
     isLoading,
     loadingMessage,
@@ -220,12 +219,6 @@ const PlaygroundInner: FC = () => {
     () => Object.values(previewCoverageStats).reduce((sum, item) => sum + item.selected, 0),
     [previewCoverageStats],
   );
-
-  // Issue #66 双通道计数进 UI（评审 I2）：文本 PDF 打码模式的执行按钮计数/
-  // 禁用门槛=实体+拉框（与 handleRedact 的阈值同源），纯拉框（0 实体）可执行
-  const selectedBoxCount = boundingBoxes.filter((b) => b.selected !== false).length;
-  const dualSelectedCount = previewCoverageSelectedCount + selectedBoxCount;
-  const dualTotalCount = previewCoverageTotalCount + boundingBoxes.length;
 
   const renderMarkedContent = () => {
     if (!previewContent) {
@@ -419,8 +412,10 @@ const PlaygroundInner: FC = () => {
               </div>
             </div>
 
+            {/* Issue #66：图像工作台（含文本 PDF 打码）右侧=区域列表（ner 框+
+                手拉框），与扫描件同体验；计数走 visibleBoxes 分支 */}
             <PlaygroundEntityPanel
-              isImageMode={isImageMode}
+              isImageMode={isVisualPreview}
               isLoading={isLoading}
               recognitionIssue={recognitionIssue}
               entities={pageFilteredEntities}
@@ -430,18 +425,10 @@ const PlaygroundInner: FC = () => {
               visibleBoxes={visibleBoxes}
               selectedCount={selectedCount}
               displaySelectedCount={
-                isImageMode
-                  ? undefined
-                  : visualMaskPreview
-                    ? dualSelectedCount
-                    : previewCoverageSelectedCount
+                isImageMode ? undefined : previewCoverageSelectedCount
               }
               displayTotalCount={
-                isImageMode
-                  ? undefined
-                  : visualMaskPreview
-                    ? dualTotalCount
-                    : previewCoverageTotalCount
+                isImageMode ? undefined : previewCoverageTotalCount
               }
               displayStats={
                 Object.keys(previewCoverageStats).length > 0 ? previewCoverageStats : undefined

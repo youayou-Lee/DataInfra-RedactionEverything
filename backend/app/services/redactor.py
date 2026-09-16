@@ -248,17 +248,34 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
         实体（跨行断开等）原样返回给调用方，由调用方决定降级路径——
         宁可降级不可静默漏打码。
         """
+        # 执行路径框类型恒为 mask（既有语义）；实体类型仅预览定位端点使用
+        return Redactor.locate_entity_texts(
+            file_path, [(e.text, "mask") for e in entities if e.text], box_type="mask"
+        )
+
+    @staticmethod
+    def locate_entity_texts(
+        file_path: str,
+        text_type_pairs: list[tuple[str, str]],
+        box_type: str = "mask",
+    ) -> tuple[list[BoundingBox], list[str]]:
+        """实体文本 → 页面归一化框（#62 执行定位与 #66 预览定位共用同一核心，
+        保证「所见框」与「执行时打码位置」零漂移）。
+
+        text_type_pairs: [(实体文本, 实体类型)]，按唯一文本去重后全文所有页
+        search_for；返回 (boxes, 全文未命中的文本列表)。
+        """
         boxes: list[BoundingBox] = []
         missed: list[str] = []
         doc = fitz.open(file_path)
         try:
-            unique_texts: list[str] = []
+            unique: list[tuple[str, str]] = []
             seen: set[str] = set()
-            for ent in entities:
-                if ent.text and ent.text not in seen:
-                    seen.add(ent.text)
-                    unique_texts.append(ent.text)
-            for text in unique_texts:
+            for text, etype in text_type_pairs:
+                if text and text not in seen:
+                    seen.add(text)
+                    unique.append((text, etype))
+            for text, etype in unique:
                 found = False
                 for page_no in range(1, len(doc) + 1):
                     page = doc[page_no - 1]
@@ -270,13 +287,13 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
                     for r in rects:
                         boxes.append(
                             BoundingBox(
-                                id=f"mask_{len(boxes)}",
+                                id=f"{box_type}_{len(boxes)}",
                                 x=r.x0 / pw,
                                 y=r.y0 / ph,
                                 width=r.width / pw,
                                 height=r.height / ph,
                                 page=page_no,
-                                type="mask",
+                                type=etype or box_type,
                                 text=text,
                                 selected=True,
                             )

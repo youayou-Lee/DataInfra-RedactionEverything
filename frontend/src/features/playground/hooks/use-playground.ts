@@ -22,7 +22,16 @@ import {
   serializeDraft,
   type PlaygroundDraftSnapshot,
 } from '../lib/playground-draft';
-import { safeJson, buildPseudonymCsv, triggerDownload, boxesForRedactPayload, isVisualPreviewMode } from '../utils';
+import {
+  safeJson,
+  buildPseudonymCsv,
+  triggerDownload,
+  boxesForRedactPayload,
+  isVisualPreviewMode,
+  locateEntityBoxes,
+  mergeNerBoxes,
+  syncEntitiesWithNerBoxes,
+} from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
 import { usePlaygroundFile } from './use-playground-file';
@@ -156,6 +165,43 @@ export function usePlayground() {
     // Issue #66：文本型 PDF 打码模式切图像工作台（页面图+拉框）
     staticPagePreview: textPdfMaskMode,
   });
+
+  // Issue #66 验收反馈：识别实体必须像扫描件一样自动成框（手拉框只是兜底）。
+  // 文本 PDF 打码模式下，识别完成/实体集变化时调用后端 locate-entities
+  // （与执行链路共用定位核心，所见即所打），ner 框并入 boundingBoxes 展示；
+  // 手拉框（manual）保留。按实体文本签名去重，避免模式来回切换反复请求。
+  const locatedSignatureRef = useRef<string | null>(null);
+  const locateEpochRef = useRef(0);
+  useEffect(() => {
+    const fileId = fileCtx.fileInfo?.file_id;
+    const entities = entityCtx.entities;
+    const signature =
+      fileId && textPdfMaskMode && entities.length
+        ? fileId + ':' + [...new Set(entities.map((e) => e.text))].join('\u0001')
+        : null;
+    if (signature === locatedSignatureRef.current) return;
+    locatedSignatureRef.current = signature;
+    if (!signature) return;
+    const epoch = ++locateEpochRef.current;
+    locateEntityBoxes(fileId!, entities)
+      .then(({ boxes, missed }) => {
+        if (epoch !== locateEpochRef.current) return;
+        imageCtx.setBoundingBoxes((prev) => mergeNerBoxes(prev, boxes));
+        if (missed.length) {
+          showToast(
+            t('playground.locateMissed').replace('{n}', String(missed.length)),
+            'info',
+          );
+        }
+      })
+      .catch(() => {
+        if (epoch === locateEpochRef.current) {
+          showToast(t('playground.locateFailed'), 'error');
+        }
+      });
+    // setBoundingBoxes 稳定；entities 以签名为准避免每词抖动重触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textPdfMaskMode, fileCtx.fileInfo?.file_id, entityCtx.entities]);
 
   const { setTypeTab } = recognition;
   useEffect(() => {
@@ -415,14 +461,22 @@ export function usePlayground() {
     fileCtx.setLoadingMessage(t('playground.redacting'));
 
     try {
-      const selectedEntities = entityCtx.entities.filter((e) => e.selected !== false);
+      // Issue #66：mask 模式下实体的选中状态由它的 ner 框代表（框即实体的
+      // UI）；无框实体（定位失败）保持原选中态交后端 residual 兜底
+      const execEntities = textPdfMaskMode
+        ? syncEntitiesWithNerBoxes(entityCtx.entities, imageCtx.boundingBoxes)
+        : entityCtx.entities;
+      const selectedEntities = execEntities.filter((e) => e.selected !== false);
       const selectedBoxes = imageCtx.boundingBoxes.filter((b) => b.selected !== false);
-      // Issue #66：文本型 PDF 打码模式=实体+拉框双通道（后端合并栅格化），
-      // 只拉框不选实体也应可执行（textPdfMaskMode 派生一次多处同源）
+      // 文本型 PDF 打码=实体+拉框双通道；ner 框与其实体同文本只计一次
+      const nerBoxTexts = new Set(
+        imageCtx.boundingBoxes.filter((b) => b.source === 'ner').map((b) => b.text ?? ''),
+      );
       const requestedRedactionItemCount = fileCtx.isImageMode
         ? selectedBoxes.length
         : textPdfMaskMode
-          ? selectedEntities.length + selectedBoxes.length
+          ? selectedBoxes.length +
+            selectedEntities.filter((e) => !nerBoxTexts.has(e.text)).length
           : selectedEntities.length;
 
       const isPseudonym = recognition.processingMode === 'replace' && !fileCtx.isImageMode;
@@ -445,7 +499,7 @@ export function usePlayground() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           file_id: fileId,
-          entities: entityCtx.entities,
+          entities: execEntities,
           // Issue #66 A 案：文本型文件在替换模式下不携带拉框——后端见到
           // 「文本 PDF + 有框」会整份转图像管线栅格化，替换请求会产出错误
           // 成品。框保留在前端状态里，切回打码原样恢复参与执行。

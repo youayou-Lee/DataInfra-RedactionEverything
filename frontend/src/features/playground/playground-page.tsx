@@ -416,6 +416,7 @@ const PlaygroundInner: FC = () => {
                 手拉框），与扫描件同体验；计数走 visibleBoxes 分支 */}
             <PlaygroundEntityPanel
               isImageMode={isVisualPreview}
+              replacementLocked={isImageMode}
               isLoading={isLoading}
               recognitionIssue={recognitionIssue}
               entities={pageFilteredEntities}

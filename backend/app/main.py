@@ -19,9 +19,8 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.types import Message
 
-from app.api import audit as audit_api
-from app.api import auth as auth_api
 from app.api import (
+    admin,
     dicom,
     entity_types,
     files,
@@ -34,6 +33,8 @@ from app.api import (
     vision_pipeline,
     word_pools,
 )
+from app.api import audit as audit_api
+from app.api import auth as auth_api
 from app.api import (
     license as license_api,
 )
@@ -474,6 +475,7 @@ app.include_router(entity_types.router, prefix=settings.API_PREFIX, tags=["文�
 app.include_router(vision_pipeline.router, prefix=settings.API_PREFIX, tags=["图像识别Pipeline管理"], dependencies=[Depends(require_auth)])
 app.include_router(model_config.router, prefix=settings.API_PREFIX, tags=["推理模型配置"], dependencies=[Depends(require_super_admin)])
 app.include_router(ner_backend.router, prefix=settings.API_PREFIX, tags=["文本NER后端"], dependencies=[Depends(require_super_admin)])
+app.include_router(admin.router, prefix=settings.API_PREFIX, tags=["管理控制台"], dependencies=[Depends(require_super_admin)])
 app.include_router(presets.router, prefix=settings.API_PREFIX, tags=["识别配置预设"], dependencies=[Depends(require_auth)])
 app.include_router(word_pools.router, prefix=settings.API_PREFIX, tags=["替换词池"], dependencies=[Depends(require_auth)])
 app.include_router(jobs.router, prefix=settings.API_PREFIX, tags=["批量任务"], dependencies=[Depends(require_auth)])

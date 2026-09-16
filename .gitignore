@@ -141,3 +141,6 @@ node_modules
 # Issue #37 真实案卷私有评测子集：数据与清单含真实 PII/案名，永不入库（铁律）
 eval/datasets/manifest.private.json
 eval/.obsidian/
+
+# git worktree 本地工作区（不在库内）
+.worktrees/

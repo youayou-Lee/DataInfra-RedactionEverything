@@ -237,6 +237,33 @@ class FileStoreDB:
         rows = self._run_with_retry("items_for_owner", op)
         return [(r["file_id"], json.loads(r["data_json"])) for r in rows]
 
+    def count_by_owner(self, *, default_owner: str = "local_user") -> dict[str, int]:
+        """Per-owner file counts for live (non soft-deleted) files.
+
+        Admin console overview (#77). The owner predicate mirrors
+        :meth:`items_for_owner`; deleted_at-exclusion mirrors the
+        ``info.get("deleted_at")`` filter on list hot paths.
+        """
+        def op():
+            with self._lock:
+                with self._connect() as conn:
+                    return conn.execute(
+                        """
+                        SELECT COALESCE(
+                            NULLIF(CAST(json_extract(data_json, '$.owner_id') AS TEXT), ''),
+                            ?
+                        ) AS owner,
+                        COUNT(*) AS c
+                        FROM file_store
+                        WHERE COALESCE(json_extract(data_json, '$.deleted_at'), '') = ''
+                        GROUP BY owner
+                        """,
+                        (default_owner,),
+                    ).fetchall()
+
+        rows = self._run_with_retry("count_by_owner", op)
+        return {r["owner"]: r["c"] for r in rows}
+
     def project_fields(self, fields: tuple[str, ...]) -> list[tuple[str, dict]]:
         """SQL projection: return only the given top-level JSON fields per row.
 

@@ -321,6 +321,33 @@ def get_pipeline_types_for_mode(
     return result
 
 
+def account_disabled_entity_type_ids(owner_id: str | None = None) -> set[str]:
+    """Issue #78：账号级停用的实体类型 id 集（含 custom 项）。"""
+    try:
+        from app.services import entity_type_service as _ets
+    except Exception:
+        return set()
+    return {
+        type_id
+        for type_id, config in _ets._db_for_owner(owner_id).items()
+        if not config.enabled
+    }
+
+
+def filter_types_by_account_enabled(
+    items: list,
+    owner_id: str | None = None,
+) -> list:
+    """按账号启用集过滤流水线类型（OCR+HaS 选择的账号停用上限）。
+
+    视觉专属类型（印章/指纹等，不在实体类型库中）不受影响。
+    """
+    disabled = account_disabled_entity_type_ids(owner_id)
+    if not disabled:
+        return list(items)
+    return [item for item in items if getattr(item, "id", None) not in disabled]
+
+
 def _visible_pipelines(db: dict[str, PipelineConfig]) -> list[PipelineConfig]:
     return [db[key] for key in ("ocr_has", "visual_features") if key in db]
 

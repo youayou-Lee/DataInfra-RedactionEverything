@@ -2456,6 +2456,11 @@ Object.assign(enOverrides, {
 
   // entity-type-list.tsx
   'settings.entityList.systemManaged': 'System managed',
+  'settings.override.enabled': 'Enabled',
+  'settings.override.includeDefault': 'Include in default scope',
+  'settings.override.disabledBadge': 'Disabled',
+  'settings.override.disabledHint': 'Disabled for this account: no recognition path (default scope, any checklist, scanned PDFs) will detect this type',
+  'settings.overrideFailed': 'Failed to update recognition item',
 });
 
 export const en: Record<string, string> = {

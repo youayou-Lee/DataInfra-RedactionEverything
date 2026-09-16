@@ -6,6 +6,13 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PaginationRail } from '@/components/PaginationRail';
+import { Switch } from '@/components/ui/switch';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { getSelectionToneClasses, type SelectionTone } from '@/ui/selectionPalette';
 import { getEntityTypeName } from '@/config/entityTypes';
 import type { EntityTypeConfig } from '../hooks/use-entity-types';
@@ -20,6 +27,11 @@ interface EntityTypeListProps {
   onReset: () => void;
   variant: 'regex' | 'llm';
   compact?: boolean;
+  /** Issue #78：内置识别项账号覆盖位开关；不传则不渲染（其他消费方不受影响） */
+  onOverrideChange?: (
+    type: EntityTypeConfig,
+    patch: { enabled?: boolean; default_enabled?: boolean },
+  ) => void;
 }
 
 export function EntityTypeList({
@@ -30,6 +42,7 @@ export function EntityTypeList({
   onReset,
   variant,
   compact = false,
+  onOverrideChange,
 }: EntityTypeListProps) {
   const t = useT();
   const isRegex = variant === 'regex';
@@ -122,12 +135,15 @@ export function EntityTypeList({
             >
               {visibleTypes.map((type) => {
                 const systemManaged = !type.id.startsWith('custom_');
+                const accountDisabled = type.enabled === false;
+                const showOverrides = Boolean(systemManaged && onOverrideChange);
                 return (
                   <article
                     key={type.id}
                     className={cn(
                       'flex overflow-hidden rounded-[20px] border border-border/70 bg-[var(--surface-control)] px-3.5 py-3.5 shadow-[var(--shadow-sm)] transition-colors hover:border-border',
                       compact ? 'h-[112px]' : 'h-full min-h-0',
+                      showOverrides && accountDisabled && 'opacity-70',
                     )}
                   >
                   <div className="flex min-w-0 flex-1 flex-col gap-2.5">
@@ -167,6 +183,63 @@ export function EntityTypeList({
                         </Button>
                       </div>
                     </div>
+
+                    {showOverrides && (
+                      <TooltipProvider delayDuration={200}>
+                        <div
+                          className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
+                          data-testid={`override-controls-${type.id}`}
+                        >
+                          <label className="flex cursor-pointer items-center gap-1.5">
+                            <Switch
+                              checked={type.enabled !== false}
+                              onCheckedChange={(checked) =>
+                                onOverrideChange?.(type, {
+                                  enabled: checked,
+                                  ...(checked ? {} : { default_enabled: false }),
+                                })
+                              }
+                              aria-label={t('settings.override.enabled')}
+                              data-testid={`toggle-enabled-${type.id}`}
+                            />
+                            <span>{t('settings.override.enabled')}</span>
+                          </label>
+                          <label
+                            className={cn(
+                              'flex items-center gap-1.5',
+                              accountDisabled && 'cursor-not-allowed opacity-50',
+                            )}
+                          >
+                            <Switch
+                              checked={type.default_enabled === true && type.enabled !== false}
+                              disabled={accountDisabled}
+                              onCheckedChange={(checked) =>
+                                onOverrideChange?.(type, { default_enabled: checked })
+                              }
+                              aria-label={t('settings.override.includeDefault')}
+                              data-testid={`toggle-default-${type.id}`}
+                            />
+                            <span>{t('settings.override.includeDefault')}</span>
+                          </label>
+                          {accountDisabled && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge
+                                  variant="secondary"
+                                  className="border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-700 dark:text-amber-400"
+                                  data-testid={`disabled-badge-${type.id}`}
+                                >
+                                  {t('settings.override.disabledBadge')}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {t('settings.override.disabledHint')}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TooltipProvider>
+                    )}
 
                     <div className="min-h-0 flex-1 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

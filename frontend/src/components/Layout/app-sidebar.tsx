@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   Database,
   FileSpreadsheet,
+  LayoutDashboard,
   PackageCheck,
   RefreshCw,
   ScanLine,
@@ -137,6 +138,12 @@ export function AppSidebar() {
     },
     ...(isAdmin
       ? [
+          {
+            path: '/console',
+            label: t('nav.console'),
+            sublabel: t('nav.console.sub'),
+            icon: LayoutDashboard,
+          },
           {
             path: '/settings/system',
             label: t('nav.systemSettings'),

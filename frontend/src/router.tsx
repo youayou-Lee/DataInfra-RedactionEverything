@@ -71,6 +71,9 @@ const PlaygroundImagePopout = React.lazy(() =>
     default: m.PlaygroundImagePopout,
   })),
 );
+const ConsolePage = React.lazy(() =>
+  import('./features/console/console-page').then((m) => ({ default: m.ConsolePage })),
+);
 
 function DelayedSpinner() {
   const [show, setShow] = React.useState(false);
@@ -347,6 +350,14 @@ export const router = createBrowserRouter([
         element: (
           <LazyPage>
             <JobDetailPage />
+          </LazyPage>
+        ),
+      },
+      {
+        path: 'console',
+        element: (
+          <LazyPage>
+            <ConsolePage />
           </LazyPage>
         ),
       },

@@ -427,3 +427,30 @@ def test_locate_numeric_anchor_for_rewritten_case_number(_dirs):
         str(src), [("2022 年01 月25 日受理", "DATE")], "ner", "ner"
     )
     assert "2022 年01 月25 日受理" in missed2, "多数字串文本不得用锚点乱框"
+
+
+def test_locate_finds_all_occurrences_across_forms(_dirs):
+    """同页多形态不短路（#66 复验反馈）：同一日期同页出现两种空格形态
+    （收案行紧排 + 正文跨行），必须全部框出——原样命中一处就停会漏掉
+    其余出现位置。"""
+    up, _ = _dirs
+    src = up / "multi.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "收案时间：2022 年1 月25 日", fontsize=12, fontname="china-s")
+    page.insert_text((72, 200), "我院于2022 年01 月25 日受理该案", fontsize=12, fontname="china-s")
+    # 正文：跨行形态（行尾 2022 年1 月 / 行首 25 日）
+    page.insert_text((72, 300), "于2022 年1 月", fontsize=12, fontname="china-s")
+    page.insert_text((72, 330), "25 日告知当事人", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) >= 2, f"同页多处出现应全部框出（含跨行），实际 {len(boxes)} 框"
+    # 收案行（y≈100）必须有框
+    assert any(b.y < 0.5 for b in boxes), "第一处（收案行）应有框"

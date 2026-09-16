@@ -349,16 +349,37 @@ class Redactor(TextRedactorMixin, ImageRedactorMixin):
     def _locate_text_on_page(page: fitz.Page, text: str) -> list[fitz.Rect]:
         """单页定位一个实体文本：search_for 两趟 + 字符映射 + 数字锚点，
         结果行内合并。"""
+        # 多形态合并不短路（#66 复验反馈）：同一实体文本在页面上可能以多种
+        # 空格/换行形态出现多次（"2022 年1 月25 日"与"2022 年 1 月\n25 日"），
+        # search_for 原样命中一处不代表别处没有——search 两趟 + 字符映射全跑，
+        # 合并去重；数字锚点仅在字面全空时兜底（NER 改写文本专用）。
         rects = list(page.search_for(text))
-        if not rects:
-            nospace = "".join(text.split())
-            if nospace and nospace != text:
-                rects = list(page.search_for(nospace))
-        if not rects:
-            rects = Redactor._locate_via_char_map(page, text)
+        nospace = "".join(text.split())
+        if nospace and nospace != text:
+            rects += list(page.search_for(nospace))
+        rects += Redactor._locate_via_char_map(page, text)
+        rects = Redactor._dedupe_contained(rects)
         if not rects:
             rects = Redactor._locate_via_numeric_anchor(page, text)
         return Redactor._merge_rects_rowwise(rects)
+
+    @staticmethod
+    def _dedupe_contained(rects: list[fitz.Rect]) -> list[fitz.Rect]:
+        """去重：被更大框包含（≥80% 面积）的矩形丢弃（search 与字符映射
+        会对同一处出现各报一个框）。"""
+        if len(rects) <= 1:
+            return list(rects)
+        kept: list[fitz.Rect] = []
+        for r in sorted(rects, key=lambda x: -abs(x)):
+            dup = False
+            for k in kept:
+                inter = fitz.Rect(r) & k
+                if not inter.is_empty and abs(inter) >= 0.8 * abs(r):
+                    dup = True
+                    break
+            if not dup:
+                kept.append(r)
+        return kept
 
     @staticmethod
     def _locate_via_numeric_anchor(page: fitz.Page, text: str) -> list[fitz.Rect]:

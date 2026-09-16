@@ -71,7 +71,9 @@ export function mergeNerBoxes(
   prevBoxes: BoundingBox[],
   locatedBoxes: BoundingBox[],
 ): BoundingBox[] {
-  return [...prevBoxes.filter((b) => b.source !== 'ner'), ...locatedBoxes];
+  // 双保险：source 或 id 前缀任一标记为 ner 即识别框（老部署的框可能缺 source）
+  const isNer = (b: BoundingBox) => b.source === 'ner' || !!b.id?.startsWith('ner_');
+  return [...prevBoxes.filter((b) => !isNer(b)), ...locatedBoxes];
 }
 
 // Issue #66：mask 模式执行时的实体选中同步——实体在图像工作台里的选中
@@ -81,10 +83,11 @@ export function syncEntitiesWithNerBoxes<T extends { text: string; selected?: bo
   entities: T[],
   boxes: BoundingBox[],
 ): T[] {
+  const isNer = (b: BoundingBox) => b.source === 'ner' || !!b.id?.startsWith('ner_');
   const nerSelectedTexts = new Set(
-    boxes.filter((b) => b.source === 'ner' && b.selected !== false).map((b) => b.text ?? ''),
+    boxes.filter((b) => isNer(b) && b.selected !== false).map((b) => b.text ?? ''),
   );
-  const nerAllTexts = new Set(boxes.filter((b) => b.source === 'ner').map((b) => b.text ?? ''));
+  const nerAllTexts = new Set(boxes.filter((b) => isNer(b)).map((b) => b.text ?? ''));
   return entities.map((e) => ({
     ...e,
     selected: nerAllTexts.has(e.text) ? nerSelectedTexts.has(e.text) : e.selected,

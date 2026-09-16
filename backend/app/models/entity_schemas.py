@@ -98,7 +98,7 @@ class BoundingBox(BaseModel):
     # vLLM decoder's logprobs). Never substitute a constant: the UI renders a
     # number as a measurement.
     confidence: float | None = Field(default=None, description="Detection confidence, if measured")
-    source: Literal["ocr_has", "visual_features", "manual"] | None = Field(
+    source: Literal["ocr_has", "visual_features", "manual", "ner"] | None = Field(
         default=None,
         description="Detection source",
     )

@@ -124,6 +124,7 @@ async def locate_entities(
             file_path,
             [(e.text, e.type) for e in body.entities if e.text],
             "ner",
+            "ner",  # source：前端据此区分识别框/手拉框（显示与执行同步都靠它）
         )
     except Exception as exc:  # 加密/损坏 PDF 等，统一 400 供前端提示
         raise HTTPException(status_code=400, detail=str(exc))

@@ -366,3 +366,36 @@ def test_soffice_staging_root_snap_vs_nonsnap():
     assert TextRedactorMixin._soffice_staging_root("/usr/bin/soffice") == os.path.join(
         _tmp.gettempdir(), "redaction-soffice"
     )
+
+
+def test_locate_merges_fragmented_rects_and_handles_spaces(_dirs):
+    """定位核心空白鲁棒（#66 验收反馈）：WPS/LibreOffice 文本层的怪空格
+    会让 search_for 返回逐字块碎矩形（一个日期 6 框）或 0 命中——
+    ①行内合并成整框；②双向空白归一化兜底。"""
+    up, _ = _dirs
+    src = up / "sp.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    # 模拟 WPS 产物：日期带怪空格
+    page.insert_text((72, 130), "签署日期：2022 年1 月25 日 由双方确认", fontsize=12, fontname="china-s")
+    doc.save(str(src))
+    doc.close()
+
+    from app.services.redactor import Redactor
+
+    # ① NER 返回带空格形态（与页面一致）→ 原样命中，碎矩形行内合并为 1 框
+    boxes, missed = Redactor.locate_entity_texts(
+        str(src), [("2022 年1 月25 日", "DATE")], "ner", "ner"
+    )
+    assert not missed
+    assert len(boxes) == 1, f"碎矩形应行内合并为 1 框，实际 {len(boxes)}"
+
+    # ② NER 返回无空格形态（与页面不一致）→ 字符映射兜底仍命中
+    boxes2, missed2 = Redactor.locate_entity_texts(
+        str(src), [("2022年1月25日", "DATE")], "ner", "ner"
+    )
+    assert not missed2, "无空格形态应经字符映射兜底命中"
+    assert len(boxes2) == 1
+
+    # ③ source 透传
+    assert boxes[0].source == "ner"

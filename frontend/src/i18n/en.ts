@@ -1131,8 +1131,8 @@ const enOverrides: Record<string, string> = {
     'Configure image recognition items in Recognition Item Settings, then come back here to pick them.',
   'playground.popout': 'Pop out',
   'playground.reRecognize': 'Run recognition again',
-  'playground.presetRerunTitle': 'Change recognition preset',
-  'playground.presetRerunConfirm': 'Recognition will re-run with the new preset. Current recognition results and manual annotations (including drawn boxes) will be cleared. Continue?',
+  'playground.reconfigTypes': 'Adjust recognition items',
+  'playground.reconfigHint': 'Go back to the upload page to pick a preset or tick recognition items, then upload the file to recognize',
   'playground.recognitionSection': 'Recognition',
   'playground.recognitionSectionDesc':
     'Refresh detection after updating the recognition list or item settings.',

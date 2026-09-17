@@ -1,0 +1,1325 @@
+{
+  "suite": "full",
+  "cells": [
+    {
+      "cell_id": "txt×mask",
+      "format": "txt",
+      "mode": "mask",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 166
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "txt 无载体完整性校验（文本族）"
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.33,
+      "error": null
+    },
+    {
+      "cell_id": "txt×pseudonym",
+      "format": "txt",
+      "mode": "pseudonym",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 166
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "txt 无载体完整性校验（文本族）"
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.94,
+      "error": null
+    },
+    {
+      "cell_id": "docx×mask",
+      "format": "docx",
+      "mode": "mask",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 163
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "paragraphs": 8
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.43,
+      "error": null
+    },
+    {
+      "cell_id": "docx×pseudonym",
+      "format": "docx",
+      "mode": "pseudonym",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 163
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "paragraphs": 8
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 11.83,
+      "error": null
+    },
+    {
+      "cell_id": "text_pdf×mask",
+      "format": "text_pdf",
+      "mode": "mask",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 185
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "pages": 1,
+              "expect_pages": 1
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 20.09,
+      "error": null
+    },
+    {
+      "cell_id": "text_pdf×pseudonym",
+      "format": "text_pdf",
+      "mode": "pseudonym",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 185
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "pages": 1,
+              "expect_pages": 1
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 14.98,
+      "error": null
+    },
+    {
+      "cell_id": "scanned_pdf×mask",
+      "format": "scanned_pdf",
+      "mode": "mask",
+      "group": "基线",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "pages": 1,
+              "expect_pages": 1
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 15.71,
+      "error": null
+    },
+    {
+      "cell_id": "md×mask",
+      "format": "md",
+      "mode": "mask",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 177
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "md 无载体完整性校验（文本族）"
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.68,
+      "error": null
+    },
+    {
+      "cell_id": "md×pseudonym",
+      "format": "md",
+      "mode": "pseudonym",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 177
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "md 无载体完整性校验（文本族）"
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.42,
+      "error": null
+    },
+    {
+      "cell_id": "html×mask",
+      "format": "html",
+      "mode": "mask",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 169
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "html 无载体完整性校验（文本族）"
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 11.19,
+      "error": null
+    },
+    {
+      "cell_id": "html×pseudonym",
+      "format": "html",
+      "mode": "pseudonym",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 169
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "html 无载体完整性校验（文本族）"
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.6,
+      "error": null
+    },
+    {
+      "cell_id": "htm×mask",
+      "format": "htm",
+      "mode": "mask",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 169
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "htm 无载体完整性校验（文本族）"
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 11.27,
+      "error": null
+    },
+    {
+      "cell_id": "htm×pseudonym",
+      "format": "htm",
+      "mode": "pseudonym",
+      "group": "文本类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 169
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "htm 无载体完整性校验（文本族）"
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 5
+            },
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 10.63,
+      "error": null
+    },
+    {
+      "cell_id": "rtf×mask",
+      "format": "rtf",
+      "mode": "mask",
+      "group": "文本类（P1 风险：\\uN 转义）",
+      "status": "FAIL",
+      "fail_class": "hard",
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 327
+          }
+        },
+        "g3": {
+          "status": "FAIL",
+          "detail": {
+            "recall": 0.0,
+            "hit": 0,
+            "total": 5,
+            "missing": [
+              {
+                "type": "姓名",
+                "value": "赵涛洋"
+              },
+              {
+                "type": "姓名",
+                "value": "钱霞娜"
+              },
+              {
+                "type": "身份证号",
+                "value": "110118197712242590"
+              },
+              {
+                "type": "电话",
+                "value": "14145904781"
+              },
+              {
+                "type": "地址",
+                "value": "上海市浦东新区世纪大道39号院5号楼102室"
+              }
+            ],
+            "exact_misses": [
+              {
+                "type": "身份证号",
+                "value": "110118197712242590"
+              },
+              {
+                "type": "电话",
+                "value": "14145904781"
+              }
+            ],
+            "reason": "召回 0% < 80%"
+          }
+        },
+        "g4": {
+          "status": "FAIL",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "rtf 无载体完整性校验（文本族）"
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": [],
+            "problems": [
+              "成品残留原文 2 处: ['110118197712242590', '14145904781']"
+            ]
+          }
+        }
+      },
+      "g3_recall": 0.0,
+      "wall_s": 4.94,
+      "error": null
+    },
+    {
+      "cell_id": "rtf×pseudonym",
+      "format": "rtf",
+      "mode": "pseudonym",
+      "group": "文本类（P1 风险：\\uN 转义）",
+      "status": "FAIL",
+      "fail_class": "hard",
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "chars": 327
+          }
+        },
+        "g3": {
+          "status": "FAIL",
+          "detail": {
+            "recall": 0.0,
+            "hit": 0,
+            "total": 5,
+            "missing": [
+              {
+                "type": "姓名",
+                "value": "赵涛洋"
+              },
+              {
+                "type": "姓名",
+                "value": "钱霞娜"
+              },
+              {
+                "type": "身份证号",
+                "value": "110118197712242590"
+              },
+              {
+                "type": "电话",
+                "value": "14145904781"
+              },
+              {
+                "type": "地址",
+                "value": "上海市浦东新区世纪大道39号院5号楼102室"
+              }
+            ],
+            "exact_misses": [
+              {
+                "type": "身份证号",
+                "value": "110118197712242590"
+              },
+              {
+                "type": "电话",
+                "value": "14145904781"
+              }
+            ],
+            "reason": "召回 0% < 80%"
+          }
+        },
+        "g4": {
+          "status": "FAIL",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "note": "rtf 无载体完整性校验（文本族）"
+            },
+            "pseudonym": {
+              "ok": true,
+              "missing": [],
+              "not_in_product": [],
+              "mapped": 0
+            },
+            "rescan_pages": 1,
+            "rescan_findings": [],
+            "problems": [
+              "成品残留原文 2 处: ['110118197712242590', '14145904781']"
+            ]
+          }
+        }
+      },
+      "g3_recall": 0.0,
+      "wall_s": 5.18,
+      "error": null
+    },
+    {
+      "cell_id": "doc×mask",
+      "format": "doc",
+      "mode": "mask",
+      "group": "文本类（P1 风险：LibreOffice 依赖）",
+      "status": "FAIL",
+      "fail_class": "hard",
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "FAIL",
+          "detail": {
+            "reason": "命中解析兜底文案: [无法解析 .doc 文件…（转换链不可用）"
+          }
+        }
+      },
+      "g3_recall": null,
+      "wall_s": 0.15,
+      "error": null
+    },
+    {
+      "cell_id": "doc×pseudonym",
+      "format": "doc",
+      "mode": "pseudonym",
+      "group": "文本类（P1 风险：LibreOffice 依赖）",
+      "status": "SKIP",
+      "fail_class": null,
+      "gates": {},
+      "g3_recall": null,
+      "wall_s": 0.0,
+      "error": null,
+      "note": "同格式打码格 G1/G2 FAIL，上游不可用"
+    },
+    {
+      "cell_id": "jpg×mask",
+      "format": "jpg",
+      "mode": "mask",
+      "group": "图片类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 16.02,
+      "error": null
+    },
+    {
+      "cell_id": "jpeg×mask",
+      "format": "jpeg",
+      "mode": "mask",
+      "group": "图片类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 15.3,
+      "error": null
+    },
+    {
+      "cell_id": "png×mask",
+      "format": "png",
+      "mode": "mask",
+      "group": "图片类",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 14.36,
+      "error": null
+    },
+    {
+      "cell_id": "bmp×mask",
+      "format": "bmp",
+      "mode": "mask",
+      "group": "图片类（P2 风险）",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 14.2,
+      "error": null
+    },
+    {
+      "cell_id": "gif×mask",
+      "format": "gif",
+      "mode": "mask",
+      "group": "图片类（P2 风险）",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 13.92,
+      "error": null
+    },
+    {
+      "cell_id": "webp×mask",
+      "format": "webp",
+      "mode": "mask",
+      "group": "图片类（P2 风险）",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 18.9,
+      "error": null
+    },
+    {
+      "cell_id": "tif×mask",
+      "format": "tif",
+      "mode": "mask",
+      "group": "图片类（P2 风险）",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 14.43,
+      "error": null
+    },
+    {
+      "cell_id": "tiff×mask",
+      "format": "tiff",
+      "mode": "mask",
+      "group": "图片类（P2 风险）",
+      "status": "PASS",
+      "fail_class": null,
+      "gates": {
+        "g1": {
+          "status": "PASS",
+          "detail": {}
+        },
+        "g2": {
+          "status": "PASS",
+          "detail": {
+            "boxes": 5
+          }
+        },
+        "g3": {
+          "status": "PASS",
+          "detail": {
+            "recall": 1.0,
+            "hit": 5,
+            "total": 5,
+            "missing": [],
+            "exact_misses": []
+          }
+        },
+        "g4": {
+          "status": "PASS",
+          "detail": {
+            "integrity": {
+              "ok": true,
+              "size": [
+                1240,
+                1754
+              ],
+              "expect_size": [
+                1240,
+                1754
+              ]
+            },
+            "pseudonym": null,
+            "rescan_pages": 1,
+            "rescan_findings": []
+          }
+        }
+      },
+      "g3_recall": 1.0,
+      "wall_s": 14.09,
+      "error": null
+    }
+  ],
+  "anomalies": [
+    {
+      "case_id": "truncated_docx",
+      "expect": "截断 docx → 结构化错误",
+      "status": "FAIL",
+      "observations": [
+        "upload HTTP 200",
+        "parse HTTP 500，content 0 字"
+      ],
+      "error": null
+    },
+    {
+      "case_id": "fake_ext_pdf",
+      "expect": "txt 内容伪造 .pdf 扩展名",
+      "status": "PASS",
+      "observations": [
+        "upload HTTP 400（{\"error_code\":\"HTTP_400\",\"message\":\"文件内容与扩展名 .pdf 不匹配，可能是伪造文件\",\"detail\":{},\"request_id\":\"2bb6178dfea3\"}）"
+      ],
+      "error": null
+    },
+    {
+      "case_id": "truncated_png",
+      "expect": "截断 png → 结构化错误",
+      "status": "FAIL",
+      "observations": [
+        "upload HTTP 200",
+        "vision 200，检出 0 框"
+      ],
+      "error": null
+    },
+    {
+      "case_id": "empty_txt",
+      "expect": "0 字节 txt",
+      "status": "FAIL",
+      "observations": [
+        "upload HTTP 200",
+        "parse HTTP 200，content 0 字"
+      ],
+      "error": null
+    },
+    {
+      "case_id": "oversize",
+      "expect": "51MB 超 50MB 上限 → 明确拒绝",
+      "status": "PASS",
+      "observations": [
+        "upload HTTP 400（{\"error_code\":\"HTTP_400\",\"message\":\"文件过大，最大支持 50MB\",\"detail\":{},\"request_id\":\"4fa0775670e2\"}）"
+      ],
+      "error": null
+    }
+  ],
+  "tiers": {
+    "txt": "承诺支持",
+    "docx": "承诺支持",
+    "text_pdf": "承诺支持",
+    "scanned_pdf": "承诺支持",
+    "md": "承诺支持",
+    "html": "承诺支持",
+    "htm": "承诺支持",
+    "rtf": "前端禁用",
+    "doc": "前端禁用",
+    "jpg": "承诺支持",
+    "jpeg": "承诺支持",
+    "png": "承诺支持",
+    "bmp": "承诺支持",
+    "gif": "承诺支持",
+    "webp": "承诺支持",
+    "tif": "承诺支持",
+    "tiff": "承诺支持"
+  },
+  "summary": {
+    "cells_total": 25,
+    "cells_pass": 21,
+    "cells_fail": 3,
+    "cells_skip": 1,
+    "cells_error": 0,
+    "anomalies_pass": 2,
+    "anomalies_total": 5,
+    "tiers_pass": 15
+  },
+  "meta": {
+    "base_url": "http://127.0.0.1:18000",
+    "suite": "full",
+    "env": "scnet-main",
+    "started_at": "2026-09-15T16:42:56",
+    "finished_at": "2026-09-15T16:47:54",
+    "cleanup": true
+  }
+}

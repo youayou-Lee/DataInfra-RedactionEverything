@@ -142,5 +142,16 @@ node_modules
 eval/datasets/manifest.private.json
 eval/.obsidian/
 
+<<<<<<< HEAD
+# Issue #46 格式矩阵运行时产物（成品下载/异常样件）
+eval/.format-matrix-tmp/
+=======
+# git worktree 本地工作区（不在库内）
+.worktrees/
+>>>>>>> origin/preview
+
+# Issue #46 格式矩阵运行时产物（成品下载/异常样件）
+eval/.format-matrix-tmp/
+
 # git worktree 本地工作区（不在库内）
 .worktrees/

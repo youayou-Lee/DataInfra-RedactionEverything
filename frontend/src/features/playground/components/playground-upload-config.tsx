@@ -23,10 +23,13 @@ const CONFIG_TILE_GRID_CLASS =
   'grid min-h-0 flex-1 content-start auto-rows-[2.42rem] grid-cols-2 gap-1.5 p-2 sm:grid-cols-3 xl:grid-cols-4';
 const TEXT_REGEX_TILE_GRID_CLASS =
   'grid shrink-0 auto-rows-[2.42rem] grid-cols-2 gap-1.5 p-2 sm:grid-cols-3 xl:grid-cols-4';
+// Rows stretch to share spare height when the group is tall, but never drop
+// below the chip height — on shorter viewports the grid scrolls within the
+// group instead of chips painting over the pinned pagination rail (issue #90).
 const TEXT_SEMANTIC_TILE_GRID_CLASS =
-  'grid min-h-0 flex-1 content-evenly auto-rows-[2.42rem] grid-cols-2 gap-1.5 p-2 sm:grid-cols-3 xl:grid-cols-4';
+  'grid min-h-0 flex-1 auto-rows-[minmax(2.42rem,1fr)] grid-cols-2 gap-1.5 overflow-y-auto p-2 sm:grid-cols-3 xl:grid-cols-4';
 const VISION_TILE_GRID_CLASS =
-  'grid min-h-0 flex-1 content-evenly auto-rows-[2.42rem] grid-cols-2 gap-1.5 p-2 sm:grid-cols-3 xl:grid-cols-4';
+  'grid min-h-0 flex-1 auto-rows-[minmax(2.42rem,1fr)] grid-cols-2 gap-1.5 overflow-y-auto p-2 sm:grid-cols-3 xl:grid-cols-4';
 const CONFIG_BUBBLE_CLASS =
   'flex min-h-[2.42rem] min-w-0 cursor-pointer items-center gap-1.5 self-stretch overflow-hidden rounded-xl border px-2.5 py-1.5 text-[11px] leading-4 transition-colors';
 

@@ -23,8 +23,51 @@ const zhBase: Record<string, string> = {
   'nav.recognitionSettings.sub': '原子识别项',
   'nav.systemSettings': '系统设置',
   'nav.systemSettings.sub': '运行与权限',
+  'nav.console': '控制台',
+  'nav.console.sub': '用户与文件总览',
   'nav.textModel': '文本识别服务',
   'nav.visionModel': '图像识别服务',
+
+  'console.title': '管理控制台',
+  'console.subtitle': '查看注册用户与上传文件，用于复现用户反馈的问题。',
+  'console.forbidden': '需要管理员权限。',
+  'console.error.loadUsers': '用户列表加载失败',
+  'console.error.loadFiles': '文件列表加载失败',
+  'console.error.download': '下载失败，请重试',
+  'console.searchPlaceholder': '按用户名过滤',
+  'console.usersTitle': '注册用户',
+  'console.filesTitle': '上传文件',
+  'console.col.username': '用户名',
+  'console.col.role': '角色',
+  'console.col.registeredAt': '注册时间',
+  'console.col.status': '状态',
+  'console.col.fileCount': '文件数',
+  'console.col.filename': '文件名',
+  'console.col.fileType': '类型',
+  'console.col.fileSize': '大小',
+  'console.col.uploadedAt': '上传时间',
+  'console.col.source': '来源',
+  'console.col.actions': '操作',
+  'console.status.active': '正常',
+  'console.status.disabled': '已禁用',
+  'console.role.super_admin': '管理员',
+  'console.role.reviewer': '审核员',
+  'console.role.user': '普通用户',
+  'console.role.operator': '操作员',
+  'console.role.viewer': '只读',
+  'console.source.playground': '单文件',
+  'console.source.batch': '批量',
+  'console.download': '下载原文件',
+  'console.downloading': '下载中...',
+  'console.hasOutput': '已出成品',
+  'console.selectUserHint': '点击上方用户行，查看该用户上传的文件。',
+  'console.empty.users': '暂无注册用户',
+  'console.empty.usersHint': '用户自助注册后会出现在这里。',
+  'console.empty.files': '该用户暂无上传文件',
+  'console.empty.filesHint': '该用户上传文件后会显示在这里。',
+  'console.prevPage': '上一页',
+  'console.nextPage': '下一页',
+  'console.pageOf': '第 {page} / {total} 页',
 
   'playground.title': '处理单个文件',
   'playground.recognizing': '正在识别...',
@@ -89,6 +132,7 @@ const zhBase: Record<string, string> = {
 
   'mode.smart': '智能替换',
   'mode.mask': '掩码替换',
+  'mode.maskPdfOnly': '打码仅支持 PDF 文件',
   'mode.structured': '结构化标签',
   'mode.pseudonym': '化名替换',
 
@@ -100,6 +144,8 @@ const zhBase: Record<string, string> = {
   'playground.processingModeReplaceUnavailable': '扫描件 / 图片暂不可用',
   'playground.processingModeScannedNotice':
     '扫描型 PDF / 图片暂未上线替换（化名），当前仅支持打码。',
+  'playground.processingModeMaskPdfNotice':
+    '打码（掩码）仅支持 PDF 文件；当前文件请使用「替换」方式。',
   'playground.pseudonymMap': '化名映射',
   'playground.pseudonymMapDesc': '确认每个敏感项的替换词后执行，成品即所见；对照表随导出提供。',
   'playground.pseudonymLoading': '生成默认化名中…',
@@ -510,7 +556,7 @@ const zhBase: Record<string, string> = {
   'batchWizard.step2.dropHintSmart':
     '支持 Word (.docx)、文本 (.txt)、PDF、图片 (.jpg .png)，系统自动识别文件类型',
   'batchWizard.step2.dropHintImage': '支持图片 (.jpg .png) 和扫描件 PDF',
-  'batchWizard.step2.dropHintText': '支持 Word (.docx .doc) 和 PDF 文档',
+  'batchWizard.step2.dropHintText': '支持 Word (.docx) 和 PDF 文档',
   'batchWizard.step2.jobLinked': '当前任务工单',
   'batchWizard.step2.uploadQueue': '上传队列',
   'batchWizard.step2.queueCount': '当前共 {count} 个文件',
@@ -719,6 +765,8 @@ const zhBase: Record<string, string> = {
   'batchWizard.reviewSaveBeforeNavigateFailed': '当前审阅修改保存失败，已阻止切换文件。',
   'batchWizard.reviewSaveBeforeExportFailed':
     '当前审阅修改保存失败，已阻止导出以避免使用过期的脱敏结果。',
+  'batchWizard.maskDowngraded':
+    '打码模式仅支持 PDF 文件；本批次包含其他格式，已自动切换为智能替换。',
   'batchWizard.configLocked':
     '该批次的配置清单已锁定，因为识别已经开始；如需修改清单、识别项组合或打码方式，请新建批处理任务。',
   'batchWizard.noActiveJob': '当前没有可用的任务。',
@@ -957,7 +1005,7 @@ const zhOverrides: Record<string, string> = {
     '先运行 npm run doctor，再启动 npm run dev:models 或重启上面列出的服务。',
   'playground.dropHere': '把文件拖到这里上传',
   'playground.supportedFormats':
-    '支持 .doc、.docx、.txt、.md、.html、.pdf、.jpg、.png、.webp、.tif 等格式',
+    '支持 .docx、.txt、.md、.html、.pdf、.jpg、.png 等格式（.doc 请先另存为 .docx）',
   'playground.clickToUpload': '或点击选择文件',
   'playground.upload.rejectInvalidType': '{filename} 暂不支持。请选择 Word、文本、PDF 或图片文件。',
   'playground.upload.rejectTooLarge': '{filename} 超过 {max}，请选择更小的文件。',
@@ -990,6 +1038,8 @@ const zhOverrides: Record<string, string> = {
   'playground.visionConfigEmptyDesc': '可以先去识别项设置里配置图像识别项，再回到单文件处理选择。',
   'playground.popout': '独立窗口',
   'playground.reRecognize': '重新识别',
+  'playground.reconfigTypes': '调整识别项',
+  'playground.reconfigHint': '回到上传页，重新选择配置清单或勾选识别项，再上传文件识别',
   'playground.recognitionSection': '识别',
   'playground.recognitionSectionDesc':
     '修改配置清单或识别项设置后，可以重新刷新当前文件的识别结果。',
@@ -1031,6 +1081,7 @@ const zhOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     '当前所有结果都已取消选择。请至少勾选一项，或返回列表确认是否需要匿名化。',
   'playground.sourceOcr': '图片文字',
+  'playground.sourceNer': '识别',
   'playground.needsReview': '待确认',
   'playground.confidenceHint':
     '模型对这个框的把握程度(由识别时的逐词概率算出)。低于50%表示模型自己也在猜，建议人工过一眼。',
@@ -1082,6 +1133,9 @@ const zhOverrides: Record<string, string> = {
   'playground.toast.redactDone': '匿名化完成，共处理 {count} 处。',
   'playground.noContent': '暂时还没有可展示的内容。',
   'playground.previewHint.image': '调整或补充区域，再决定哪些内容需要匿名化。',
+  'playground.previewHint.pdfMask': '打码模式：识别实体已自动定位为框，可勾选/调整；遗漏处可直接在页面上拉框补充。',
+  'playground.locateMissed': '{n} 个实体未能自动定位（跨行断开等），可在页面上手动拉框兜底。',
+  'playground.locateFailed': '实体定位失败，可手动拉框兜底或稍后重试。',
   'playground.previewHint.text': '查看高亮、选取文本并修正标注后再导出。',
   'playground.updateAnnotation': '更新标注',
   'playground.addAnnotation': '添加标注',
@@ -2389,6 +2443,11 @@ Object.assign(zhOverrides, {
 
   // entity-type-list.tsx
   'settings.entityList.systemManaged': '系统配置',
+  'settings.override.enabled': '启用',
+  'settings.override.includeDefault': '纳入默认识别范围',
+  'settings.override.disabledBadge': '已停用',
+  'settings.override.disabledHint': '已在本账号停用：所有识别路径（默认范围、任何清单、扫描件）均不再识别该类型',
+  'settings.overrideFailed': '识别项设置失败',
 });
 
 export const zh: Record<string, string> = {

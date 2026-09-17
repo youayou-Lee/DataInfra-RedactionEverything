@@ -56,4 +56,11 @@ export const queryKeys = {
     /** Key for a specific entity-set + replacement-mode combination. */
     entityMap: (contentHash: string) => ['batchPreview', 'entityMap', contentHash] as const,
   },
+
+  // ── Admin console (#77) ──────────────────────────────────────────────────
+  admin: {
+    users: () => ['admin', 'users'] as const,
+    userFiles: (username: string, page: number) =>
+      ['admin', 'userFiles', username, page] as const,
+  },
 } as const;

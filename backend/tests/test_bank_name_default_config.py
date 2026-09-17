@@ -11,14 +11,14 @@ def test_bank_name_is_first_class_type():
     assert [item.id for item in resolve_requested_entity_types(["BANK_NAME"])] == ["BANK_NAME"]
 
 
-def test_bank_name_is_available_but_not_in_narrowed_text_defaults():
+def test_bank_name_is_available_and_default_enabled():
+    # Issue #66 验收决策（2026-09-16，用户拍板"质量优先"）：默认集从核心 9 类
+    # 扩到 18 类，BANK_NAME（涉资金流水案件高频）进入默认勾选。
     default_ids = {item.id for item in get_default_generic_types()}
     assert "GEN_NUMBER_CODE" not in default_ids
     assert "GEN_ACCOUNT_TRANSACTION" not in default_ids
     assert "PERSON" in default_ids
-    # The default generic schema was narrowed to the core 9 types; BANK_NAME
-    # stays opt-in for text but remains enabled in the OCR+HaS pipeline.
-    assert "BANK_NAME" not in default_ids
+    assert "BANK_NAME" in default_ids
     assert "BANK_NAME" in {item.id for item in get_pipeline_types_for_mode("ocr_has", enabled_only=True)}
 
 

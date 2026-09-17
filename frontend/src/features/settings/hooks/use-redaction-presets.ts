@@ -166,16 +166,24 @@ export function useRedactionPresets() {
   );
   const regexTypes = useMemo(
     () =>
+      // Issue #78：账号停用的项保留在清单编辑中（灰显不可勾），运行时由后端兜底过滤
       effectiveEntityTypes.filter(
-        (type) => type.enabled !== false && type.id.startsWith('custom_') && type.regex_pattern,
+        (type) => type.id.startsWith('custom_') && type.regex_pattern,
       ),
     [effectiveEntityTypes],
   );
   const semanticTypes = useMemo(
     () =>
       effectiveEntityTypes.filter(
-        (type) => type.enabled !== false && type.use_llm && !type.regex_pattern,
+        (type) => type.use_llm && !type.regex_pattern,
       ),
+    [effectiveEntityTypes],
+  );
+  const accountDisabledIds = useMemo(
+    () =>
+      effectiveEntityTypes
+        .filter((type) => type.enabled === false)
+        .map((type) => type.id),
     [effectiveEntityTypes],
   );
 
@@ -375,6 +383,7 @@ export function useRedactionPresets() {
     visionPresets,
     regexTypes,
     semanticTypes,
+    accountDisabledIds,
     defaultTextPreset,
     defaultVisionPreset,
     summaryTextLabel,

@@ -29,6 +29,9 @@ export interface EntityTypeConfig {
   enabled?: boolean;
   order?: number;
   tag_template?: string | null;
+  /** Issue #78：内置项的系统默认快照（自定义项为 undefined） */
+  system_enabled?: boolean | null;
+  system_default_enabled?: boolean | null;
 }
 
 export interface TextTaxonomyTarget {
@@ -199,12 +202,11 @@ export function useEntityTypes() {
     [entityTypes],
   );
   // Text rules list: LLM (semantic) types plus custom regex-fallback types (use_llm=false).
+  // Issue #78：账号停用的内置项保留在列表中（灰显、可重新启用），不再"停用即消失"。
   const textRuleTypes = useMemo(
     () =>
       entityTypes.filter(
-        (t) =>
-          t.enabled !== false &&
-          (t.use_llm || (t.id.startsWith('custom_') && Boolean(t.regex_pattern))),
+        (t) => t.use_llm || (t.id.startsWith('custom_') && Boolean(t.regex_pattern)),
       ),
     [entityTypes],
   );
@@ -405,6 +407,26 @@ export function useEntityTypes() {
     if (res.ok) await fetchPipelines();
   }, [fetchPipelines]);
 
+  // Issue #78：内置识别项的账号覆盖位（enabled / default_enabled），PATCH 部分更新。
+  const updateTypeOverride = useCallback(
+    async (id: string, patch: { enabled?: boolean; default_enabled?: boolean }) => {
+      const res = await authFetch(`/api/v1/custom-types/${id}/override`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        await fetchEntityTypes();
+        window.dispatchEvent(new CustomEvent('entity-types-changed'));
+        return true;
+      }
+      const d = await res.json().catch(() => ({}));
+      showToast(d.detail || t('settings.overrideFailed'), 'error');
+      return false;
+    },
+    [fetchEntityTypes],
+  );
+
   const handleExportPresets = useCallback(async () => {
     try {
       const res = await fetchWithTimeout('/api/v1/presets/export', { timeoutMs: 15000 });
@@ -455,6 +477,7 @@ export function useEntityTypes() {
     importFileRef,
     createType,
     updateType,
+    updateTypeOverride,
     deleteType,
     resetToDefault,
     createPipelineType,

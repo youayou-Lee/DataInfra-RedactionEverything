@@ -22,7 +22,16 @@ import {
   serializeDraft,
   type PlaygroundDraftSnapshot,
 } from '../lib/playground-draft';
-import { safeJson, buildPseudonymCsv, triggerDownload } from '../utils';
+import {
+  safeJson,
+  buildPseudonymCsv,
+  triggerDownload,
+  boxesForRedactPayload,
+  isVisualPreviewMode,
+  locateEntityBoxes,
+  mergeNerBoxes,
+  syncEntitiesWithNerBoxes,
+} from '../utils';
 import type { RedactionResult } from '../types';
 import { usePlaygroundEntities } from './use-playground-entities';
 import { usePlaygroundFile } from './use-playground-file';
@@ -85,6 +94,10 @@ export function usePlayground() {
     null,
   );
   const pseudonymEpochRef = useRef(0);
+  // 用户在映射表手动改过的原文键：重新识别刷新自动映射时不覆盖
+  const pseudonymUserEditedRef = useRef<Set<string>>(new Set());
+  // 上次成功拉取映射时的实体集签名：变化（重新识别）则刷新全部自动映射
+  const pseudonymEntitySigRef = useRef<string>('');
 
   const getRecognitionBlocker = useCallback(
     (file: { fileType: string; isScanned: boolean; content: string }) => {
@@ -127,11 +140,73 @@ export function usePlayground() {
     getRecognitionBlocker,
   });
 
+  // Issue #66：文本型 PDF + 打码 = 图像工作台。派生一次多处复用（评审 M7：
+  // 三处独立重算会漂移——工作台/历史语义/执行阈值必须同源）
+  const textPdfMaskMode = useMemo(
+    () =>
+      !fileCtx.isImageMode &&
+      isVisualPreviewMode(
+        fileCtx.fileInfo?.file_type,
+        Boolean(fileCtx.fileInfo?.is_scanned),
+        recognition.processingMode,
+      ),
+    [
+      fileCtx.isImageMode,
+      fileCtx.fileInfo?.file_type,
+      fileCtx.fileInfo?.is_scanned,
+      recognition.processingMode,
+    ],
+  );
+
   const imageCtx = usePlaygroundImage({
     fileInfo: fileCtx.fileInfo,
     redactionVersion,
     showRedactedPreview: fileCtx.stage === 'result',
+    // Issue #66：文本型 PDF 打码模式切图像工作台（页面图+拉框）
+    staticPagePreview: textPdfMaskMode,
   });
+
+  // Issue #66 验收反馈：识别实体必须像扫描件一样自动成框（手拉框只是兜底）。
+  // 文本 PDF 打码模式下，识别完成/实体集变化时调用后端 locate-entities
+  // （与执行链路共用定位核心，所见即所打），ner 框并入 boundingBoxes 展示；
+  // 手拉框（manual）保留。按实体文本签名去重，避免模式来回切换反复请求。
+  const locatedSignatureRef = useRef<string | null>(null);
+  const locateEpochRef = useRef(0);
+  useEffect(() => {
+    const fileId = fileCtx.fileInfo?.file_id;
+    const entities = entityCtx.entities;
+    const signature =
+      fileId && textPdfMaskMode && entities.length
+        ? fileId + ':' + [...new Set(entities.map((e) => e.text))].join('\u0001')
+        : null;
+    if (signature === locatedSignatureRef.current) return;
+    if (!signature) return;
+    const epoch = ++locateEpochRef.current;
+    const entityByText = new Map(entities.map((e) => [e.text, e]));
+    locateEntityBoxes(fileId!, entities)
+      .then(({ boxes, missed }) => {
+        if (epoch !== locateEpochRef.current) return;
+        // 签名只在成功后写入——失败的定位（超时等）在实体/模式下次变化时
+        // 会自动重试，不会因签名已占位而永远沉默
+        locatedSignatureRef.current = signature;
+        imageCtx.setBoundingBoxes((prev) =>
+          mergeNerBoxes(prev, boxes, entityByText),
+        );
+        if (missed.length) {
+          showToast(
+            t('playground.locateMissed').replace('{n}', String(missed.length)),
+            'info',
+          );
+        }
+      })
+      .catch(() => {
+        if (epoch === locateEpochRef.current) {
+          showToast(t('playground.locateFailed'), 'error');
+        }
+      });
+    // setBoundingBoxes 稳定；entities 以签名为准避免每词抖动重触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textPdfMaskMode, fileCtx.fileInfo?.file_id, entityCtx.entities]);
 
   const { setTypeTab } = recognition;
   useEffect(() => {
@@ -156,7 +231,9 @@ export function usePlayground() {
   );
 
   const historyCtx = usePlaygroundHistory({
-    isImageMode: fileCtx.isImageMode,
+    // Issue #66：视觉工作台（含文本型 PDF 打码模式）下撤销/重做/全选作用于
+    // 拉框；实体勾选仍走右侧面板逐条切换
+    isImageMode: fileCtx.isImageMode || textPdfMaskMode,
     entities: entityCtx.entities,
     setEntities: entityCtx.setEntities,
     boundingBoxes: imageCtx.boundingBoxes,
@@ -234,11 +311,16 @@ export function usePlayground() {
     () => selectedEntityTexts.filter((text) => !(text in pseudonymMap)),
     [selectedEntityTexts, pseudonymMap],
   );
+  const entitySignature = useMemo(
+    () => selectedEntityTexts.join('\u0000'),
+    [selectedEntityTexts],
+  );
   useEffect(() => {
     if (recognition.processingMode !== 'replace') return;
     if (fileCtx.isImageMode) return;
-    // 全部行已补齐（可能含失败后手动填全的情况）时清掉残留错误，避免卡死执行按钮
-    if (missingPseudonymKeys.length === 0) {
+    const sigChanged = pseudonymEntitySigRef.current !== entitySignature;
+    // 全部行已补齐且实体集未变化（可能含失败后手动填全的情况）时清掉残留错误
+    if (missingPseudonymKeys.length === 0 && !sigChanged) {
       setPseudonymMapError(null);
       return;
     }
@@ -265,10 +347,15 @@ export function usePlayground() {
         const data = await safeJson<{ entity_map?: Record<string, string> }>(res);
         if (epoch !== pseudonymEpochRef.current) return;
         const incoming = data.entity_map ?? {};
+        pseudonymEntitySigRef.current = entitySignature;
         setPseudonymMap((current) => {
           const next = { ...current };
           for (const [key, value] of Object.entries(incoming)) {
-            if (!(key in next)) next[key] = value;
+            // 只补缺；实体集变化（重新识别）时刷新全部「非用户手改」键，
+            // 使服务端化名规则升级后旧自动映射能被纠正
+            if (!(key in next) || (sigChanged && !pseudonymUserEditedRef.current.has(key))) {
+              next[key] = value;
+            }
           }
           return next;
         });
@@ -283,6 +370,7 @@ export function usePlayground() {
     void run();
     return () => controller.abort();
   }, [
+    entitySignature,
     missingPseudonymKeys.length,
     recognition.processingMode,
     fileCtx.isImageMode,
@@ -296,6 +384,7 @@ export function usePlayground() {
   }, []);
 
   const setPseudonymReplacement = useCallback((text: string, replacement: string) => {
+    pseudonymUserEditedRef.current.add(text);
     setPseudonymMap((current) => ({ ...current, [text]: replacement }));
   }, []);
 
@@ -377,11 +466,23 @@ export function usePlayground() {
     fileCtx.setLoadingMessage(t('playground.redacting'));
 
     try {
-      const selectedEntities = entityCtx.entities.filter((e) => e.selected !== false);
+      // Issue #66：mask 模式下实体的选中状态由它的 ner 框代表（框即实体的
+      // UI）；无框实体（定位失败）保持原选中态交后端 residual 兜底
+      const execEntities = textPdfMaskMode
+        ? syncEntitiesWithNerBoxes(entityCtx.entities, imageCtx.boundingBoxes)
+        : entityCtx.entities;
+      const selectedEntities = execEntities.filter((e) => e.selected !== false);
       const selectedBoxes = imageCtx.boundingBoxes.filter((b) => b.selected !== false);
+      // 文本型 PDF 打码=实体+拉框双通道；ner 框与其实体同文本只计一次
+      const nerBoxTexts = new Set(
+        imageCtx.boundingBoxes.filter((b) => b.source === 'ner').map((b) => b.text ?? ''),
+      );
       const requestedRedactionItemCount = fileCtx.isImageMode
         ? selectedBoxes.length
-        : selectedEntities.length;
+        : textPdfMaskMode
+          ? selectedBoxes.length +
+            selectedEntities.filter((e) => !nerBoxTexts.has(e.text)).length
+          : selectedEntities.length;
 
       const isPseudonym = recognition.processingMode === 'replace' && !fileCtx.isImageMode;
       // 双保险：打码分支永远不透传 pseudonym（防御残留状态），回落结构化标签
@@ -403,8 +504,15 @@ export function usePlayground() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           file_id: fileId,
-          entities: entityCtx.entities,
-          bounding_boxes: imageCtx.boundingBoxes,
+          entities: execEntities,
+          // Issue #66 A 案：文本型文件在替换模式下不携带拉框——后端见到
+          // 「文本 PDF + 有框」会整份转图像管线栅格化，替换请求会产出错误
+          // 成品。框保留在前端状态里，切回打码原样恢复参与执行。
+          bounding_boxes: boxesForRedactPayload(
+            fileCtx.isImageMode,
+            recognition.processingMode,
+            imageCtx.boundingBoxes,
+          ),
           config: {
             replacement_mode: effectiveReplacementMode,
             entity_types: [],
@@ -550,6 +658,8 @@ export function usePlayground() {
     setRedactedCount(0);
     setEntityMap({});
     setPseudonymMap({});
+    pseudonymUserEditedRef.current = new Set();
+    pseudonymEntitySigRef.current = '';
     setPseudonymMapLoading(false);
     setPseudonymMapError(null);
     setConfirmedPseudonymMap(null);
@@ -581,6 +691,7 @@ export function usePlayground() {
         replacementMode: recognition.replacementMode,
         watermarkText: recognition.watermarkText,
         pseudonymMap,
+        pseudonymUserEditedKeys: [...pseudonymUserEditedRef.current],
         confirmedPseudonymMap,
         entityMap,
         redactedCount,
@@ -634,6 +745,8 @@ export function usePlayground() {
       setRedactedCount(snapshot.redactedCount);
       setRedactionVersion((version) => version + 1); // 触发 result 阶段脱敏预览图重取
       setPseudonymMap(snapshot.pseudonymMap);
+      pseudonymUserEditedRef.current = new Set(snapshot.pseudonymUserEditedKeys ?? []);
+      pseudonymEntitySigRef.current = '';
       setPseudonymMapLoading(false);
       setPseudonymMapError(null);
       setConfirmedPseudonymMap(snapshot.confirmedPseudonymMap);
@@ -826,6 +939,7 @@ export function usePlayground() {
     handleDownload,
     dropzone: fileCtx.dropzone,
     imageUrl: imageCtx.imageUrl,
+    staticPageUrl: imageCtx.staticPageUrl,
     redactedImageUrl: imageCtx.redactedImageUrl,
     redactedImageError: imageCtx.redactedImageError,
     currentPage: imageCtx.currentPage,

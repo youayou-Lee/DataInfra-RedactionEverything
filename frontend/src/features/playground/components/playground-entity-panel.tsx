@@ -4,6 +4,7 @@ import {
   type FC,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useMemo,
   memo,
 } from 'react';
@@ -21,7 +22,11 @@ import { computeEntityStats, getModePreview } from '../utils';
 import type { BoundingBox, Entity } from '../types';
 
 export interface PlaygroundEntityPanelProps {
+  /** 视觉工作台（真图像文件，或文本 PDF 打码模式）：区域列表/计数走框 */
   isImageMode: boolean;
+  /** 替换锁定：仅真·图像文件（扫描件/图片）为 true——文本 PDF 打码工作台
+      必须保留替换切换（#66 第三轮验收反馈：isVisualPreview 不能混入此语义） */
+  replacementLocked?: boolean;
   isLoading: boolean;
   recognitionIssue?: string | null;
   entities: Entity[];
@@ -36,6 +41,7 @@ export interface PlaygroundEntityPanelProps {
   displayStats?: Record<string, { total: number; selected: number }>;
   replacementMode: 'structured' | 'smart' | 'mask' | 'pseudonym';
   setReplacementMode: (mode: 'structured' | 'smart' | 'mask' | 'pseudonym') => void;
+  maskDisabled?: boolean;
   processingMode: 'mask' | 'replace';
   setProcessingMode: (mode: 'mask' | 'replace') => void;
   pseudonymMap: Record<string, string>;
@@ -48,6 +54,8 @@ export interface PlaygroundEntityPanelProps {
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
+  /** Issue #70：识别清单快速切换（识别后页面），由页面层构建传入 */
+  presetQuickSwitch?: ReactNode;
   onRerunNer: () => void;
   onRedact: () => void;
   onSelectAll: () => void;
@@ -60,6 +68,7 @@ export interface PlaygroundEntityPanelProps {
 export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
   ({
     isImageMode,
+    replacementLocked = false,
     isLoading,
     recognitionIssue,
     entities,
@@ -75,6 +84,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     setReplacementMode,
     processingMode,
     setProcessingMode,
+    maskDisabled = false,
     pseudonymMap,
     onPseudonymChange,
     pseudonymMapLoading,
@@ -85,6 +95,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
+    presetQuickSwitch,
     onRerunNer,
     onRedact,
     onSelectAll,
@@ -139,6 +150,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                 {t('playground.recognitionSectionDesc')}
               </p>
             </div>
+            {presetQuickSwitch}
             <Button
               onClick={onRerunNer}
               disabled={isLoading}
@@ -195,17 +207,21 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
               </Button>
             </div>
 
-            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因 */}
+            {/* 处理方式两种文件形态都展示：扫描件/图片暂不支持替换，但入口必须可见并说明原因。
+                replacementLocked 只看真·图像文件（扫描件/图片）；文本型 PDF 的打码
+                工作台（视觉工作台）必须保留替换切换——#66 第三轮验收反馈 */}
             <ProcessingModeSelector
-              mode={isImageMode ? 'mask' : processingMode}
+              mode={replacementLocked ? 'mask' : processingMode}
               onModeChange={(mode) => {
-                if (isImageMode && mode !== 'mask') return;
+                if (replacementLocked && mode !== 'mask') return;
+                if (maskDisabled && mode === 'mask') return;
                 clearPlaygroundTextPresetTracking();
                 setProcessingMode(mode);
               }}
-              replaceDisabled={isImageMode}
+              replaceDisabled={replacementLocked}
+              maskDisabled={maskDisabled}
             />
-            {!isImageMode &&
+            {!replacementLocked &&
               (processingMode === 'mask' ? (
                 <MaskModeSelector
                   entities={entities}
@@ -379,7 +395,8 @@ const ProcessingModeSelector: FC<{
   mode: 'mask' | 'replace';
   onModeChange: (mode: 'mask' | 'replace') => void;
   replaceDisabled?: boolean;
-}> = ({ mode, onModeChange, replaceDisabled = false }) => {
+  maskDisabled?: boolean;
+}> = ({ mode, onModeChange, replaceDisabled = false, maskDisabled = false }) => {
   const t = useT();
   const modes: {
     value: 'mask' | 'replace';
@@ -390,7 +407,8 @@ const ProcessingModeSelector: FC<{
     {
       value: 'mask',
       label: t('playground.processingModeMask'),
-      desc: t('playground.processingModeMaskDesc'),
+      desc: maskDisabled ? t('mode.maskPdfOnly') : t('playground.processingModeMaskDesc'),
+      disabled: maskDisabled,
     },
     {
       value: 'replace',
@@ -439,6 +457,14 @@ const ProcessingModeSelector: FC<{
           );
         })}
       </div>
+      {maskDisabled && (
+        <p
+          className="text-[11px] leading-4 text-muted-foreground"
+          data-testid="playground-processing-mode-mask-notice"
+        >
+          {t('playground.processingModeMaskPdfNotice')}
+        </p>
+      )}
       {replaceDisabled && (
         <p
           className="text-[11px] leading-4 text-muted-foreground"
@@ -687,7 +713,9 @@ const BoxList: FC<{
             ? t('playground.sourceOcr')
             : box.source === 'visual_features'
               ? t('playground.sourceImage')
-              : t('playground.sourceManual');
+              : box.source === 'ner'
+                ? t('playground.sourceNer')
+                : t('playground.sourceManual');
 
         return (
           <div

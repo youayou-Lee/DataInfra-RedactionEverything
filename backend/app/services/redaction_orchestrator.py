@@ -209,6 +209,26 @@ async def execute_redaction(request: RedactionRequest) -> RedactionResult:
 
     file_info = file_store[file_id]
 
+    # 打码(MASK)模式仅对 PDF/图片类文件有意义（图像打码/逐字符掩码）；
+    # 文本格式（DOCX/TXT/MD 等）带 mask 进来时降级为智能模式（Issue #57）
+    _raw_file_type = file_info.get("file_type")
+    # file_type 可能是 FileType 枚举（str(枚举) 得 'FileType.X'），统一取 value
+    _mask_file_type = str(
+        _raw_file_type.value if hasattr(_raw_file_type, "value") else (_raw_file_type or "")
+    ).lower()
+    if request.config.replacement_mode == ReplacementMode.MASK and _mask_file_type not in {
+        "pdf",
+        "pdf_scanned",
+        "image",
+    }:
+        logger.warning(
+            "file %s type=%s does not support MASK mode, downgraded to SMART",
+            file_id,
+            _mask_file_type or "unknown",
+        )
+        # 拷贝后替换，避免变异调用方持有的同一 config 引用
+        request.config = request.config.model_copy(update={"replacement_mode": ReplacementMode.SMART})
+
     _attach_word_pools(request.config, str(file_info.get("owner_id") or "local_user"))
     redactor = Redactor()
     result = await redactor.redact(
@@ -401,7 +421,11 @@ async def detect_vision(
     owner_id = owner_id or str(snapshot.get("owner_id") or "local_user")
 
     # 获取两个 Pipeline 的类型配置
-    from app.services.pipeline_service import get_pipeline, get_pipeline_types_for_mode
+    from app.services.pipeline_service import (
+        filter_types_by_account_enabled,
+        get_pipeline,
+        get_pipeline_types_for_mode,
+    )
 
     all_ocr_has_types = get_pipeline_types_for_mode("ocr_has", owner_id=owner_id)
     default_ocr_has_types = _default_pipeline_types(all_ocr_has_types)
@@ -460,6 +484,10 @@ async def detect_vision(
                 "selected visual feature types contain no valid IDs; fallback to default enabled visual feature types."
             )
             visual_feature_types = default_visual_feature_types
+
+    # Issue #78：账号停用的识别项是一切识别路径的上限——显式勾选与默认清单
+    # 都在此收口过滤；过滤后为空不再回退默认清单（否则账号停用会被复活）。
+    ocr_has_types = filter_types_by_account_enabled(ocr_has_types, owner_id=owner_id)
 
     ocr_pipeline = get_pipeline("ocr_has", owner_id=owner_id)
     visual_pipeline = get_pipeline("visual_features", owner_id=owner_id)

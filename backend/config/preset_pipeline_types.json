@@ -298,7 +298,7 @@
       "order": 135,
       "data_domain": "account_transaction",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "account_like",
         "organization_like"
@@ -429,7 +429,7 @@
       "order": 181,
       "data_domain": "organization_subject",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "organization_like"
       ],
@@ -472,7 +472,7 @@
       "order": 183,
       "data_domain": "organization_subject",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "organization_like"
       ],
@@ -493,7 +493,7 @@
       "order": 184,
       "data_domain": "organization_subject",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "organization_like"
       ],
@@ -618,7 +618,7 @@
       "order": 205,
       "data_domain": "pii",
       "coref_enabled": false,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "date_like"
       ],
@@ -660,7 +660,7 @@
       "order": 220,
       "data_domain": "pii",
       "coref_enabled": false,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [],
       "entity_type_ids": [],
       "generic_target": "GEN_ATTRIBUTE_STATUS"
@@ -873,7 +873,7 @@
       "order": 310,
       "data_domain": "custom_extension",
       "coref_enabled": true,
-      "default_enabled": false,
+      "default_enabled": true,
       "linkage_groups": [
         "identifier_like"
       ],

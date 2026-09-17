@@ -7,6 +7,7 @@ import { getEntityTypeName } from '@/config/entityTypes';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import ImageBBoxEditor from '@/components/ImageBBoxEditor';
 import { PaginationRail } from '@/components/PaginationRail';
+import { Button } from '@/components/ui/button';
 import { PlaygroundUpload } from './components/playground-upload';
 import { PlaygroundToolbar } from './components/playground-toolbar';
 import { PlaygroundEntityPanel } from './components/playground-entity-panel';
@@ -19,7 +20,12 @@ import {
   usePlaygroundUIContext,
 } from './playground-context';
 import { needsSwitchConfirm, splitVirtualPages } from './lib/playground-draft';
-import { previewEntityHoverRingClass, previewEntityMarkStyle } from './utils';
+import {
+  isMaskAllowedForFile,
+  isVisualPreviewMode,
+  previewEntityHoverRingClass,
+  previewEntityMarkStyle,
+} from './utils';
 import { buildEntityCoverageMap, buildTextSegments } from '@/utils/textRedactionSegments';
 
 /** 超长单页文本的虚拟分页窗口大小（字符） */
@@ -81,6 +87,7 @@ const PlaygroundInner: FC = () => {
     cancelReset,
     handleDownload,
     imageUrl,
+    staticPageUrl,
     redactedImageUrl,
     redactedImageError,
     currentPage,
@@ -105,6 +112,7 @@ const PlaygroundInner: FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const resumeFileId = searchParams.get('file_id');
   const [switchConfirmTarget, setSwitchConfirmTarget] = useState<string | null>(null);
+
   const resumeHandledRef = useRef<string | null>(null);
 
   const startResume = useCallback(
@@ -125,6 +133,22 @@ const PlaygroundInner: FC = () => {
     startResume(resumeFileId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startResume 稳定引用由 useCallback 保证
   }, [resumeFileId, fileInfo?.file_id]);
+
+  // Issue #57: 打码（MASK）模式仅对 PDF 开放；文本格式自动切回「替换」
+  const maskAllowed = isMaskAllowedForFile(fileInfo?.file_type);
+  useEffect(() => {
+    if (!maskAllowed && processingMode === 'mask') {
+      setProcessingMode('replace');
+    }
+  }, [maskAllowed, processingMode, setProcessingMode]);
+
+  // Issue #66：预览范式跟随处理模式——文本型 PDF 打码=图像工作台（页面图+
+  // 拉框，与扫描件一致），替换=文本范式。手拉框存于 boundingBoxes 草稿态，
+  // 切换模式不清理（A 案：打码/替换各管各的，切回打码框原样恢复）。
+  const visualMaskPreview =
+    !isImageMode &&
+    isVisualPreviewMode(fileInfo?.file_type, Boolean(fileInfo?.is_scanned), processingMode);
+  const isVisualPreview = isImageMode || visualMaskPreview;
 
   const pagesArr = fileInfo?.pages;
   // 虚拟分页（Issue #33 验收反馈）：MinerU 转出的 markdown 单页可达数十万字符、
@@ -305,16 +329,23 @@ const PlaygroundInner: FC = () => {
         <div className="page-shell !max-w-[min(100%,2048px)] !px-3 !py-3 sm:!px-4 sm:!py-4 2xl:!px-6">
           <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_20.75rem] xl:grid-cols-[minmax(0,1fr)_21.5rem]">
             <div className="saas-panel flex min-w-0 flex-1 flex-col overflow-hidden">
+              {/* popout 尚不支持静态页面图协议（文本 PDF 打码模式只能拿到原始
+                  PDF 下载地址当 img src，会开出坏窗口）——评审 I1：回退仅
+                  扫描件/图片开放独立窗口，待 popout 支持静态页后再放开 */}
               <PlaygroundToolbar
                 filename={fileInfo?.filename}
-                isImageMode={isImageMode}
+                isImageMode={isVisualPreview}
                 canUndo={canUndo}
                 canRedo={canRedo}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 onReset={handleReset}
                 hintText={
-                  isImageMode ? t('playground.previewHint.image') : t('playground.previewHint.text')
+                  visualMaskPreview
+                    ? t('playground.previewHint.pdfMask')
+                    : isImageMode
+                      ? t('playground.previewHint.image')
+                      : t('playground.previewHint.text')
                 }
                 onPopout={isImageMode ? openPopout : undefined}
               />
@@ -325,11 +356,11 @@ const PlaygroundInner: FC = () => {
                 onKeyUp={ui.handleTextSelect}
                 className="flex min-h-0 flex-1 flex-col overflow-hidden select-text"
               >
-                {isImageMode ? (
+                {isVisualPreview ? (
                   <div className="flex-1 min-h-0">
                     {fileInfo && (
                       <ImageBBoxEditor
-                        imageSrc={imageUrl}
+                        imageSrc={visualMaskPreview ? staticPageUrl : imageUrl}
                         boxes={visibleBoxes}
                         onBoxesChange={(nextBoxes) =>
                           setBoundingBoxes(mergeVisibleBoxes(nextBoxes))
@@ -378,13 +409,16 @@ const PlaygroundInner: FC = () => {
                   </div>
                 )}
 
-                {!isImageMode && <PlaygroundTextSelectionPopover entityTypes={entityTypes} />}
-                {!isImageMode && <PlaygroundEntityPopover />}
+                {!isVisualPreview && <PlaygroundTextSelectionPopover entityTypes={entityTypes} />}
+                {!isVisualPreview && <PlaygroundEntityPopover />}
               </div>
             </div>
 
+            {/* Issue #66：图像工作台（含文本 PDF 打码）右侧=区域列表（ner 框+
+                手拉框），与扫描件同体验；计数走 visibleBoxes 分支 */}
             <PlaygroundEntityPanel
-              isImageMode={isImageMode}
+              isImageMode={isVisualPreview}
+              replacementLocked={isImageMode}
               isLoading={isLoading}
               recognitionIssue={recognitionIssue}
               entities={pageFilteredEntities}
@@ -393,8 +427,12 @@ const PlaygroundInner: FC = () => {
               visionTypes={visionTypes}
               visibleBoxes={visibleBoxes}
               selectedCount={selectedCount}
-              displaySelectedCount={isImageMode ? undefined : previewCoverageSelectedCount}
-              displayTotalCount={isImageMode ? undefined : previewCoverageTotalCount}
+              displaySelectedCount={
+                isImageMode ? undefined : previewCoverageSelectedCount
+              }
+              displayTotalCount={
+                isImageMode ? undefined : previewCoverageTotalCount
+              }
               displayStats={
                 Object.keys(previewCoverageStats).length > 0 ? previewCoverageStats : undefined
               }
@@ -402,6 +440,7 @@ const PlaygroundInner: FC = () => {
               setReplacementMode={recognition.setReplacementMode}
               processingMode={processingMode}
               setProcessingMode={setProcessingMode}
+              maskDisabled={!maskAllowed}
               pseudonymMap={pseudonymMap}
               onPseudonymChange={setPseudonymReplacement}
               pseudonymMapLoading={pseudonymMapLoading}
@@ -412,6 +451,22 @@ const PlaygroundInner: FC = () => {
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}
+              presetQuickSwitch={
+                <div className="flex flex-col gap-1">
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    disabled={isLoading}
+                    className="h-9 w-full whitespace-nowrap"
+                    data-testid="playground-back-to-config-btn"
+                  >
+                    {t('playground.reconfigTypes')}
+                  </Button>
+                  <p className="line-clamp-2 text-xs leading-4 text-muted-foreground">
+                    {t('playground.reconfigHint')}
+                  </p>
+                </div>
+              }
               onRerunNer={handleRerunNer}
               onRedact={handleRedact}
               onSelectAll={selectAll}

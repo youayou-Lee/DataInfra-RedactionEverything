@@ -27,6 +27,7 @@ export function SettingsHub() {
     importFileRef,
     createType,
     updateType,
+    updateTypeOverride,
     deleteType,
     resetToDefault,
     createPipelineType,
@@ -194,6 +195,11 @@ export function SettingsHub() {
                 variant="llm"
                 onAdd={openAdd}
                 onEdit={openEdit}
+                onOverrideChange={(type, patch) => {
+                  void runLocked(async () => {
+                    await updateTypeOverride(type.id, patch);
+                  });
+                }}
                 onDelete={(id) =>
                   setConfirmState({
                     title: t('common.delete'),

@@ -26,8 +26,51 @@ const enBase: Record<string, string> = {
   'nav.recognitionSettings.sub': 'Atomic items',
   'nav.systemSettings': 'System Settings',
   'nav.systemSettings.sub': 'Runtime and access',
+  'nav.console': 'Console',
+  'nav.console.sub': 'Users and files overview',
   'nav.textModel': 'Text Service',
   'nav.visionModel': 'Image Service',
+
+  'console.title': 'Admin Console',
+  'console.subtitle': 'View registered users and their uploads to reproduce reported issues.',
+  'console.forbidden': 'Administrator privileges required.',
+  'console.error.loadUsers': 'Failed to load users',
+  'console.error.loadFiles': 'Failed to load files',
+  'console.error.download': 'Download failed, please retry',
+  'console.searchPlaceholder': 'Filter by username',
+  'console.usersTitle': 'Registered users',
+  'console.filesTitle': 'Uploaded files',
+  'console.col.username': 'Username',
+  'console.col.role': 'Role',
+  'console.col.registeredAt': 'Registered',
+  'console.col.status': 'Status',
+  'console.col.fileCount': 'Files',
+  'console.col.filename': 'Filename',
+  'console.col.fileType': 'Type',
+  'console.col.fileSize': 'Size',
+  'console.col.uploadedAt': 'Uploaded',
+  'console.col.source': 'Source',
+  'console.col.actions': 'Actions',
+  'console.status.active': 'Active',
+  'console.status.disabled': 'Disabled',
+  'console.role.super_admin': 'Admin',
+  'console.role.reviewer': 'Reviewer',
+  'console.role.user': 'User',
+  'console.role.operator': 'Operator',
+  'console.role.viewer': 'Viewer',
+  'console.source.playground': 'Single',
+  'console.source.batch': 'Batch',
+  'console.download': 'Download',
+  'console.downloading': 'Downloading...',
+  'console.hasOutput': 'Redacted',
+  'console.selectUserHint': 'Click a user above to view their uploaded files.',
+  'console.empty.users': 'No registered users',
+  'console.empty.usersHint': 'Self-registered users will appear here.',
+  'console.empty.files': 'No uploads for this user',
+  'console.empty.filesHint': 'Files will appear here after the user uploads.',
+  'console.prevPage': 'Prev',
+  'console.nextPage': 'Next',
+  'console.pageOf': 'Page {page} of {total}',
 
   'playground.title': 'Process One File',
   'playground.recognizing': 'Recognizing...',
@@ -92,6 +135,7 @@ const enBase: Record<string, string> = {
 
   'mode.smart': 'Smart Replace',
   'mode.mask': 'Mask',
+  'mode.maskPdfOnly': 'Mask mode supports PDF files only',
   'mode.structured': 'Structured Tags',
   'mode.pseudonym': 'Pseudonym',
 
@@ -103,6 +147,8 @@ const enBase: Record<string, string> = {
   'playground.processingModeReplaceUnavailable': 'Unavailable for scanned files / images',
   'playground.processingModeScannedNotice':
     'Replacement (pseudonym) is not yet available for scanned PDFs / images; only masking is supported for now.',
+  'playground.processingModeMaskPdfNotice':
+    'Mask (redaction) supports PDF files only; use Replace for this file.',
   'playground.pseudonymMap': 'Pseudonym Mapping',
   'playground.pseudonymMapDesc':
     'Confirm the replacement for each item before running; the output is exactly what you see. A mapping table is available for download.',
@@ -589,7 +635,7 @@ const enBase: Record<string, string> = {
   'batchWizard.step2.dropHintSmart':
     'Supports Word (.docx), text (.txt), PDF, images (.jpg .png), auto-detects file type',
   'batchWizard.step2.dropHintImage': 'Supports images (.jpg .png) and scanned PDFs',
-  'batchWizard.step2.dropHintText': 'Supports Word (.docx .doc) and PDF documents',
+  'batchWizard.step2.dropHintText': 'Supports Word (.docx) and PDF documents',
   'batchWizard.step2.jobLinked': 'Current job',
   'batchWizard.step2.uploadQueue': 'Upload Queue',
   'batchWizard.step2.queueCount': '{count} files in the queue',
@@ -1047,7 +1093,7 @@ const enOverrides: Record<string, string> = {
     'Run npm run doctor, then start npm run dev:models or restart the listed services.',
   'playground.dropHere': 'Drop a file here to upload',
   'playground.supportedFormats':
-    'Supports .doc, .docx, .txt, .md, .html, .pdf, .jpg, .png, .webp, .tif, and more',
+    'Supports .docx, .txt, .md, .html, .pdf, .jpg, .png, and more (convert .doc to .docx first)',
   'playground.clickToUpload': 'Or click to choose a file',
   'playground.upload.rejectInvalidType':
     '{filename} is not supported. Choose a Word, text, PDF, or image file.',
@@ -1085,6 +1131,8 @@ const enOverrides: Record<string, string> = {
     'Configure image recognition items in Recognition Item Settings, then come back here to pick them.',
   'playground.popout': 'Pop out',
   'playground.reRecognize': 'Run recognition again',
+  'playground.reconfigTypes': 'Adjust recognition items',
+  'playground.reconfigHint': 'Go back to the upload page to pick a preset or tick recognition items, then upload the file to recognize.',
   'playground.recognitionSection': 'Recognition',
   'playground.recognitionSectionDesc':
     'Refresh detection after updating the recognition list or item settings.',
@@ -1131,6 +1179,7 @@ const enOverrides: Record<string, string> = {
   'playground.redactDisabledNoSelection':
     'All results are currently deselected. Select at least one item, or confirm that nothing needs redaction.',
   'playground.sourceOcr': 'OCR',
+  'playground.sourceNer': 'NER',
   'playground.needsReview': 'Needs review',
   'playground.confidenceHint':
     'How sure the model was about this box, from the per-token probabilities it emitted while drawing it. Below 50% it was guessing — worth a human look.',
@@ -1187,6 +1236,9 @@ const enOverrides: Record<string, string> = {
   'playground.toast.redactDone': 'Redaction complete with {count} items processed.',
   'playground.noContent': 'No content available yet.',
   'playground.previewHint.image': 'Adjust regions, then choose what should be redacted.',
+  'playground.previewHint.pdfMask': 'Mask mode: recognized entities are auto-located as boxes you can toggle or adjust; draw extra boxes to cover anything missed.',
+  'playground.locateMissed': '{n} entities could not be auto-located (split across lines etc.); draw boxes manually as fallback.',
+  'playground.locateFailed': 'Entity location failed; draw boxes manually or retry later.',
   'playground.previewHint.text':
     'Review highlights, select text, and refine annotations before export.',
   'playground.updateAnnotation': 'Update annotation',
@@ -1355,6 +1407,8 @@ const enOverrides: Record<string, string> = {
     'The current review changes could not be saved, so the file was not changed.',
   'batchWizard.reviewSaveBeforeExportFailed':
     'The current review changes could not be saved. Export was blocked to avoid stale redaction output.',
+  'batchWizard.maskDowngraded':
+    'Mask mode supports PDF files only; this batch contains other formats, switched to Smart mode.',
   'batchWizard.configLocked':
     'This batch recognition list is locked because recognition has already started. Create a new batch job to change the list, item combination, or redaction methods.',
   'batchWizard.noActiveJob': 'No active task is available.',
@@ -2447,6 +2501,11 @@ Object.assign(enOverrides, {
 
   // entity-type-list.tsx
   'settings.entityList.systemManaged': 'System managed',
+  'settings.override.enabled': 'Enabled',
+  'settings.override.includeDefault': 'Include in default scope',
+  'settings.override.disabledBadge': 'Disabled',
+  'settings.override.disabledHint': 'Disabled for this account: no recognition path (default scope, any checklist, scanned PDFs) will detect this type',
+  'settings.overrideFailed': 'Failed to update recognition item',
 });
 
 export const en: Record<string, string> = {

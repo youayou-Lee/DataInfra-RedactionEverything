@@ -11,6 +11,7 @@ from app.services import entity_type_service
 from app.services.entity_type_service import (
     CreateEntityTypeRequest,
     EntityTypeConfig,
+    EntityTypeOverrideRequest,
     EntityTypesResponse,
     TextTaxonomyResponse,
     UpdateEntityTypeRequest,
@@ -75,6 +76,27 @@ async def toggle_entity_type(type_id: str, owner_id: str = Depends(require_auth)
     if enabled is None:
         raise HTTPException(status_code=404, detail="实体类型不存在")
     return {"enabled": enabled}
+
+
+@router.patch("/custom-types/{type_id}/override", response_model=EntityTypeConfig)
+async def override_entity_type(
+    type_id: str,
+    request: EntityTypeOverrideRequest,
+    owner_id: str = Depends(require_auth),
+):
+    """Issue #78：设置内置识别项的账号覆盖位（enabled / default_enabled，缺省不改动）"""
+    try:
+        result = entity_type_service.set_type_override(
+            type_id,
+            enabled=request.enabled,
+            default_enabled=request.default_enabled,
+            owner_id=owner_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="实体类型不存在")
+    return result
 
 
 @router.post("/custom-types/reset", response_model=MessageResponse)

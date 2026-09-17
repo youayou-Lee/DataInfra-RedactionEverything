@@ -16,7 +16,36 @@
     "strategy": "derived"
   },
   "ADDRESS": {
-    "words": ["某市某区某街道1号", "某市某区某路2号", "某市某区某巷3号", "某市某区某大道4号", "某县某镇某村5号"],
+    "words": [
+      "某市某区某街道1号",
+      "某市某区某路2号",
+      "某市某区某巷3号",
+      "某市某区某大道4号",
+      "某县某镇某村5号"
+    ],
     "strategy": "numbered"
+  },
+  "LAW_FIRM": {
+    "words": [
+      "某律师事务所"
+    ],
+    "strategy": "numbered",
+    "custom_map": {}
+  },
+  "HOSPITAL": {
+    "words": [
+      "某医院"
+    ],
+    "strategy": "numbered",
+    "custom_map": {}
+  },
+  "SCHOOL": {
+    "words": [
+      "某大学",
+      "某学院",
+      "某学校"
+    ],
+    "strategy": "numbered",
+    "custom_map": {}
   }
 }

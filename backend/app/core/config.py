@@ -197,12 +197,12 @@ class Settings(BaseSettings):
     OUTPUT_DIR: str = "./outputs"
     DATA_DIR: str = "./data"
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
+    # Issue #46 实测收口（#50 方案 A）：.doc（转换链不可用）与 .rtf（解析毁 CJK 转义、
+    # 成品残留原文）不予受理；支持面以实测报告 eval/reports/20260915-164256-*-format-matrix 为准
     ALLOWED_EXTENSIONS: list[str] = [
         # Documents
-        ".doc",
         ".docx",
         ".txt",
-        ".rtf",
         ".md",
         ".html",
         ".htm",

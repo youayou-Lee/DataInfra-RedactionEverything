@@ -75,9 +75,14 @@ export default defineConfig({
     port: 3000,
     proxy: { ...backendProxy },
   },
-  /** `vite preview` 默认不转发 API，直接打开 dist 会请求不到后端 → 与 dev 共用代理 */
+  /**
+   * `vite preview` 默认不转发 API，直接打开 dist 会请求不到后端 → 与 dev 共用代理
+   * vite 会校验 Host header 且默认只放行 localhost/IP 字面量，平台端口映射的
+   * 公网域名会被 403 拦截（#68）→ 面向公网的服务需放行全部 Host
+   */
   preview: {
     port: 3000,
     proxy: { ...backendProxy },
+    allowedHosts: true,
   },
 })

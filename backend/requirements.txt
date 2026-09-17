@@ -10,6 +10,7 @@ pydantic-settings>=2.7.0
 # File processing
 python-docx==1.2.0
 PyMuPDF==1.27.2.2
+pdf2docx==0.5.13  # 文本型 PDF 替换模式的 docx 回转链路（Issue #61）；缺失时自动回退原位替换
 Pillow>=12.2.0
 numpy>=2.0.0
 pydicom>=3.0.1,<4

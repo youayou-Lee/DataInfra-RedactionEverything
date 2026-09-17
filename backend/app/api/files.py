@@ -71,6 +71,9 @@ def validate_file(file: UploadFile) -> None:
     """验证上传的文件"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="缺少文件名")
+    # Issue #51：0 字节文件没有任何处理价值，上传即拒（解析层另有兜底）
+    if getattr(file, "size", None) == 0:
+        raise HTTPException(status_code=400, detail="不能上传空文件")
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(

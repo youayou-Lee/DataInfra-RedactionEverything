@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 import fitz  # PyMuPDF
 from docx import Document
+from PIL import Image
 
 from app.core.config import settings
 from app.core.file_validation import safe_path_in_dir
@@ -311,6 +312,10 @@ class FileParser:
                 with open(file_path, encoding="utf-8", errors="replace") as f:
                     content = f.read()
 
+            # Issue #51：空内容文件静默进入下游没有意义，直接结构化拒绝
+            if not content.strip():
+                raise ValueError("文件内容为空，无法处理")
+
             # HTML: parse tags with HTMLParser instead of regex.
             if ext in (".html", ".htm"):
                 extractor = _HTMLTextExtractor()
@@ -334,6 +339,9 @@ class FileParser:
                 pages=pages,
                 is_scanned=False,
             )
+        except ValueError:
+            # Issue #51：空内容等结构化拒绝要透传给端点映射 4xx，不能吞成静默空文档
+            raise
         except Exception as e:
             logger.error("解析文本文件失败: %s", e)
             return ParseResult(
@@ -348,7 +356,13 @@ class FileParser:
     async def _parse_docx(self, file_path: str) -> ParseResult:
         """解析 Word 文档 (.docx)"""
         _validate_path(file_path)
-        doc = Document(file_path)
+        try:
+            doc = Document(file_path)
+        except Exception as exc:
+            # Issue #51：截断/损坏的 docx（zip 头合法但内容残缺）在此抛
+            # BadZipFile 等非 ValueError 异常，穿透端点会变成 500。
+            logger.warning("docx 解析失败（疑似损坏）: %s (%s)", file_path, type(exc).__name__)
+            raise ValueError("文件损坏或格式异常，无法解析为 Word 文档") from exc
 
         paragraphs = []
 
@@ -383,7 +397,12 @@ class FileParser:
     async def _parse_pdf(self, file_path: str) -> ParseResult:
         """解析 PDF 文档"""
         _validate_path(file_path)
-        doc = fitz.open(file_path)
+        try:
+            doc = fitz.open(file_path)
+        except Exception as exc:
+            # Issue #51：截断/加密/损坏的 PDF 统一转为结构化错误
+            logger.warning("pdf 解析失败（疑似损坏）: %s (%s)", file_path, type(exc).__name__)
+            raise ValueError("文件损坏或格式异常，无法解析为 PDF") from exc
 
         pages = []
         total_chars = 0
@@ -490,6 +509,15 @@ class FileParser:
 
     async def _parse_image(self, file_path: str) -> ParseResult:
         """解析图片文件"""
+        _validate_path(file_path)
+        try:
+            # Issue #51：截断的图片此前静默放行，视觉链路解码失败被吞成「未检出」0 框，
+            # 用户会误读为「无敏感信息」。在解析阶段就用 PIL 校验可解码性。
+            with Image.open(file_path) as img:
+                img.verify()
+        except Exception as exc:
+            logger.warning("图片解码失败（疑似损坏）: %s (%s)", file_path, type(exc).__name__)
+            raise ValueError("图片文件损坏或格式异常，无法识别") from exc
         return ParseResult(
             file_id="",
             file_type=FileType.IMAGE,

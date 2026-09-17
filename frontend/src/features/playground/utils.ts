@@ -34,6 +34,22 @@ export function previewEntityHoverRingClass(source: Entity['source']): string {
 }
 
 // Issue #57: 打码(MASK)模式仅对 PDF 有效；图片走图像打码，文本格式禁用
+/**
+ * Issue #51：从后端错误信封提取人类可读原因。
+ * 后端信封形如 {error_code, message: "文件损坏…", detail: {}, request_id}——
+ * detail 可能是空对象（真值但非字符串），必须跳过非字符串候选，
+ * 否则 message 永远被空 detail 挡住，前端只能显示笼统文案。
+ */
+export function extractBackendErrorMessage(
+  data: { detail?: unknown; message?: unknown; error?: unknown } | null | undefined,
+): string | null {
+  if (!data) return null;
+  for (const candidate of [data.detail, data.message, data.error]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate;
+  }
+  return null;
+}
+
 export function isMaskAllowedForFile(fileType?: string): boolean {
   if (!fileType) return true;
   const normalized = fileType.toLowerCase();

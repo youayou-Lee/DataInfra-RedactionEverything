@@ -7,7 +7,7 @@ import { showToast } from '@/components/Toast';
 import { t } from '@/i18n';
 import { localizeErrorMessage } from '@/utils/localizeError';
 import { ACCEPTED_UPLOAD_FILE_TYPES } from '@/utils/fileUploadAccept';
-import { safeJson, runVisionDetectionPages } from '../utils';
+import { extractBackendErrorMessage, safeJson, runVisionDetectionPages } from '../utils';
 import { planServerCachedResume } from '../lib/playground-draft';
 import type {
   FileInfo,
@@ -23,9 +23,10 @@ const PLAYGROUND_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 async function responseErrorMessage(res: Response, fallbackKey: string) {
   try {
+    // Issue #51：透出后端原因（如「文件损坏或格式异常」），不能被空对象 detail 挡住
     const data = await safeJson<{ detail?: unknown; message?: unknown; error?: unknown }>(res);
-    const detail = data.detail ?? data.message ?? data.error;
-    if (typeof detail === 'string' && detail.trim()) return detail;
+    const message = extractBackendErrorMessage(data);
+    if (message) return message;
   } catch {
     // Keep the localized fallback when the response body is not JSON.
   }

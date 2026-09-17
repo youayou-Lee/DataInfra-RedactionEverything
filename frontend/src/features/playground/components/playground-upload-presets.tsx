@@ -56,46 +56,6 @@ export const PresetSelectors: FC<{
   );
 };
 
-/** Issue #70：识别后页面的清单快速切换——单行、无"保存清单"按钮的精简版。 */
-export const PresetQuickSelect: FC<{
-  label: string;
-  presets: { id: string; name: string; kind?: string }[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-  disabled: boolean;
-}> = ({ label, presets, activeId, onSelect, disabled }) => {
-  const t = useT();
-
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
-      <Select
-        value={activeId ?? DEFAULT_PRESET_VALUE}
-        onValueChange={(value) => onSelect(value === DEFAULT_PRESET_VALUE ? '' : value)}
-        disabled={disabled}
-      >
-        <SelectTrigger
-          className="h-9 min-w-0 w-full rounded-xl border-border/70 px-3 text-xs"
-          data-testid="playground-preset-quick-select"
-        >
-          <SelectValue placeholder={t('playground.defaultPreset')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value={DEFAULT_PRESET_VALUE}>{t('playground.defaultPreset')}</SelectItem>
-            {presets.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.name}
-                {preset.kind === 'full' ? ` (${t('playground.fullPreset')})` : ''}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </div>
-  );
-};
-
 const PresetRow: FC<{
   label: string;
   presets: { id: string; name: string; kind?: string }[];

@@ -1132,7 +1132,7 @@ const enOverrides: Record<string, string> = {
   'playground.popout': 'Pop out',
   'playground.reRecognize': 'Run recognition again',
   'playground.reconfigTypes': 'Adjust recognition items',
-  'playground.reconfigHint': 'Go back to the upload page to pick a preset or tick recognition items, then upload the file to recognize',
+  'playground.reconfigHint': 'Go back to the upload page to pick a preset or tick recognition items, then upload the file to recognize.',
   'playground.recognitionSection': 'Recognition',
   'playground.recognitionSectionDesc':
     'Refresh detection after updating the recognition list or item settings.',

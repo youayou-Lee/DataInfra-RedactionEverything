@@ -62,16 +62,12 @@ class FileParser:
 
     # 判断 PDF 是否为扫描件的文本密度阈值
     TEXT_DENSITY_THRESHOLD = 100  # 每页至少 100 个字符才认为是文本 PDF
-    # 整页图片覆盖率达到该值时，视为扫描页（扫描件常内嵌一层低质量 OCR 文本叠在整页图片上）。
-    # 注意取舍：带整页背景图的文本型 PDF（导出的演示文稿、信纸模板）会被误判走图像 OCR——
-    # 但图像 OCR 对这类文件仍能正确识别，代价只是变慢；反向漏判（扫描件走文本层）才是漏脱敏。
-    SCAN_PAGE_IMAGE_COVER_RATIO = 0.9
-    # 扫描页占比达到该值时，整份 PDF 按扫描件处理
-    SCAN_PAGE_MAJORITY_RATIO = 0.5
-    # 文本层碎片化（断行严重）判定：平均行长过短且超短行占比过高
-    SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN = 12
-    SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO = 0.3
+    # 扫描页判定阈值（整页图覆盖率 / 占比 / 碎片化行长）已提升为 settings：
+    # SCAN_PAGE_IMAGE_COVERAGE_RATIO / SCAN_PAGE_MAJORITY_RATIO /
+    # SCAN_FRAGMENT_MIN_AVG_LINE_LEN / SCAN_FRAGMENT_SHORT_LINE_RATIO，见 app/core/config.py。
 
+    # 注：页级缓存容量复用 PDF_PAGE_IMAGE_CACHE_PAGES，属既有约定
+    # （image / text_blocks / scan 三个缓存均以该值为上限），如需独立容量需另行评审。
     _pdf_page_image_cache: OrderedDict[tuple[str, int, int, int, int], bytes] = OrderedDict()
     _pdf_page_image_cache_lock = Lock()
     _pdf_page_text_blocks_cache: OrderedDict[
@@ -395,7 +391,14 @@ class FileParser:
             text = page.get_text()
             pages.append(text)
             total_chars += len(text.strip())
-            if self._is_scanned_page(page):
+            scanned = self._is_scanned_page(page)
+            # 预热扫描页缓存：视觉链路 is_pdf_page_scanned 可直接命中，
+            # 避免首次视觉调用重复逐页重算。
+            try:
+                self._store_scan_cache(self._pdf_page_cache_key(file_path, page_num + 1, 0), scanned)
+            except OSError:
+                pass
+            if scanned:
                 scanned_page_count += 1
             elif self.has_fragmented_text_layer(text):
                 fragmented_page_count += 1
@@ -411,8 +414,8 @@ class FileParser:
         scanned_ratio = scanned_page_count / page_count if page_count else 0
         fragmented_ratio = fragmented_page_count / page_count if page_count else 0
         is_scanned = (
-            scanned_ratio >= self.SCAN_PAGE_MAJORITY_RATIO
-            or fragmented_ratio >= self.SCAN_PAGE_MAJORITY_RATIO
+            scanned_ratio >= settings.SCAN_PAGE_MAJORITY_RATIO
+            or fragmented_ratio >= settings.SCAN_PAGE_MAJORITY_RATIO
             or avg_chars_per_page < self.TEXT_DENSITY_THRESHOLD
         )
 
@@ -439,7 +442,7 @@ class FileParser:
             except Exception:
                 continue
             for rect in rects:
-                if abs(rect) >= page_area * FileParser.SCAN_PAGE_IMAGE_COVER_RATIO:
+                if abs(rect) >= page_area * settings.SCAN_PAGE_IMAGE_COVERAGE_RATIO:
                     return True
         return False
 
@@ -452,9 +455,20 @@ class FileParser:
         avg_line_len = sum(len(line) for line in lines) / len(lines)
         short_line_ratio = sum(1 for line in lines if len(line) <= 2) / len(lines)
         return (
-            avg_line_len < FileParser.SCAN_TEXT_LAYER_MIN_AVG_LINE_LEN
-            and short_line_ratio > FileParser.SCAN_TEXT_LAYER_MIN_SHORT_LINE_RATIO
+            avg_line_len < settings.SCAN_FRAGMENT_MIN_AVG_LINE_LEN
+            and short_line_ratio > settings.SCAN_FRAGMENT_SHORT_LINE_RATIO
         )
+
+    def _store_scan_cache(self, cache_key: tuple[str, int, int, int, int], result: bool) -> None:
+        """回填扫描页缓存（容量复用 PDF_PAGE_IMAGE_CACHE_PAGES，0 表示禁用）。"""
+        cache_limit = int(settings.PDF_PAGE_IMAGE_CACHE_PAGES)
+        if cache_limit <= 0:
+            return
+        with self._pdf_page_scan_cache_lock:
+            self._pdf_page_scan_cache[cache_key] = result
+            self._pdf_page_scan_cache.move_to_end(cache_key)
+            while len(self._pdf_page_scan_cache) > cache_limit:
+                self._pdf_page_scan_cache.popitem(last=False)
 
     async def is_pdf_page_scanned(self, file_path: str, page: int) -> bool:
         """单页是否为扫描页（整页图片覆盖），带缓存。
@@ -480,12 +494,7 @@ class FileParser:
         finally:
             doc.close()
 
-        if cache_limit > 0:
-            with self._pdf_page_scan_cache_lock:
-                self._pdf_page_scan_cache[cache_key] = result
-                self._pdf_page_scan_cache.move_to_end(cache_key)
-                while len(self._pdf_page_scan_cache) > cache_limit:
-                    self._pdf_page_scan_cache.popitem(last=False)
+        self._store_scan_cache(cache_key, result)
         return result
 
     async def _parse_image(self, file_path: str) -> ParseResult:

@@ -673,6 +673,33 @@ class Settings(BaseSettings):
     ORPHAN_CLEANUP_AGE_SEC: int = 3600
 
     REDACTION_PDF_JPEG_QUALITY: int = 88
+
+    # 扫描件判定阈值（原 FileParser 类常量，提升为 settings 以便 env 覆盖调优）。
+    # 整页图片覆盖率达到该值时，视为扫描页（扫描件常内嵌一层低质量 OCR 文本叠在整页图片上）。
+    # 注意取舍：带整页背景图的文本型 PDF（导出的演示文稿、信纸模板）会被误判走图像 OCR——
+    # 但图像 OCR 对这类文件仍能正确识别，代价只是变慢；反向漏判（扫描件走文本层）才是漏脱敏。
+    SCAN_PAGE_IMAGE_COVERAGE_RATIO: float = 0.9
+    # 扫描页（或碎片化文本层页）占比达到该值时，整份 PDF 按扫描件处理
+    SCAN_PAGE_MAJORITY_RATIO: float = 0.5
+    # 文本层碎片化（断行严重）判定：平均行长过短且超短行占比过高
+    SCAN_FRAGMENT_MIN_AVG_LINE_LEN: int = 12
+    SCAN_FRAGMENT_SHORT_LINE_RATIO: float = 0.3
+
+    @field_validator("SCAN_PAGE_IMAGE_COVERAGE_RATIO")
+    @classmethod
+    def _validate_scan_page_image_coverage_ratio(cls, v: float) -> float:
+        return max(0.0, min(1.0, v))
+
+    @field_validator("SCAN_PAGE_MAJORITY_RATIO", "SCAN_FRAGMENT_SHORT_LINE_RATIO")
+    @classmethod
+    def _validate_scan_ratio(cls, v: float) -> float:
+        return max(0.0, min(1.0, v))
+
+    @field_validator("SCAN_FRAGMENT_MIN_AVG_LINE_LEN")
+    @classmethod
+    def _validate_scan_fragment_min_avg_line_len(cls, v: int) -> int:
+        return max(1, min(10_000, v))
+
     PDF_PAGE_IMAGE_CACHE_PAGES: int = 32
     PDF_PAGE_TEXT_BLOCK_CACHE_PAGES: int = 64
 

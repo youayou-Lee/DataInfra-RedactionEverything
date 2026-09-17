@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import ImageBBoxEditor from '@/components/ImageBBoxEditor';
 import { PaginationRail } from '@/components/PaginationRail';
 import { PlaygroundUpload } from './components/playground-upload';
+import { PresetQuickSelect } from './components/playground-upload-presets';
 import { PlaygroundToolbar } from './components/playground-toolbar';
 import { PlaygroundEntityPanel } from './components/playground-entity-panel';
 import { PlaygroundResult } from './components/playground-result';
@@ -111,6 +112,17 @@ const PlaygroundInner: FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const resumeFileId = searchParams.get('file_id');
   const [switchConfirmTarget, setSwitchConfirmTarget] = useState<string | null>(null);
+  // Issue #70：识别后页面更换识别清单——先确认，清单生效（presetApplySeq 变化）后再重跑
+  const [presetChangePending, setPresetChangePending] = useState<{ kind: 'text' | 'vision'; id: string } | null>(null);
+  const presetRerunArmedRef = useRef(false);
+  const { presetApplySeq: presetApplySeqForRerun } = recognition;
+  useEffect(() => {
+    if (!presetRerunArmedRef.current) return;
+    presetRerunArmedRef.current = false;
+    void handleRerunNer();
+    // 仅在清单应用序号变化时触发重跑；handleRerunNer 总是最新闭包（此 effect 在其重渲染后执行）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetApplySeqForRerun]);
   const resumeHandledRef = useRef<string | null>(null);
 
   const startResume = useCallback(
@@ -449,6 +461,21 @@ const PlaygroundInner: FC = () => {
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}
+              presetQuickSwitch={
+                <PresetQuickSelect
+                  label={t(isVisualPreview ? 'playground.visionPresetLabel' : 'playground.textPresetLabel')}
+                  presets={isVisualPreview ? recognition.visionPresetsPg : recognition.textPresetsPg}
+                  activeId={isVisualPreview ? recognition.playgroundPresetVisionId : recognition.playgroundPresetTextId}
+                  disabled={isLoading}
+                  onSelect={(id) => {
+                    const current = (
+                      isVisualPreview ? recognition.playgroundPresetVisionId : recognition.playgroundPresetTextId
+                    ) ?? '';
+                    if (id === current) return;
+                    setPresetChangePending({ kind: isVisualPreview ? 'vision' : 'text', id });
+                  }}
+                />
+              }
               onRerunNer={handleRerunNer}
               onRedact={handleRedact}
               onSelectAll={selectAll}
@@ -526,6 +553,23 @@ const PlaygroundInner: FC = () => {
           setSwitchConfirmTarget(null);
           setSearchParams({}, { replace: true });
         }}
+      />
+
+      <ConfirmDialog
+        open={presetChangePending !== null}
+        title={t('playground.presetRerunTitle')}
+        message={t('playground.presetRerunConfirm')}
+        confirmText={t('playground.reRecognize')}
+        danger
+        onConfirm={() => {
+          const target = presetChangePending;
+          setPresetChangePending(null);
+          if (!target) return;
+          presetRerunArmedRef.current = true;
+          if (target.kind === 'vision') recognition.selectPlaygroundVisionPresetById(target.id);
+          else recognition.selectPlaygroundTextPresetById(target.id);
+        }}
+        onCancel={() => setPresetChangePending(null)}
       />
     </div>
   );

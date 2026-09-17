@@ -4,6 +4,7 @@ import {
   type FC,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useMemo,
   memo,
 } from 'react';
@@ -53,6 +54,8 @@ export interface PlaygroundEntityPanelProps {
   watermarkText: string;
   setWatermarkText: (text: string) => void;
   clearPlaygroundTextPresetTracking: () => void;
+  /** Issue #70：识别清单快速切换（识别后页面），由页面层构建传入 */
+  presetQuickSwitch?: ReactNode;
   onRerunNer: () => void;
   onRedact: () => void;
   onSelectAll: () => void;
@@ -92,6 +95,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
     watermarkText,
     setWatermarkText,
     clearPlaygroundTextPresetTracking,
+    presetQuickSwitch,
     onRerunNer,
     onRedact,
     onSelectAll,
@@ -146,6 +150,7 @@ export const PlaygroundEntityPanel: FC<PlaygroundEntityPanelProps> = memo(
                 {t('playground.recognitionSectionDesc')}
               </p>
             </div>
+            {presetQuickSwitch}
             <Button
               onClick={onRerunNer}
               disabled={isLoading}

@@ -1,6 +1,7 @@
 ﻿// Copyright 2026 DataInfra-RedactionEverything Contributors
 
 import { memo, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -224,15 +225,13 @@ function BatchStep1PresetCardsInner({
                   </SelectContent>
                 </Select>
                 {textRedactionMode === 'pseudonym' && (
-                  <a
-                    href="/settings/word-pools"
-                    target="_blank"
-                    rel="noreferrer"
+                  <Link
+                    to="/settings/word-pools"
                     className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
                     data-testid="word-pool-settings-link"
                   >
                     {t('batchWizard.step1.wordPoolLink')}
-                  </a>
+                  </Link>
                 )}
                 <ul className="mt-1.5 space-y-1 overflow-hidden">
                   {textModeBullets.map((bullet) => (

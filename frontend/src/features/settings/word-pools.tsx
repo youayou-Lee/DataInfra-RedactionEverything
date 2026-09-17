@@ -30,34 +30,37 @@ import {
   type WordPoolStrategy,
 } from '@/services/wordPoolsApi';
 import { triggerDownload } from '@/features/batch/hooks/use-batch-wizard-utils';
+import {
+  dedupeCustomMap,
+  extractImportOverrides,
+  nextCustomMapRowId,
+  parseWordsText,
+  type CustomMapRow,
+} from './word-pool-utils';
 
 const STRATEGIES: WordPoolStrategy[] = ['derived', 'numbered', 'cycle', 'generated'];
 
 interface PoolDraft {
   wordsText: string;
   strategy: WordPoolStrategy;
-  customMap: Array<{ orig: string; repl: string }>;
+  customMap: CustomMapRow[];
 }
 
 function draftFromPool(pool: WordPool | undefined): PoolDraft {
   return {
     wordsText: (pool?.words ?? []).join('\n'),
     strategy: pool?.strategy ?? 'numbered',
-    customMap: Object.entries(pool?.custom_map ?? {}).map(([orig, repl]) => ({ orig, repl })),
+    customMap: Object.entries(pool?.custom_map ?? {}).map(([orig, repl]) => ({
+      id: nextCustomMapRowId(),
+      orig,
+      repl,
+    })),
   };
 }
 
 function draftToPayload(draft: PoolDraft) {
-  const words = draft.wordsText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const customMap: Record<string, string> = {};
-  draft.customMap.forEach(({ orig, repl }) => {
-    const key = orig.trim();
-    const value = repl.trim();
-    if (key && value) customMap[key] = value;
-  });
+  const words = parseWordsText(draft.wordsText);
+  const { map: customMap } = dedupeCustomMap(draft.customMap);
   return { words, strategy: draft.strategy, custom_map: customMap };
 }
 
@@ -79,7 +82,7 @@ export function WordPoolsSettings() {
   const [overrides, setOverrides] = useState<Record<string, WordPool>>({});
   const [typeNames, setTypeNames] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, PoolDraft>>({});
-  const [savingTypeId, setSavingTypeId] = useState<string | null>(null);
+  const [savingTypeIds, setSavingTypeIds] = useState<ReadonlySet<string>>(new Set());
   const [importReplace, setImportReplace] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -144,23 +147,35 @@ export function WordPoolsSettings() {
 
   const savePool = async (typeId: string) => {
     const draft = drafts[typeId];
-    if (!draft) return;
-    setSavingTypeId(typeId);
+    if (!draft || savingTypeIds.has(typeId)) return;
+    const { duplicates } = dedupeCustomMap(draft.customMap);
+    setSavingTypeIds((current) => new Set(current).add(typeId));
     try {
       const normalized = await updateWordPool(typeId, draftToPayload(draft));
       setMerged((current) => ({ ...current, [typeId]: normalized }));
       setOverrides((current) => ({ ...current, [typeId]: normalized }));
       setDrafts((current) => ({ ...current, [typeId]: draftFromPool(normalized) }));
-      showToast(t('wordPools.saved'), 'success');
+      if (duplicates.length > 0) {
+        showToast(
+          t('wordPools.customMapDedup').replace('{keys}', duplicates.join('、')),
+          'success',
+        );
+      } else {
+        showToast(t('wordPools.saved'), 'success');
+      }
     } catch (error) {
       showToast(localizeErrorMessage(error, 'wordPools.saveFailed'), 'error');
     } finally {
-      setSavingTypeId(null);
+      setSavingTypeIds((current) => {
+        const next = new Set(current);
+        next.delete(typeId);
+        return next;
+      });
     }
   };
 
   const resetPool = async (typeId: string) => {
-    setSavingTypeId(typeId);
+    setSavingTypeIds((current) => new Set(current).add(typeId));
     try {
       await deleteWordPool(typeId);
       const data = await fetchWordPools();
@@ -174,7 +189,11 @@ export function WordPoolsSettings() {
     } catch (error) {
       showToast(localizeErrorMessage(error, 'wordPools.resetFailed'), 'error');
     } finally {
-      setSavingTypeId(null);
+      setSavingTypeIds((current) => {
+        const next = new Set(current);
+        next.delete(typeId);
+        return next;
+      });
     }
   };
 
@@ -198,33 +217,37 @@ export function WordPoolsSettings() {
         showToast(t('wordPools.importInvalid'), 'error');
         return;
       }
-      const container = parsed as Record<string, unknown>;
-      const overridesPayload = (
-        'overrides' in container &&
-        container.overrides &&
-        typeof container.overrides === 'object' &&
-        !Array.isArray(container.overrides)
-          ? container.overrides
-          : parsed
-      ) as Record<string, WordPool>;
-      const entries = Object.entries(overridesPayload);
-      const valid = entries.every(
-        ([, pool]) =>
-          pool &&
-          typeof pool === 'object' &&
-          !Array.isArray(pool) &&
-          Array.isArray((pool as WordPool).words),
-      );
-      if (!entries.length || !valid) {
+      const overridesPayload = extractImportOverrides(parsed);
+      if (!overridesPayload) {
         showToast(t('wordPools.importInvalid'), 'error');
         return;
       }
+      // custom_map 原词重复时 last-wins 合并，并提示被合并的原词
+      const importDuplicates = new Set<string>();
+      Object.keys(overridesPayload).forEach((typeId) => {
+        const { map, duplicates } = dedupeCustomMap(
+          Object.entries(overridesPayload[typeId].custom_map ?? {}).map(([orig, repl]) => ({
+            orig,
+            repl,
+          })),
+        );
+        overridesPayload[typeId] = { ...overridesPayload[typeId], custom_map: map };
+        duplicates.forEach((key) => importDuplicates.add(key));
+      });
       const result = await importWordPools(overridesPayload, !importReplace);
       const count = result.count ?? 0;
-      showToast(
-        t('wordPools.importDone').replace('{count}', String(count)),
-        count > 0 ? 'success' : 'error',
-      );
+      if (count <= 0) {
+        showToast(t('wordPools.importFailed'), 'error');
+        return;
+      }
+      if (importDuplicates.size > 0) {
+        showToast(
+          t('wordPools.customMapDedup').replace('{keys}', [...importDuplicates].join('、')),
+          'success',
+        );
+      } else {
+        showToast(t('wordPools.importDone').replace('{count}', String(count)), 'success');
+      }
       await load();
     } catch (error) {
       showToast(localizeErrorMessage(error, 'wordPools.importFailed'), 'error');
@@ -397,7 +420,7 @@ export function WordPoolsSettings() {
                       </Label>
                       <div className="flex flex-col gap-1.5">
                         {draft.customMap.map((row, index) => (
-                          <div key={index} className="flex items-center gap-1.5">
+                          <div key={row.id} className="flex items-center gap-1.5">
                             <Input
                               value={row.orig}
                               onChange={(e) => {
@@ -440,7 +463,10 @@ export function WordPoolsSettings() {
                           className="self-start text-xs"
                           onClick={() =>
                             patchDraft(typeId, {
-                              customMap: [...draft.customMap, { orig: '', repl: '' }],
+                              customMap: [
+                                ...draft.customMap,
+                                { id: nextCustomMapRowId(), orig: '', repl: '' },
+                              ],
                             })
                           }
                         >
@@ -454,7 +480,7 @@ export function WordPoolsSettings() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={savingTypeId === typeId}
+                          disabled={savingTypeIds.has(typeId)}
                           onClick={() => void resetPool(typeId)}
                         >
                           {t('wordPools.reset')}
@@ -462,11 +488,11 @@ export function WordPoolsSettings() {
                       )}
                       <Button
                         size="sm"
-                        disabled={!dirty || savingTypeId === typeId}
+                        disabled={!dirty || savingTypeIds.has(typeId)}
                         onClick={() => void savePool(typeId)}
                         data-testid={`word-pool-save-${typeId}`}
                       >
-                        {savingTypeId === typeId ? t('wordPools.saving') : t('wordPools.save')}
+                        {savingTypeIds.has(typeId) ? t('wordPools.saving') : t('wordPools.save')}
                       </Button>
                     </div>
                   </CardContent>

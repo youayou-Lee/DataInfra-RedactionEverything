@@ -918,6 +918,7 @@ const enBase: Record<string, string> = {
   'wordPools.importInvalid': 'Invalid import file',
   'wordPools.importFailed': 'Import failed',
   'wordPools.customized': 'Customized',
+  'wordPools.customMapDedup': 'Duplicate mappings merged (last wins): {keys}',
 };
 
 const enOverrides: Record<string, string> = {

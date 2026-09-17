@@ -839,6 +839,7 @@ const zhBase: Record<string, string> = {
   'wordPools.importInvalid': '导入文件格式无效',
   'wordPools.importFailed': '导入失败',
   'wordPools.customized': '已自定义',
+  'wordPools.customMapDedup': '原词重复的映射已合并（后者覆盖前者）：{keys}',
 };
 
 const zhOverrides: Record<string, string> = {

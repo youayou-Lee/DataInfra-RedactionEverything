@@ -33,13 +33,9 @@ export async function fetchWordPools(): Promise<WordPoolsResponse> {
 }
 
 export async function exportWordPools(): Promise<Record<string, WordPool>> {
-  const data = await get<Record<string, WordPool> | { overrides: Record<string, WordPool> }>(
-    '/word-pools/export',
-  );
-  // 兼容裸 dict 与 { overrides: ... } 两种返回形状
-  const maybe = data as { overrides?: Record<string, WordPool> } | null;
-  if (maybe && typeof maybe === 'object' && maybe.overrides) return maybe.overrides;
-  return (data as Record<string, WordPool> | null) ?? {};
+  // 后端恒返回 { overrides: ... } 包裹形状
+  const data = await get<{ overrides: Record<string, WordPool> }>('/word-pools/export');
+  return data?.overrides ?? {};
 }
 
 export async function importWordPools(

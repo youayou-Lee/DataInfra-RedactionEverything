@@ -1038,6 +1038,8 @@ const zhOverrides: Record<string, string> = {
   'playground.visionConfigEmptyDesc': '可以先去识别项设置里配置图像识别项，再回到单文件处理选择。',
   'playground.popout': '独立窗口',
   'playground.reRecognize': '重新识别',
+  'playground.reconfigTypes': '调整识别项',
+  'playground.reconfigHint': '回到上传页，重新选择配置清单或勾选识别项，再上传文件识别',
   'playground.recognitionSection': '识别',
   'playground.recognitionSectionDesc':
     '修改配置清单或识别项设置后，可以重新刷新当前文件的识别结果。',

@@ -7,6 +7,7 @@ import { getEntityTypeName } from '@/config/entityTypes';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import ImageBBoxEditor from '@/components/ImageBBoxEditor';
 import { PaginationRail } from '@/components/PaginationRail';
+import { Button } from '@/components/ui/button';
 import { PlaygroundUpload } from './components/playground-upload';
 import { PlaygroundToolbar } from './components/playground-toolbar';
 import { PlaygroundEntityPanel } from './components/playground-entity-panel';
@@ -111,6 +112,7 @@ const PlaygroundInner: FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const resumeFileId = searchParams.get('file_id');
   const [switchConfirmTarget, setSwitchConfirmTarget] = useState<string | null>(null);
+
   const resumeHandledRef = useRef<string | null>(null);
 
   const startResume = useCallback(
@@ -449,6 +451,22 @@ const PlaygroundInner: FC = () => {
               watermarkText={recognition.watermarkText}
               setWatermarkText={recognition.setWatermarkText}
               clearPlaygroundTextPresetTracking={recognition.clearPlaygroundTextPresetTracking}
+              presetQuickSwitch={
+                <div className="flex flex-col gap-1">
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    disabled={isLoading}
+                    className="h-9 w-full whitespace-nowrap"
+                    data-testid="playground-back-to-config-btn"
+                  >
+                    {t('playground.reconfigTypes')}
+                  </Button>
+                  <p className="line-clamp-2 text-xs leading-4 text-muted-foreground">
+                    {t('playground.reconfigHint')}
+                  </p>
+                </div>
+              }
               onRerunNer={handleRerunNer}
               onRedact={handleRedact}
               onSelectAll={selectAll}

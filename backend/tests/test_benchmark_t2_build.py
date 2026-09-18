@@ -75,6 +75,10 @@ def test_manifest_structure_and_drops(mini_raw, tmp_path):
     # resume 每行丢弃 EDUCATION 1 个 span
     assert manifest["buckets"]["resume-person"]["dropped_spans"]["resume"] == 20
     assert manifest["buckets"]["cluener-person"]["count"] == 30
+    assert manifest["buckets"]["cluener-person"]["sampled"] == 30  # 实际落桶条数
+    assert manifest["buckets"]["cluener-person"]["total_candidates"] == 30  # 原候选总数另名保留
+    assert manifest["sources"]["cluener"]["files"] == [
+        str(mini_raw / "cluener" / "train.json")]  # 同源多桶去重，不重复出现
     assert manifest["sources"]["cluener"]["url"].startswith("https://github.com/CLUEbenchmark")
     assert manifest["buckets"]["hardcase"]["skipped"] is True
     mfile = out / "manifest.private.json"

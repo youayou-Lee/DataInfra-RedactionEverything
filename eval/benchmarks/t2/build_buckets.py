@@ -213,7 +213,10 @@ def build_all(raw_dir: Path, out_dir: Path) -> dict:
         else:  # public
             source = meta["source"]
             raw_path, files = _concat_raw(raw_dir, source)
-            used_raw.setdefault(source, []).extend(str(f) for f in files)
+            for f in files:  # 同源多桶去重（cluener 3 桶共用 train.json）
+                p = str(f)
+                if p not in used_raw.setdefault(source, []):
+                    used_raw[source].append(p)
             if source == "leven" and not spec.TYPE_MAPS["leven"]:
                 entries = []
                 stats = {"count": 0, "blocked": True,
@@ -228,6 +231,7 @@ def build_all(raw_dir: Path, out_dir: Path) -> dict:
             else:
                 entries, stats = build_public_bucket(bucket, source, raw_path, meta["size"], meta)
                 stats["count"] = len(entries)
+                stats["sampled"] = len(entries)  # sampled=实际落桶条数（adapters 返回的原值=全量候选数）
                 if not entries:
                     print(f"[WARN] {bucket}: 采样后 0 条（候选 {stats.get('total_candidates', 0)}）",
                           file=sys.stderr)

@@ -107,7 +107,7 @@ def test_committed_samples_consistency():
     ("正常内容", "PASS"),
     ("", "FAIL"),
     ("   \n  ", "FAIL"),
-    ("[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]", "FAIL"),
+    ("[无法解析 .doc 文件：文档转换服务不可用，请联系管理员检查 LibreOffice 环境]", "FAIL"),
     ("[无法解析文件: x.doc]", "FAIL"),
 ])
 def test_g2_parse(content, expect):
@@ -253,7 +253,7 @@ def _make_stub_api():
         def get(self, url, params=None):
             if "/parse" in url:
                 if "fmt_doc" in url:  # 仅 .doc 的 parse 走兜底（按 file_id 路由，无顺序耦合）
-                    return _R(200, {"content": "[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]"})
+                    return _R(200, {"content": "[无法解析 .doc 文件：文档转换服务不可用，请联系管理员检查 LibreOffice 环境]"})
                 return _R(200, {"content": "委托人：" + GT_FLAT[0]})
             if "/download" in url:
                 return _R(200, {"file_id": "x"}, content=b"CLEAN")

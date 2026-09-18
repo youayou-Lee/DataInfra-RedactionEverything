@@ -1,9 +1,11 @@
 // Copyright 2026 DataInfra-RedactionEverything Contributors
 
-// Issue #50（#46 实测收口）：.doc 转换链不可用、.rtf 解析毁 CJK 转义且成品残留原文，
-// 均不予受理；支持面以实测报告 eval/reports/20260915-164256-*-format-matrix 为准。
+// Issue #92：.doc 解禁——#46 判「转换链不可用」实为当时实例宿主未装 LibreOffice，
+// 2026-09-18 实例探针（含 WPS 真实样本）转换/解析/脱敏 0 残留；.rtf 仍不予受理
+// （解析毁 CJK 转义、成品残留原文）。
 export const ACCEPTED_UPLOAD_FILE_TYPES = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/msword': ['.doc'],
   'application/pdf': ['.pdf'],
   'text/plain': ['.txt', '.md'],
   'text/html': ['.html', '.htm'],

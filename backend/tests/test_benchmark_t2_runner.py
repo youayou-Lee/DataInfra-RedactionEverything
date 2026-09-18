@@ -57,8 +57,39 @@ def test_render_report_markdown_table():
                                               "partial": NaEngine()})
     md = rt.render_report(result)
     assert "| 桶 | 引擎 | P | R | F1 | 数字exact |" in md
-    assert "| cluener-person | echo | 1.0000 | 1.0000 | 1.0000 |" in md
+    # cluener-person 无数字实体：显示 N/A 而非 1.0
+    assert "| cluener-person | echo | 1.0000 | 1.0000 | 1.0000 | N/A |" in md
     assert "| cluener-person | partial | N/A | N/A | N/A | N/A |" in md
+
+
+def test_render_report_digital_detail():
+    result = rt.run_engines(ENTRIES, engines={"echo": make_perfect_engine(ENTRIES)})
+    md = rt.render_report(result)
+    # hardcase 桶含 电话（数字实体）：表格列有值，且下方有 exact/near_miss/miss 明细行
+    assert "| hardcase | echo | 1.0000 | 1.0000 | 1.0000 | 1.0000 |" in md
+    assert "## 数字分级明细（exact / near_miss / miss）" in md
+    assert "- hardcase / echo / 电话：exact=1 near_miss=0 miss=0 exact_rate=1.0000" in md
+    # 无数字实体的桶不出现在明细中
+    assert "cluener-person / echo /" not in md
+
+
+def test_dedup_engine_names_suffix():
+    engines = [rt.HttpEngine("llm", "http://a"), rt.HttpEngine("llm", "http://b"),
+               rt.HttpEngine("llm", "http://c"), rt.HttpEngine("has", "http://d")]
+    out = rt.dedup_engine_names(engines)
+    assert list(out) == ["llm", "llm-2", "llm-3", "has"]
+    assert out["llm-2"].base == "http://b"
+
+
+def test_main_unknown_bucket_exits_2(capsys, tmp_path):
+    import pytest
+    d = tmp_path / "data"
+    d.mkdir()
+    with pytest.raises(SystemExit) as ei:
+        rt.main(["--data-dir", str(d), "--engine", "has=http://x",
+                 "--buckets", "hardcase,no-such-bucket"])
+    assert ei.value.code == 2
+    assert "no-such-bucket" in capsys.readouterr().err
 
 
 def test_load_entries_filters_buckets(tmp_path):

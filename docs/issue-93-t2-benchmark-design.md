@@ -44,6 +44,7 @@
 ```
 
 - 映射表为代码内显式常量（如 `LEVEN_TYPE_MAP = {"被告人": "姓名", "被害人": "姓名", "法院": "机构名称", …}`），人工核对后锁版本；映射表版本写入 manifest。
+  > **勘误（2026-09-18 实测）**：LEVEN（thunlp/LEVEN 官方 jsonl）仅有事件触发词标注（108 种事件类型），**无实体/论元标注**，上表中的 被告人/法院 等类型在数据中不存在。故 `leven` 映射表已置空（见 `spec.py`），leven 两桶 BLOCKED；司法领域覆盖改由 hardcase + 合成桶承接，替代数据集待选。
 - 映射不到的类型丢弃，**丢弃率进适配报告与 manifest**（防悄悄丢掉大半标注）。
 - 桶的维度分两层：**公开桶按「领域×实体类型」**（公开集无失败模式标注），**合成桶与难例桶按失败模式**。`bucket_kind` 字段区分。
 - 难例条目额外字段：`origin`（Issue 链接）、`story`（一句话失败故事）、`raw_form`（OCR 噪声形态，如多空格原文）。
@@ -53,7 +54,7 @@
 | 桶 | 来源 | 规模（首版） |
 |---|---|---|
 | cluener-person / -address / -organization | CLUENER 映射 | 各 200 句 |
-| leven-judicial-person / -judicial-org | LEVEN 映射 | 各 200 句 |
+| leven-judicial-person / -judicial-org | LEVEN 映射 | 各 200 句（勘误 2026-09-18：LEVEN 无实体标注，两桶 BLOCKED，见 §2 勘误注记；替代数据集待选） |
 | resume-person / -native-place | Resume NER 映射 | 各 200 句 |
 | digit-confusion（身份证/案号/车牌/银行卡同现互扰） | 合成 | 50 条 |
 | quoted-entity / long-entity / lowfreq-type / context-distractor | 合成 | 各 50 条 |
@@ -68,7 +69,7 @@
 - 引擎注册表：`--engine has`（复用 `eval_ner_quality` 直连与生产 prompt 对齐）｜`--engine llm=<OpenAI 兼容端点>`（vLLM/llama-server，#73 E1 直接可用）｜将来 `--engine vlm=<…>`（图像通道占位，本期 N/A）。
 - 引擎申报制：引擎不支持的桶记 **N/A 不记零分**。
 - `--buckets` 选桶、`--baseline <json>` 出 Δ 列、多引擎同跑出对比表。
-- 输出：桶×引擎 P/R/F1 明细 + 数字保真桶级三级分级（exact/near_miss/miss）+ N/A 标注，json+md 报告入 `eval/reports/`（Obsidian 简版，沿用 `indicator_meta`）。
+- 输出：桶×引擎 P/R/F1 明细 + 数字保真桶级三级分级（exact/near_miss/miss）+ N/A 标注，json+md 报告入 `eval/reports/`（Obsidian 简版，沿用 `indicator_meta`）。（deferred：`--baseline` Δ 列与 `indicator_meta` 版式延期至 #73 E2 阶段按需实现。）
 - **无闸门**：不 exit 1，结论写进报告（与 run_eval 三闸门语义分工）。
 
 ## 5. 难例沉淀 skill（hardcase-ingest）

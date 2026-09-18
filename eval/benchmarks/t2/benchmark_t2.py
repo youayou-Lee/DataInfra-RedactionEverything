@@ -16,7 +16,7 @@ from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import spec  # noqa: E402,F401  BUCKETS 等规格在此维护
+import spec  # noqa: E402  BUCKETS 等规格在此维护（--buckets 桶名校验）
 
 _spec = importlib.util.spec_from_file_location(
     "eval_ner_quality", _REPO / "backend" / "scripts" / "eval" / "eval_ner_quality.py")
@@ -99,6 +99,19 @@ def run_engines(entries: list[dict], engines: dict) -> dict:
     return result
 
 
+def dedup_engine_names(engine_list: list) -> dict:
+    """重名引擎自动加后缀：llm、llm-2、llm-3…（--engine llm=a --engine llm=b 不再静默覆盖）。"""
+    out: dict = {}
+    counts: dict[str, int] = {}
+    for e in engine_list:
+        name = getattr(e, "name", f"engine-{len(out) + 1}")
+        counts[name] = counts.get(name, 0) + 1
+        final = name if counts[name] == 1 else f"{name}-{counts[name]}"
+        e.name = final
+        out[final] = e
+    return out
+
+
 def render_report(result: dict) -> str:
     lines = ["# T2 Benchmark 桶级对比", "",
              f"- 引擎：{', '.join(result.get('engines', []))}",
@@ -112,9 +125,26 @@ def render_report(result: dict) -> str:
                 lines.append(f"| {bucket} | {ename} | N/A | N/A | N/A | N/A |")
             else:
                 dg = m.get("digital", {})
-                exact = min((s["exact_rate"] for s in dg.values()), default=1.0)
+                if dg:
+                    exact = min(s["exact_rate"] for s in dg.values())
+                    exact_cell = f"{exact:.4f}"
+                else:
+                    exact_cell = "N/A"  # 桶内无数字实体，不显示误导性的 1.0
                 lines.append(f"| {bucket} | {ename} | {m['overall']['precision']:.4f} "
-                             f"| {m['overall']['recall']:.4f} | {m['overall']['f1']:.4f} | {exact:.4f} |")
+                             f"| {m['overall']['recall']:.4f} | {m['overall']['f1']:.4f} | {exact_cell} |")
+    # 数字三级分级明细：仅含数字实体桶的引擎行（数据来自 json 的 digital 字段）
+    detail_lines = []
+    for bucket, per_engine in result["buckets"].items():
+        for ename, m in per_engine.items():
+            if m == "N/A":
+                continue
+            for etype, s in sorted(m.get("digital", {}).items()):
+                detail_lines.append(
+                    f"- {bucket} / {ename} / {etype}：exact={s['exact']} "
+                    f"near_miss={s['near_miss']} miss={s['miss']} "
+                    f"exact_rate={s['exact_rate']:.4f}")
+    if detail_lines:
+        lines += ["", "## 数字分级明细（exact / near_miss / miss）"] + detail_lines
     return "\n".join(lines) + "\n"
 
 
@@ -147,8 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     buckets = [b.strip() for b in args.buckets.split(",") if b.strip()] if args.buckets else None
+    if buckets is not None:
+        unknown = [b for b in buckets if b not in spec.BUCKETS]
+        if unknown:
+            ap.error(f"unknown --buckets: {', '.join(unknown)}; "
+                     f"valid: {', '.join(sorted(spec.BUCKETS))}")  # exit 2，仅参数错误，非闸门
+    engines = dedup_engine_names(list(args.engine))
+    print(f"engines: {', '.join(engines)}")  # 启动日志：含去重后的引擎清单
     entries = load_entries(args.data_dir, buckets)
-    engines = {e.name: e for e in args.engine}
     result = run_engines(entries, engines)
     result["generated_at"] = datetime.now().isoformat(timespec="seconds")
     result["data_dir"] = str(args.data_dir)

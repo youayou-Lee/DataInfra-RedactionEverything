@@ -149,7 +149,7 @@ class FileParser:
         return ParseResult(
             file_id="",
             file_type=FileType.DOC,
-            content="[无法解析 .doc 文件，请将文件另存为 .docx 格式后重试]",
+            content="[无法解析 .doc 文件：文档转换服务不可用，请联系管理员检查 LibreOffice 环境]",
             page_count=1,
             pages=[],
             is_scanned=False,

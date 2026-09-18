@@ -633,9 +633,9 @@ const enBase: Record<string, string> = {
   'batchWizard.step1.retryPresetsLoading': 'Retrying...',
   'batchWizard.step2.dropHint': 'Drop files here, or click to select',
   'batchWizard.step2.dropHintSmart':
-    'Supports Word (.docx), text (.txt), PDF, images (.jpg .png), auto-detects file type',
+    'Supports Word (.docx/.doc), text (.txt), PDF, images (.jpg .png), auto-detects file type',
   'batchWizard.step2.dropHintImage': 'Supports images (.jpg .png) and scanned PDFs',
-  'batchWizard.step2.dropHintText': 'Supports Word (.docx) and PDF documents',
+  'batchWizard.step2.dropHintText': 'Supports Word (.docx/.doc) and PDF documents',
   'batchWizard.step2.jobLinked': 'Current job',
   'batchWizard.step2.uploadQueue': 'Upload Queue',
   'batchWizard.step2.queueCount': '{count} files in the queue',
@@ -1093,7 +1093,7 @@ const enOverrides: Record<string, string> = {
     'Run npm run doctor, then start npm run dev:models or restart the listed services.',
   'playground.dropHere': 'Drop a file here to upload',
   'playground.supportedFormats':
-    'Supports .docx, .txt, .md, .html, .pdf, .jpg, .png, and more (convert .doc to .docx first)',
+    'Supports .doc, .docx, .txt, .md, .html, .pdf, .jpg, .png, and more',
   'playground.clickToUpload': 'Or click to choose a file',
   'playground.upload.rejectInvalidType':
     '{filename} is not supported. Choose a Word, text, PDF, or image file.',

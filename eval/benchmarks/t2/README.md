@@ -47,7 +47,15 @@ Issue #93 子任务 A：面向脱敏引擎选型的对比 benchmark——引擎�
 
 ## 快速用法
 
-1. **构建桶数据**（写入上述私有目录，公开集经 `adapters.py` 转换、合成桶用 `gen_failure_buckets.py`、难例用 `ingest_hardcase.py`）。
+1. **构建桶数据**（写入上述私有目录，公开集经 `adapters.py` 转换、合成桶用 `gen_failure_buckets.py`、难例用 `ingest_hardcase.py`）：
+
+```bash
+PYTHONPATH=$PWD .venv-eval/bin/python eval/benchmarks/t2/build_buckets.py \
+  --raw-dir test-data/benchmarks/t2/raw \
+  --out-dir test-data/benchmarks/t2
+```
+
+输出 `buckets/*.jsonl` + `manifest.private.json`（结构模板见 `manifest.private.example.json`；leven 桶 BLOCKED 打印提示、hardcase 桶跳过由 ingest 维护）。
 2. **跑 benchmark**：
 
 ```bash

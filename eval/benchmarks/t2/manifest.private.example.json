@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-09-18T00:00:00",
+  "seed": 42,
+  "raw_dir": "/root/private_data/benchmarks/t2/raw",
+  "sources": {
+    "cluener": {
+      "version": "CLUENER 1.0（CLUENER2020 官方 cluener_public.zip，2026-09 拉取）",
+      "license": "CLUENER 按 CLUE 组织声明限研究用途（详见仓库 README）",
+      "url": "https://github.com/CLUEbenchmark/CLUENER2020",
+      "download": "https://storage.googleapis.com/cluebenchmark/tasks/cluener_public.zip 解包取 train.json -> raw/cluener/train.json（dev.json 可选）",
+      "files": ["/root/private_data/benchmarks/t2/raw/cluener/train.json"]
+    },
+    "resume": {
+      "version": "Resume NER（jiesutd/LatticeLSTM 仓库 ResumeNER，char-level BMES，2026-09 拉取）",
+      "license": "随 LatticeLSTM 仓库发布，限研究用途",
+      "url": "https://github.com/jiesutd/LatticeLSTM",
+      "download": "https://raw.githubusercontent.com/jiesutd/LatticeLSTM/master/ResumeNER/train.char.bmes -> raw/resume/train.char.bmes（BMES 自动转 jsonl；dev.char.bmes 可选，自动合并）",
+      "files": ["/root/private_data/benchmarks/t2/raw/resume/train.char.bmes"]
+    }
+  },
+  "buckets": {
+    "cluener-person": {"count": 200, "dropped_spans": {"cluener": 1234}, "total_candidates": 8000, "sampled": 200, "target_matched": 3000},
+    "cluener-address": {"count": 200, "dropped_spans": {"cluener": 1234}, "total_candidates": 8000, "sampled": 200, "target_matched": 4000},
+    "cluener-organization": {"count": 200, "dropped_spans": {"cluener": 1234}, "total_candidates": 8000, "sampled": 200, "target_matched": 3500},
+    "leven-judicial-person": {"count": 0, "blocked": true, "reason": "LEVEN 仅有事件触发词标注（无实体/论元），TYPE_MAPS['leven'] 为空，候选 0；需换数据源或人工映射（见 task-2-report.md）"},
+    "leven-judicial-org": {"count": 0, "blocked": true, "reason": "同上"},
+    "resume-person": {"count": 200, "dropped_spans": {"resume": 567}, "total_candidates": 4000, "sampled": 200, "target_matched": 2000},
+    "resume-native-place": {"count": 200, "dropped_spans": {"resume": 567}, "total_candidates": 4000, "sampled": 200, "target_matched": 900},
+    "digit-confusion": {"count": 50, "kind": "synthetic"},
+    "quoted-entity": {"count": 50, "kind": "synthetic"},
+    "long-entity": {"count": 50, "kind": "synthetic"},
+    "lowfreq-type": {"count": 50, "kind": "synthetic"},
+    "context-distractor": {"count": 50, "kind": "synthetic"},
+    "hardcase": {"skipped": true, "reason": "hardcase 桶由 ingest_hardcase.py 维护"}
+  },
+  "notes": ["hardcase: 跳过（ingest 管理，不覆盖已有文件）"],
+  "entries": [
+    {"id": "hardcase_20260918_120000_001", "origin": "https://github.com/…/issues/60", "story": "表格跨行机构名漏检", "ts": "2026-09-18T12:00:00"}
+  ]
+}
